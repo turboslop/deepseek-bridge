@@ -115,6 +115,20 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         except RuntimeError:
             pass  # executor shut down, server is closing
 
+    def _log_pool_utilization(self) -> None:
+        try:
+            active = len(self.executor._threads)
+        except Exception:
+            active = "?"
+        try:
+            queue_size = self.executor._work_queue.qsize() if hasattr(self.executor, '_work_queue') else "?"
+        except Exception:
+            queue_size = "?"
+        LOG.info(
+            "thread pool: max_workers=%s active=%s queue=%s",
+            self.executor._max_workers, active, queue_size,
+        )
+
     def server_close(self):
         self.executor.shutdown(wait=True, cancel_futures=False)
         super().server_close()
@@ -177,6 +191,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 "heartbeat: processed %s requests",
                 self.server.request_count,  # type: ignore[attr-defined]
             )
+        if self.server.request_count % 100 == 0:  # type: ignore[attr-defined]
+            self.server._log_pool_utilization()  # type: ignore[attr-defined]
         started = time.monotonic()
         request_path = urlparse(self.path).path
         trace = self._start_trace(request_path)
@@ -606,6 +622,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
         except (BrokenPipeError, ConnectionError) as exc:
             LOG.warning("client disconnected while %s: %s", disconnect_context, exc)
+            self.close_connection = True
             return False
         return True
 
@@ -622,6 +639,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionError) as exc:
             LOG.warning("client disconnected while %s: %s", disconnect_context, exc)
+            self.close_connection = True
             return False
         return True
 
