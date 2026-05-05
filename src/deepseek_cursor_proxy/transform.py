@@ -148,9 +148,7 @@ def extract_text_content(content: Any) -> str | None:
                 parts.append(text)
             elif isinstance(text, str):
                 parts.append(text)
-            elif item_type:
-                parts.append(f"[{item_type} omitted by DeepSeek text proxy]")
-        return "\n".join(part for part in parts if part)
+        return "\n".join(part for part in parts if part) or None
     if isinstance(content, (dict, tuple)):
         return json.dumps(content, ensure_ascii=False, sort_keys=True)
     return str(content)
@@ -251,8 +249,10 @@ def normalize_message(
     if role == "function":
         normalized["role"] = "tool"
 
-    if "content" in normalized:
-        normalized["content"] = extract_text_content(normalized["content"]) or ""
+    content_val = normalized.get("content")
+    if content_val is not None:
+        if not isinstance(content_val, list):
+            normalized["content"] = extract_text_content(content_val) or ""
     elif normalized["role"] in {"assistant", "tool", "system", "user"}:
         normalized["content"] = ""
     if normalized["role"] == "assistant" and isinstance(normalized.get("content"), str):

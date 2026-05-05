@@ -93,6 +93,7 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     trace_writer: TraceWriter | None
     upstream_pool: UpstreamPool
     request_count: int = 0
+    start_time: float = 0.0
 
 
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
@@ -157,8 +158,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         request_path = urlparse(self.path).path
         if self.config.verbose:
             LOG.info("incoming GET %s from %s", request_path, self.client_address[0])
-        if request_path in {"/healthz", "/v1/healthz"}:
-            self._send_json(200, {"ok": True})
+        if request_path in {"/healthz", "/v1/healthz", "/health", "/v1/health"}:
+            self._send_health()
             return
         if request_path in {"/models", "/v1/models"}:
             self._send_models()
@@ -187,13 +188,27 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 self.headers.get("Content-Length", "0"),
                 self.headers.get("User-Agent", ""),
             )
-        if request_path not in {"/chat/completions", "/v1/chat/completions"}:
+        if request_path in {"/embeddings", "/v1/embeddings"}:
+            if self.config.verbose:
+                LOG.info(
+                    "incoming embeddings request from %s",
+                    self.client_address[0],
+                )
+            self._handle_embeddings_request()
+            self._finish_trace(trace, "completed")
+            return
+        if request_path not in {
+            "/chat/completions",
+            "/v1/chat/completions",
+            "/completions",
+            "/v1/completions",
+        }:
             LOG.warning("rejected unsupported POST path=%s status=404", request_path)
             self._record_request_body_for_trace(trace)
             self._send_json(
                 404,
                 _error_body(
-                    "Only /v1/chat/completions is supported",
+                    "Only /v1/chat/completions and /v1/completions are supported",
                     "invalid_request_error",
                     "endpoint_not_found",
                 ),
@@ -244,6 +259,18 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             )
             self._finish_trace(trace, "rejected", http_status=400, reason=str(exc))
             return
+
+        if request_path in {"/completions", "/v1/completions"}:
+            if "prompt" in payload and "messages" not in payload:
+                prompt = payload.pop("prompt")
+                if isinstance(prompt, list):
+                    payload["messages"] = [
+                        {"role": "user", "content": str(p)} for p in prompt
+                    ]
+                else:
+                    payload["messages"] = [{"role": "user", "content": str(prompt)}]
+            for legacy_key in ("suffix", "best_of", "echo"):
+                payload.pop(legacy_key, None)
 
         if trace is not None:
             trace.record_cursor_body(payload)
@@ -598,6 +625,87 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _handle_embeddings_request(self) -> None:
+        cursor_authorization = self._cursor_authorization()
+        if cursor_authorization is None:
+            LOG.warning("rejected embeddings request: missing bearer token")
+            self._send_json(
+                401,
+                _error_body(
+                    "Missing Authorization bearer token",
+                    "authentication_error",
+                    "invalid_api_key",
+                ),
+            )
+            return
+        try:
+            payload = self._read_json_body()
+        except (ValueError, RequestBodyTooLarge) as exc:
+            LOG.warning("rejected embeddings request: %s", exc)
+            self._send_json(
+                400,
+                _error_body(
+                    str(exc), "invalid_request_error", "invalid_request_error"
+                ),
+            )
+            return
+
+        model = str(payload.get("model") or self.config.upstream_model)
+        upstream_body = json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        upstream_url = f"{self.config.upstream_base_url}/embeddings"
+
+        try:
+            response = self.upstream_pool._pool.request(
+                "POST",
+                upstream_url,
+                body=upstream_body,
+                headers=self._upstream_headers(
+                    stream=False, authorization=cursor_authorization
+                ),
+                preload_content=True,
+                timeout=urllib3.Timeout(
+                    connect=self.config.request_timeout,
+                    read=self.config.request_timeout,
+                ),
+            )
+            if response.status < 400:
+                body = response.data
+                headers = [
+                    ("Content-Type", "application/json"),
+                    ("Content-Length", str(len(body))),
+                ]
+                self._send_response_headers(
+                    response.status, headers, "sending embeddings response"
+                )
+                self._write_to_client(body, "sending embeddings body")
+            else:
+                LOG.warning(
+                    "embeddings endpoint not supported by upstream status=%s",
+                    response.status,
+                )
+                self._send_json(
+                    200,
+                    {
+                        "object": "list",
+                        "data": [],
+                        "model": model,
+                        "usage": {"prompt_tokens": 0, "total_tokens": 0},
+                    },
+                )
+        except Exception as exc:
+            LOG.warning("embeddings request failed: %s", exc)
+            self._send_json(
+                200,
+                {
+                    "object": "list",
+                    "data": [],
+                    "model": model,
+                    "usage": {"prompt_tokens": 0, "total_tokens": 0},
+                },
+            )
+
     def _send_models(self) -> None:
         created = int(time.time())
         model_ids = list(
@@ -619,6 +727,17 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             for model_id in model_ids
         ]
         self._send_json(200, {"object": "list", "data": models})
+
+    def _send_health(self) -> None:
+        uptime = int(time.monotonic() - self.server.start_time) if hasattr(self.server, "start_time") else 0  # type: ignore[attr-defined]
+        self._send_json(
+            200,
+            {
+                "ok": True,
+                "server": "deepseek-cursor-proxy",
+                "uptime_seconds": uptime,
+            },
+        )
 
     def _read_json_body(self) -> dict[str, Any]:
         try:
@@ -1561,6 +1680,7 @@ def main(argv: list[str] | None = None) -> int:
     server.reasoning_store = store
     server.trace_writer = trace_writer
     server.upstream_pool = pool
+    server.start_time = time.monotonic()
 
     tunnel: NgrokTunnel | None = None
     public_url: str | None = None

@@ -52,7 +52,7 @@ class ContentHelpersTests(unittest.TestCase):
         ]
         self.assertEqual(
             extract_text_content(content),
-            "hello\n[image_url omitted by DeepSeek text proxy]\nworld",
+            "hello\nworld",
         )
 
     def test_extract_text_content_passes_through_string_and_none(self) -> None:
