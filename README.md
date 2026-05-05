@@ -7,10 +7,33 @@ This proxy can also help **other applications and coding agents** beyond Cursor 
 
 ## What It Does
 
+**Core Reasoning Fix:**
 - ✅ Injects `reasoning_content` into outgoing tool-call requests since Cursor does not include the field, restoring previously cached reasoning from regular and streamed DeepSeek responses. See [DeepSeek docs](https://api-docs.deepseek.com/guides/thinking_mode#tool-calls) for more details.
 - ✅ Displays DeepSeek's thinking tokens in Cursor by forwarding them into Cursor-visible collapsible Markdown `<details><summary>Thinking</summary>...</details>` blocks.
-- ✅ Starts an ngrok tunnel so Cursor can reach the local proxy through a public HTTPS URL.
-- ✅ Provides other compatibility fixes to make DeepSeek models run well in Cursor.
+
+**Connection Resilience:**
+- ✅ Connection pooling via `urllib3` (replaces one-shot `urlopen`) with keep-alive and minimal retries.
+- ✅ Bounded thread pool prevents thread exhaustion on long-running streaming connections.
+- ✅ Configurable SSE read timeout (`--stream-read-timeout`, default 180s) prevents hung threads on silent upstreams.
+- ✅ Ngrok tunnel health check with auto-reconnect (`--ngrok-health-check-interval`).
+- ✅ Graceful shutdown on SIGTERM — active requests drain, reasoning cache is flushed.
+
+**OpenAI API Compatibility:**
+- ✅ `system_fingerprint` in every streaming and non-streaming response.
+- ✅ `x-request-id` UUID header on every response.
+- ✅ OpenAI-standard error format: `{"error": {"message", "type", "code", "param": null}}`.
+- ✅ CORS headers enabled by default.
+- ✅ `/v1/embeddings` endpoint for Cursor @Codebase search.
+- ✅ `/v1/health` endpoint with uptime tracking.
+- ✅ `/v1/completions` legacy endpoint alias (auto-converts `prompt` to `messages`).
+- ✅ Multimodal content arrays preserved (no longer flattened to text).
+- ✅ Stable `/v1/models` timestamps.
+
+**Logging:**
+- ✅ Persistent log files with `--log-dir <path>` — timestamped per-launch, auto-purges old files (keeps last 5).
+- ✅ All errors logged at WARNING level without `--verbose`.
+- ✅ Heartbeat and pool utilization counters.
+- ✅ Full structured request traces with `--trace-dir` (one JSON file per request).
 
 ## Why This Exists
 
@@ -185,3 +208,26 @@ Clear the local reasoning cache:
 ```bash
 deepseek-cursor-proxy --clear-reasoning-cache
 ```
+
+Persist logs to a directory for debugging:
+
+```bash
+deepseek-cursor-proxy --log-dir ~/proxy-logs
+# Each launch creates a timestamped file, auto-purges old logs (keeps last 5)
+cat ~/proxy-logs/proxy-*.log | grep -E "WARNING|ERROR|disconnected"
+```
+
+Full CLI reference:
+
+```bash
+deepseek-cursor-proxy --help
+```
+
+Key flags:
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--stream-read-timeout` | 180 | SSE read timeout in seconds |
+| `--max-thread-pool` | 20 | Max concurrent request threads |
+| `--max-pool-connections` | 10 | Max upstream connections |
+| `--ngrok-health-check-interval` | 30 | Tunnel health check interval (0=disable) |
+| `--log-dir` | none | Directory for persistent log files |
