@@ -26,9 +26,11 @@ DEFAULT_COLLAPSIBLE_REASONING = True
 DEFAULT_NGROK = True
 DEFAULT_VERBOSE = False
 DEFAULT_REQUEST_TIMEOUT = 300.0
+DEFAULT_STREAM_READ_TIMEOUT = 180.0
 DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 DEFAULT_MAX_KEEPALIVE = 5
+DEFAULT_MAX_THREAD_POOL = 20
 DEFAULT_CORS = False
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
@@ -195,6 +197,7 @@ class ProxyConfig:
     thinking: str = DEFAULT_THINKING
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT
+    stream_read_timeout: float = DEFAULT_STREAM_READ_TIMEOUT
     max_request_body_bytes: int = DEFAULT_MAX_REQUEST_BODY_BYTES
     reasoning_content_path: Path = field(default_factory=default_reasoning_content_path)
     missing_reasoning_strategy: str = DEFAULT_MISSING_REASONING_STRATEGY
@@ -204,6 +207,7 @@ class ProxyConfig:
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
     max_keepalive: int = DEFAULT_MAX_KEEPALIVE
+    max_thread_pool: int = DEFAULT_MAX_THREAD_POOL
     cors: bool = DEFAULT_CORS
     verbose: bool = DEFAULT_VERBOSE
     ngrok: bool = DEFAULT_NGROK
@@ -242,6 +246,10 @@ class ProxyConfig:
             request_timeout=as_float(
                 setting_value(settings, "request_timeout"),
                 DEFAULT_REQUEST_TIMEOUT,
+            ),
+            stream_read_timeout=as_float(
+                setting_value(settings, "stream_read_timeout"),
+                DEFAULT_STREAM_READ_TIMEOUT,
             ),
             max_request_body_bytes=as_int(
                 setting_value(settings, "max_request_body_bytes"),
@@ -294,5 +302,9 @@ class ProxyConfig:
             max_keepalive=as_int(
                 setting_value(settings, "max_keepalive"),
                 DEFAULT_MAX_KEEPALIVE,
+            ),
+            max_thread_pool=as_int(
+                setting_value(settings, "max_thread_pool"),
+                DEFAULT_MAX_THREAD_POOL,
             ),
         )

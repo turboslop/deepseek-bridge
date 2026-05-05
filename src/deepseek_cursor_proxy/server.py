@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import http.client
 from http.client import HTTPException
@@ -61,6 +62,30 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     trace_writer: TraceWriter | None
     upstream_pool: UpstreamPool
     request_count: int = 0
+
+
+class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
+    """ThreadingHTTPServer variant that uses a fixed-size ThreadPoolExecutor."""
+
+    def __init__(self, *args, max_workers: int = 20, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="proxy",
+        )
+        self.daemon_threads = True
+
+    def process_request(self, request, client_address):
+        try:
+            self.executor.submit(
+                self.process_request_thread, request, client_address
+            )
+        except RuntimeError:
+            pass  # executor shut down, server is closing
+
+    def server_close(self):
+        self.executor.shutdown(wait=True, cancel_futures=False)
+        super().server_close()
 
 
 class DeepSeekProxyHandler(BaseHTTPRequestHandler):
@@ -263,12 +288,17 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         try:
             if self.config.verbose:
                 LOG.info("forwarding to %s", upstream_url)
+            timeout = urllib3.Timeout(
+                connect=self.config.request_timeout,
+                read=self.config.stream_read_timeout if stream else self.config.request_timeout,
+            )
             response = self.upstream_pool._pool.request(
                 "POST",
                 upstream_url,
                 body=upstream_body,
                 headers=upstream_headers,
                 preload_content=not stream,
+                timeout=timeout,
             )
         except urllib3.exceptions.MaxRetryError as exc:
             spinner.stop()
@@ -774,8 +804,15 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             while True:
                 try:
                     line = response.readline()
-                except (HTTPException, OSError) as exc:
-                    LOG.warning("upstream streaming response read failed: %s", exc)
+                except (HTTPException, OSError, urllib3.exceptions.ReadTimeoutError) as exc:
+                    if isinstance(exc, urllib3.exceptions.ReadTimeoutError):
+                        LOG.warning(
+                            "upstream streaming response read timed out after %ss: %s",
+                            self.config.stream_read_timeout,
+                            exc,
+                        )
+                    else:
+                        LOG.warning("upstream streaming response read failed: %s", exc)
                     return ProxyResponseResult(False, usage)
                 if not line:
                     break
@@ -1019,6 +1056,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Upstream request timeout in seconds, default from config or 300",
     )
     parser.add_argument(
+        "--stream-read-timeout",
+        type=float,
+        help="Streaming read timeout in seconds, default from config or 180",
+    )
+    parser.add_argument(
         "--max-request-body-bytes",
         type=int,
         help="Maximum accepted request body size, default from config",
@@ -1050,6 +1092,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--max-keepalive",
         type=int,
         help="Maximum upstream keepalive connections, default from config or 5",
+    )
+    parser.add_argument(
+        "--max-thread-pool",
+        type=int,
+        help="Maximum thread pool size for request handling, default from config or 20",
     )
     parser.add_argument(
         "--clear-reasoning-cache",
@@ -1353,6 +1400,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["cors"] = args.cors
     if args.request_timeout is not None:
         updates["request_timeout"] = args.request_timeout
+    if args.stream_read_timeout is not None:
+        updates["stream_read_timeout"] = args.stream_read_timeout
     if args.max_request_body_bytes is not None:
         updates["max_request_body_bytes"] = args.max_request_body_bytes
     if args.reasoning_cache_max_age_seconds is not None:
@@ -1367,6 +1416,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["max_pool_connections"] = args.max_pool_connections
     if args.max_keepalive is not None:
         updates["max_keepalive"] = args.max_keepalive
+    if args.max_thread_pool is not None:
+        updates["max_thread_pool"] = args.max_thread_pool
     if updates:
         config = replace(config, **updates)
 
@@ -1391,7 +1442,10 @@ def main(argv: list[str] | None = None) -> int:
             store.close()
             return 2
     pool = UpstreamPool(max_connections=config.max_pool_connections, max_keepalive=config.max_keepalive)
-    server = DeepSeekProxyServer((config.host, config.port), DeepSeekProxyHandler)
+    server = BoundedThreadPoolHTTPServer(
+        (config.host, config.port), DeepSeekProxyHandler,
+        max_workers=config.max_thread_pool,
+    )
     server.config = config
     server.reasoning_store = store
     server.trace_writer = trace_writer
