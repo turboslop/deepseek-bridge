@@ -27,6 +27,8 @@ DEFAULT_NGROK = True
 DEFAULT_VERBOSE = False
 DEFAULT_REQUEST_TIMEOUT = 300.0
 DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
+DEFAULT_MAX_POOL_CONNECTIONS = 10
+DEFAULT_MAX_KEEPALIVE = 5
 DEFAULT_CORS = False
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
@@ -200,6 +202,8 @@ class ProxyConfig:
     reasoning_cache_max_rows: int = DEFAULT_REASONING_CACHE_MAX_ROWS
     display_reasoning: bool = DEFAULT_DISPLAY_REASONING
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
+    max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
+    max_keepalive: int = DEFAULT_MAX_KEEPALIVE
     cors: bool = DEFAULT_CORS
     verbose: bool = DEFAULT_VERBOSE
     ngrok: bool = DEFAULT_NGROK
@@ -282,5 +286,13 @@ class ProxyConfig:
             ngrok=as_bool(
                 setting_value(settings, "ngrok"),
                 DEFAULT_NGROK,
+            ),
+            max_pool_connections=as_int(
+                setting_value(settings, "max_pool_connections"),
+                DEFAULT_MAX_POOL_CONNECTIONS,
+            ),
+            max_keepalive=as_int(
+                setting_value(settings, "max_keepalive"),
+                DEFAULT_MAX_KEEPALIVE,
             ),
         )

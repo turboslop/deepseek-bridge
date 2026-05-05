@@ -27,6 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "PyYAML>=6.0",
+    "urllib3>=2.0",
 ]
 
 [project.optional-dependencies]

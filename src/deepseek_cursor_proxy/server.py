@@ -12,6 +12,7 @@ import socket
 import sys
 import time
 from typing import Any
+import urllib3
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -48,10 +49,20 @@ class ProxyResponseResult:
     usage: dict[str, Any] | None = None
 
 
+class UpstreamPool:
+    def __init__(self, max_connections: int = 10, max_keepalive: int = 5):
+        self._pool = urllib3.PoolManager(
+            maxsize=max_connections,
+            block=True,
+            retries=urllib3.Retry(connect=1, read=0, redirect=0, status=0),
+        )
+
+
 class DeepSeekProxyServer(ThreadingHTTPServer):
     config: ProxyConfig
     reasoning_store: ReasoningStore
     trace_writer: TraceWriter | None
+    upstream_pool: UpstreamPool
     request_count: int = 0
 
 
@@ -69,6 +80,10 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
     @property
     def trace_writer(self) -> TraceWriter | None:
         return getattr(self.server, "trace_writer", None)
+
+    @property
+    def upstream_pool(self) -> UpstreamPool:
+        return self.server.upstream_pool  # type: ignore[return-value]
 
     def log_message(self, fmt: str, *args: Any) -> None:
         return
@@ -994,6 +1009,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--max-pool-connections",
+        type=int,
+        help="Maximum upstream pool connections, default from config or 10",
+    )
+    parser.add_argument(
+        "--max-keepalive",
+        type=int,
+        help="Maximum upstream keepalive connections, default from config or 5",
+    )
+    parser.add_argument(
         "--clear-reasoning-cache",
         action="store_true",
         help="Clear the local reasoning_content SQLite cache and exit",
@@ -1318,6 +1343,10 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_cache_max_rows"] = args.reasoning_cache_max_rows
     if args.missing_reasoning_strategy is not None:
         updates["missing_reasoning_strategy"] = args.missing_reasoning_strategy
+    if args.max_pool_connections is not None:
+        updates["max_pool_connections"] = args.max_pool_connections
+    if args.max_keepalive is not None:
+        updates["max_keepalive"] = args.max_keepalive
     if updates:
         config = replace(config, **updates)
 
@@ -1341,10 +1370,12 @@ def main(argv: list[str] | None = None) -> int:
             LOG.error("failed to initialize trace directory: %s", exc)
             store.close()
             return 2
+    pool = UpstreamPool(max_connections=config.max_pool_connections, max_keepalive=config.max_keepalive)
     server = DeepSeekProxyServer((config.host, config.port), DeepSeekProxyHandler)
     server.config = config
     server.reasoning_store = store
     server.trace_writer = trace_writer
+    server.upstream_pool = pool
 
     tunnel: NgrokTunnel | None = None
     public_url: str | None = None
