@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 from deepseek_cursor_proxy.config import ProxyConfig
 from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer
+from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer, UpstreamPool
 
 
 LIVE_DEEPSEEK = os.getenv("RUN_LIVE_DEEPSEEK_TESTS") == "1" and bool(
@@ -48,6 +48,7 @@ class ProxyFixture:
             request_timeout=180,
         )
         server.reasoning_store = self.store
+        server.upstream_pool = UpstreamPool()
         self.server = server
         self.thread = threading.Thread(target=server.serve_forever, daemon=True)
 

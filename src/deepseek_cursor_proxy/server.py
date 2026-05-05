@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, replace
-import gzip
 import http.client
 from http.client import HTTPException
 import json
@@ -13,10 +12,8 @@ import sys
 import time
 from typing import Any
 import urllib3
-from urllib.error import HTTPError, URLError
+import urllib3.exceptions
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
-import zlib
 
 from .config import (
     ProxyConfig,
@@ -254,41 +251,26 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 headers=upstream_headers,
                 body_bytes=upstream_body,
             )
-        request = Request(
-            upstream_url,
-            data=upstream_body,
-            method="POST",
-            headers=upstream_headers,
-        )
+        stream = bool(prepared.payload.get("stream"))
 
         if self.config.verbose:
             log_send_summary(prepared)
         spinner = TerminalSpinner(
-            enabled=bool(prepared.payload.get("stream")) and not self.config.verbose,
+            enabled=stream and not self.config.verbose,
             text="└ {frame}",
         ).start()
 
         try:
             if self.config.verbose:
                 LOG.info("forwarding to %s", upstream_url)
-            response = urlopen(request, timeout=self.config.request_timeout)
-        except HTTPError as exc:
-            spinner.stop()
-            LOG.warning(
-                "request failed upstream_status=%s stream=%s elapsed_ms=%s",
-                exc.code,
-                bool(prepared.payload.get("stream")),
-                elapsed_ms(started),
+            response = self.upstream_pool._pool.request(
+                "POST",
+                upstream_url,
+                body=upstream_body,
+                headers=upstream_headers,
+                preload_content=not stream,
             )
-            self._send_upstream_error(exc, trace=trace)
-            self._finish_trace(
-                trace,
-                "upstream_error",
-                http_status=exc.code,
-                stream=bool(prepared.payload.get("stream")),
-            )
-            return
-        except URLError as exc:
+        except urllib3.exceptions.MaxRetryError as exc:
             spinner.stop()
             LOG.warning(
                 "upstream request failed elapsed_ms=%s reason=%s",
@@ -302,63 +284,107 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             )
             self._finish_trace(trace, "upstream_error", http_status=502)
             return
+        except urllib3.exceptions.TimeoutError as exc:
+            spinner.stop()
+            LOG.warning(
+                "upstream request timed out elapsed_ms=%s",
+                elapsed_ms(started),
+            )
+            self._send_json(
+                502,
+                {"error": {"message": "Upstream request timed out"}},
+                trace=trace,
+            )
+            self._finish_trace(trace, "upstream_error", http_status=502)
+            return
+        except urllib3.exceptions.HTTPError as exc:
+            spinner.stop()
+            LOG.warning(
+                "upstream request failed elapsed_ms=%s reason=%s",
+                elapsed_ms(started),
+                exc,
+            )
+            self._send_json(
+                502,
+                {"error": {"message": f"Upstream request failed: {exc}"}},
+                trace=trace,
+            )
+            self._finish_trace(trace, "upstream_error", http_status=502)
+            return
         except Exception:
             spinner.stop()
             raise
 
         try:
-            with response:
-                upstream_status = getattr(response, "status", 200)
-                if self.config.verbose:
-                    LOG.info(
-                        "upstream response status=%s stream=%s elapsed_ms=%s",
-                        upstream_status,
-                        bool(prepared.payload.get("stream")),
-                        elapsed_ms(started),
-                    )
-                if prepared.payload.get("stream"):
-                    sent_response = self._proxy_streaming_response(
-                        response,
-                        prepared.original_model,
-                        prepared.payload["messages"],
-                        prepared.cache_namespace,
-                        prepared.recovery_notice,
-                        trace=trace,
-                        record_response_scope=prepared.record_response_scope,
-                        record_response_messages=prepared.record_response_messages,
-                        record_response_contexts=prepared.record_response_contexts,
-                    )
-                else:
-                    sent_response = self._proxy_regular_response(
-                        response,
-                        prepared.original_model,
-                        prepared.payload["messages"],
-                        prepared.cache_namespace,
-                        prepared.recovery_notice,
-                        trace=trace,
-                        record_response_scope=prepared.record_response_scope,
-                        record_response_messages=prepared.record_response_messages,
-                        record_response_contexts=prepared.record_response_contexts,
-                    )
-                if not sent_response.sent:
-                    spinner.stop()
-                    self._finish_trace(
-                        trace,
-                        "client_disconnected",
-                        http_status=upstream_status,
-                        stream=bool(prepared.payload.get("stream")),
-                    )
-                    return
+            upstream_status = response.status
+            if self.config.verbose:
+                LOG.info(
+                    "upstream response status=%s stream=%s elapsed_ms=%s",
+                    upstream_status,
+                    stream,
+                    elapsed_ms(started),
+                )
+            if upstream_status >= 400:
                 spinner.stop()
-                log_stats_summary(sent_response.usage)
+                LOG.warning(
+                    "request failed upstream_status=%s stream=%s elapsed_ms=%s",
+                    upstream_status,
+                    stream,
+                    elapsed_ms(started),
+                )
+                self._send_upstream_error(response, trace=trace)
                 self._finish_trace(
                     trace,
-                    "completed",
+                    "upstream_error",
                     http_status=upstream_status,
-                    stream=bool(prepared.payload.get("stream")),
+                    stream=stream,
                 )
+                return
+            if stream:
+                sent_response = self._proxy_streaming_response(
+                    response,
+                    prepared.original_model,
+                    prepared.payload["messages"],
+                    prepared.cache_namespace,
+                    prepared.recovery_notice,
+                    trace=trace,
+                    record_response_scope=prepared.record_response_scope,
+                    record_response_messages=prepared.record_response_messages,
+                    record_response_contexts=prepared.record_response_contexts,
+                )
+            else:
+                sent_response = self._proxy_regular_response(
+                    response,
+                    prepared.original_model,
+                    prepared.payload["messages"],
+                    prepared.cache_namespace,
+                    prepared.recovery_notice,
+                    trace=trace,
+                    record_response_scope=prepared.record_response_scope,
+                    record_response_messages=prepared.record_response_messages,
+                    record_response_contexts=prepared.record_response_contexts,
+                )
+            if not sent_response.sent:
+                spinner.stop()
+                self._finish_trace(
+                    trace,
+                    "client_disconnected",
+                    http_status=upstream_status,
+                    stream=stream,
+                )
+                return
+            spinner.stop()
+            log_stats_summary(sent_response.usage)
+            self._finish_trace(
+                trace,
+                "completed",
+                http_status=upstream_status,
+                stream=stream,
+            )
         finally:
             spinner.stop()
+            if stream and 'response' in locals():
+                response.release_conn()
 
     def _start_trace(self, request_path: str) -> TraceRequest | None:
         writer = self.trace_writer
@@ -559,32 +585,39 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
 
     def _send_upstream_error(
         self,
-        exc: HTTPError,
+        response: Any,
         *,
         trace: TraceRequest | None = None,
     ) -> None:
         try:
-            body = read_response_body(exc)
+            body = read_response_body(response)
         except (OSError, http.client.IncompleteRead, socket.timeout, ValueError) as exc2:
             LOG.warning("failed to read upstream error body: %s", exc2)
             body = json.dumps(
                 {"error": {"message": "Upstream error, body unreadable"}}
             ).encode("utf-8")
+        finally:
+            try:
+                response.release_conn()
+            except Exception:
+                pass
         if self.config.verbose:
             log_bytes("upstream error body", body)
         headers = {
-            "Content-Type": exc.headers.get("Content-Type", "application/json"),
+            "Content-Type": response.headers.get("Content-Type", "application/json"),
             "Content-Length": str(len(body)),
         }
         if trace is not None:
             trace.record_upstream_response(
-                status=exc.code,
-                headers={name: value for name, value in exc.headers.items()},
+                status=response.status,
+                headers=dict(response.headers.items()),
                 body=body,
             )
-            trace.record_cursor_response(status=exc.code, headers=headers, body=body)
+            trace.record_cursor_response(
+                status=response.status, headers=headers, body=body
+            )
         sent_headers = self._send_response_headers(
-            exc.code,
+            response.status,
             [
                 ("Content-Type", headers["Content-Type"]),
                 ("Content-Length", headers["Content-Length"]),
@@ -644,8 +677,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         }
         if trace is not None:
             trace.record_upstream_response(
-                status=getattr(response, "status", 200),
-                headers=response_headers(response),
+                status=response.status,
+                headers=dict(response.headers.items()),
                 body=upstream_body,
                 stream=False,
             )
@@ -656,13 +689,13 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             if isinstance(upstream_payload, dict):
                 trace.record_usage(upstream_payload.get("usage"))
             trace.record_cursor_response(
-                status=getattr(response, "status", 200),
+                status=response.status,
                 headers=headers,
                 body=body,
             )
 
         sent_headers = self._send_response_headers(
-            getattr(response, "status", 200),
+            response.status,
             [
                 ("Content-Type", headers["Content-Type"]),
                 ("Content-Length", headers["Content-Length"]),
@@ -688,12 +721,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
     ) -> ProxyResponseResult:
         if trace is not None:
             trace.record_upstream_response(
-                status=getattr(response, "status", 200),
-                headers=response_headers(response),
+                status=response.status,
+                headers=dict(response.headers.items()),
                 stream=True,
             )
             trace.record_cursor_response(
-                status=getattr(response, "status", 200),
+                status=response.status,
                 headers={
                     "Content-Type": "text/event-stream",
                     "Cache-Control": "no-cache",
@@ -701,7 +734,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 },
             )
         sent_headers = self._send_response_headers(
-            getattr(response, "status", 200),
+            response.status,
             [
                 ("Content-Type", "text/event-stream"),
                 ("Cache-Control", "no-cache"),
@@ -1259,31 +1292,18 @@ def summarize_chat_payload(payload: dict[str, Any]) -> str:
 
 
 def read_response_body(response: Any) -> bytes:
+    """Read the full body from a urllib3 response.
+
+    urllib3 auto-decompresses gzip/deflate by default.  For preloaded
+    responses (preload_content=True) the cached ``response.data`` is used;
+    for streaming responses ``response.read()`` reads from the socket.
+    """
     try:
-        body = response.read()
+        if hasattr(response, "data") and response.data is not None:
+            return response.data
+        return response.read()
     except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
         raise ValueError(f"failed to read upstream response body: {exc}") from exc
-    encoding = (response.headers.get("Content-Encoding") or "").lower()
-    if encoding == "gzip":
-        try:
-            return gzip.decompress(body)
-        except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
-            raise ValueError(f"failed to decompress upstream response body: {exc}") from exc
-    if encoding == "deflate":
-        try:
-            return zlib.decompress(body)
-        except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
-            raise ValueError(f"failed to decompress upstream response body: {exc}") from exc
-        except zlib.error:
-            return zlib.decompress(body, -zlib.MAX_WBITS)
-    return body
-
-
-def response_headers(response: Any) -> dict[str, str]:
-    headers = getattr(response, "headers", {})
-    if hasattr(headers, "items"):
-        return {str(name): str(value) for name, value in headers.items()}
-    return {}
 
 
 def warn_if_insecure_upstream(url: str) -> None:

@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 
 from deepseek_cursor_proxy.config import ProxyConfig
 from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer
+from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer, UpstreamPool
 
 
 # Canonical fake-DeepSeek reasoning/answer text reused across tests.
@@ -271,6 +271,7 @@ def _start_proxy(
         **config_overrides,
     )
     proxy.reasoning_store = store
+    proxy.upstream_pool = UpstreamPool()
     return _Fixture(proxy)
 
 

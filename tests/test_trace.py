@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 
 from deepseek_cursor_proxy.config import ProxyConfig
 from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer
+from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer, UpstreamPool
 from deepseek_cursor_proxy.trace import TraceWriter
 
 
@@ -187,6 +187,7 @@ class TraceIntegrationTests(unittest.TestCase):
         )
         proxy.reasoning_store = self.store
         proxy.trace_writer = self.writer
+        proxy.upstream_pool = UpstreamPool()
         self.proxy = _Fixture(proxy)
 
     def tearDown(self) -> None:

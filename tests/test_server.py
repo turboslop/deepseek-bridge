@@ -34,6 +34,7 @@ from deepseek_cursor_proxy.reasoning_store import ReasoningStore
 from deepseek_cursor_proxy.server import (
     DeepSeekProxyHandler,
     DeepSeekProxyServer,
+    UpstreamPool,
     build_arg_parser,
     read_response_body,
     summarize_chat_payload,
@@ -210,15 +211,9 @@ class CliAndHelperTests(unittest.TestCase):
         ).start().stop()
         self.assertEqual(non_tty.writes, [])
 
-    def test_read_response_body_decodes_gzip_and_deflate(self) -> None:
-        self.assertEqual(
-            read_response_body(_FakeResponse(gzip.compress(b'{"ok":1}'), "gzip")),
-            b'{"ok":1}',
-        )
-        self.assertEqual(
-            read_response_body(_FakeResponse(zlib.compress(b'{"ok":1}'), "deflate")),
-            b'{"ok":1}',
-        )
+    def test_read_response_body_returns_raw_bytes(self) -> None:
+        body = b'{"ok":1}'
+        self.assertEqual(read_response_body(_FakeResponse(body)), body)
 
     def test_summarize_chat_payload_omits_message_content(self) -> None:
         summary = summarize_chat_payload(
@@ -464,6 +459,7 @@ class HttpBoundaryTests(unittest.TestCase):
             ngrok=False,
         )
         proxy.reasoning_store = self.store
+        proxy.upstream_pool = UpstreamPool()
         self.proxy = _Fixture(proxy)
 
     def tearDown(self) -> None:
