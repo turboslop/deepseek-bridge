@@ -4,6 +4,7 @@ timeouts, and bounded thread pool (Wave 2).  All tests use unittest.mock
 
 from __future__ import annotations
 
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -15,7 +16,10 @@ from deepseek_cursor_proxy.server import (
     DeepSeekProxyHandler,
     UpstreamPool,
     build_arg_parser,
+    _handle_shutdown_signal,
+    _shutdown_requested,
 )
+from deepseek_cursor_proxy.tunnel import HealthCheckConfig, NgrokTunnel
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +90,17 @@ class BoundedThreadPoolTests(unittest.TestCase):
         server.server_close()
         with self.assertRaises(RuntimeError):
             executor.submit(lambda: None)
+
+    def test_bounded_thread_pool_cancel_futures_false_on_shutdown(self) -> None:
+        server = self._make_server(max_workers=5)
+        try:
+            with patch.object(server.executor, "shutdown") as mock_shutdown:
+                server.server_close()
+                mock_shutdown.assert_called_once_with(
+                    wait=True, cancel_futures=False
+                )
+        finally:
+            server.executor.shutdown(wait=True)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +176,98 @@ class PoolRequestTimeoutTests(unittest.TestCase):
             self.assertEqual(call_kwargs["timeout"].read_timeout, 180.0)
             self.assertEqual(call_kwargs["timeout"].connect_timeout, 300.0)
             self.assertFalse(call_kwargs["preload_content"])
+
+
+# ---------------------------------------------------------------------------
+# Ngrok health check and tunnel lifecycle (Wave 3)
+# ---------------------------------------------------------------------------
+
+
+class NgrokHealthCheckTests(unittest.TestCase):
+    """NgrokTunnel health check configuration, _is_healthy, and CLI parsing."""
+
+    def test_ngrok_tunnel_accepts_health_check_config(self) -> None:
+        hc = HealthCheckConfig(check_interval=5.0)
+        tunnel = NgrokTunnel(
+            target_url="http://127.0.0.1:8080",
+            health_check=hc,
+        )
+        self.assertEqual(tunnel.health_check.check_interval, 5.0)
+
+    def test_ngrok_health_check_not_started_when_none(self) -> None:
+        tunnel = NgrokTunnel(
+            target_url="http://127.0.0.1:8080",
+            health_check=None,
+        )
+        tunnel.start_health_check()
+        self.assertIsNone(tunnel._health_thread)
+
+    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    def test_ngrok_is_healthy_returns_true_when_process_alive_and_api_ok(
+        self,
+        mock_urlopen: MagicMock,
+    ) -> None:
+        tunnel = NgrokTunnel(target_url="http://127.0.0.1:8080")
+        tunnel.process = MagicMock()
+        tunnel.process.poll.return_value = None  # alive
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = (
+            b'{"endpoints": [{"url": "https://abc.ngrok.io"}]}'
+        )
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+        self.assertTrue(tunnel._is_healthy())
+
+    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    def test_ngrok_is_healthy_returns_false_when_process_dead(
+        self,
+        mock_urlopen: MagicMock,
+    ) -> None:
+        tunnel = NgrokTunnel(target_url="http://127.0.0.1:8080")
+        tunnel.process = MagicMock()
+        tunnel.process.poll.return_value = 1  # dead
+        self.assertFalse(tunnel._is_healthy())
+        mock_urlopen.assert_not_called()
+
+    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    def test_ngrok_is_healthy_returns_false_when_api_unreachable(
+        self,
+        mock_urlopen: MagicMock,
+    ) -> None:
+        tunnel = NgrokTunnel(target_url="http://127.0.0.1:8080")
+        tunnel.process = MagicMock()
+        tunnel.process.poll.return_value = None  # alive
+        mock_urlopen.side_effect = OSError("Connection refused")
+        self.assertFalse(tunnel._is_healthy())
+
+    def test_ngrok_health_check_disabled_when_interval_zero(self) -> None:
+        args = build_arg_parser().parse_args(
+            ["--ngrok-health-check-interval", "0"]
+        )
+        self.assertEqual(args.ngrok_health_check_interval, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown  (Wave 3)
+# ---------------------------------------------------------------------------
+
+
+class ShutdownSignalTests(unittest.TestCase):
+    """_shutdown_requested event and _handle_shutdown_signal."""
+
+    def test_shutdown_requested_event_set_on_signal(self) -> None:
+        self.assertIsInstance(_shutdown_requested, threading.Event)
+        _shutdown_requested.set()
+        self.assertTrue(_shutdown_requested.is_set())
+        _shutdown_requested.clear()
+        self.assertFalse(_shutdown_requested.is_set())
+
+    def test_handle_shutdown_signal_logs_and_sets_event(self) -> None:
+        _shutdown_requested.clear()
+        self.assertFalse(_shutdown_requested.is_set())
+        _handle_shutdown_signal(15, None)
+        self.assertTrue(_shutdown_requested.is_set())
+        _shutdown_requested.clear()
 
 
 if __name__ == "__main__":
