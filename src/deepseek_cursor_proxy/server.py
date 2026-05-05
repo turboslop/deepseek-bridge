@@ -42,6 +42,11 @@ from .transform import (
 
 SYSTEM_FINGERPRINT = "fp_deepseek_cursor_proxy"
 
+MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
+    "deepseek-v4-pro": 1735689600,
+    "deepseek-v4-flash": 1735689600,
+}
+
 
 def _generate_request_id() -> str:
     return f"dcp-{uuid.uuid4().hex[:24]}"
@@ -725,7 +730,6 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             )
 
     def _send_models(self) -> None:
-        created = int(time.time())
         model_ids = list(
             dict.fromkeys(
                 [
@@ -739,7 +743,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             {
                 "id": model_id,
                 "object": "model",
-                "created": created,
+                "created": MODEL_CREATED_TIMESTAMPS.get(model_id, 1735689600),
                 "owned_by": "deepseek",
             }
             for model_id in model_ids
