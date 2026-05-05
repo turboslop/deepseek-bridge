@@ -13,6 +13,7 @@ import socket
 import sys
 import threading
 import time
+import uuid
 from typing import Any
 import urllib3
 import urllib3.exceptions
@@ -39,6 +40,13 @@ from .transform import (
 )
 
 
+SYSTEM_FINGERPRINT = "fp_deepseek_cursor_proxy"
+
+
+def _generate_request_id() -> str:
+    return f"dcp-{uuid.uuid4().hex[:24]}"
+
+
 _shutdown_requested = threading.Event()
 
 
@@ -49,6 +57,19 @@ def _handle_shutdown_signal(signum, frame):
 
 class RequestBodyTooLarge(ValueError):
     pass
+
+
+def _error_body(
+    message: str,
+    error_type: str,
+    code: str | None = None,
+) -> dict[str, Any]:
+    err: dict[str, Any] = {"message": str(message)}
+    err["type"] = error_type
+    if code:
+        err["code"] = code
+    err["param"] = None
+    return {"error": err}
 
 
 @dataclass
@@ -121,6 +142,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         return
 
     def do_OPTIONS(self) -> None:
+        self._request_id = _generate_request_id()
         request_path = urlparse(self.path).path
         if self.config.verbose:
             LOG.info(
@@ -131,6 +153,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         self._send_response_headers(204, [], "sending CORS preflight response")
 
     def do_GET(self) -> None:
+        self._request_id = _generate_request_id()
         request_path = urlparse(self.path).path
         if self.config.verbose:
             LOG.info("incoming GET %s from %s", request_path, self.client_address[0])
@@ -140,9 +163,13 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         if request_path in {"/models", "/v1/models"}:
             self._send_models()
             return
-        self._send_json(404, {"error": {"message": "Not found"}})
+        self._send_json(
+            404,
+            _error_body("Not found", "invalid_request_error", "endpoint_not_found"),
+        )
 
     def do_POST(self) -> None:
+        self._request_id = _generate_request_id()
         self.server.request_count += 1  # type: ignore[attr-defined]
         if self.server.request_count % 500 == 0:  # type: ignore[attr-defined]
             LOG.info(
@@ -165,7 +192,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self._record_request_body_for_trace(trace)
             self._send_json(
                 404,
-                {"error": {"message": "Only /v1/chat/completions is supported"}},
+                _error_body(
+                    "Only /v1/chat/completions is supported",
+                    "invalid_request_error",
+                    "endpoint_not_found",
+                ),
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=404)
@@ -179,7 +210,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self._record_request_body_for_trace(trace)
             self._send_json(
                 401,
-                {"error": {"message": "Missing Authorization bearer token"}},
+                _error_body(
+                    "Missing Authorization bearer token",
+                    "authentication_error",
+                    "invalid_api_key",
+                ),
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=401)
@@ -191,14 +226,22 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             LOG.warning(
                 "rejected request path=%s status=413 reason=%s", request_path, exc
             )
-            self._send_json(413, {"error": {"message": str(exc)}}, trace=trace)
+            self._send_json(
+                413,
+                _error_body(str(exc), "invalid_request_error", "request_too_large"),
+                trace=trace,
+            )
             self._finish_trace(trace, "rejected", http_status=413, reason=str(exc))
             return
         except ValueError as exc:
             LOG.warning(
                 "rejected request path=%s status=400 reason=%s", request_path, exc
             )
-            self._send_json(400, {"error": {"message": str(exc)}}, trace=trace)
+            self._send_json(
+                400,
+                _error_body(str(exc), "invalid_request_error", "invalid_request_error"),
+                trace=trace,
+            )
             self._finish_trace(trace, "rejected", http_status=400, reason=str(exc))
             return
 
@@ -248,6 +291,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                         ),
                         "type": "missing_reasoning_content",
                         "code": "missing_reasoning_content",
+                        "param": None,
                         "missing_reasoning_messages": prepared.missing_reasoning_messages,
                     }
                 },
@@ -318,11 +362,15 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 exc.reason,
             )
             self._send_json(
-                502,
-                {"error": {"message": f"Upstream request failed: {exc.reason}"}},
+                500,
+                _error_body(
+                    f"Upstream request failed: {exc.reason}",
+                    "server_error",
+                    "upstream_failure",
+                ),
                 trace=trace,
             )
-            self._finish_trace(trace, "upstream_error", http_status=502)
+            self._finish_trace(trace, "upstream_error", http_status=500)
             return
         except urllib3.exceptions.TimeoutError as exc:
             spinner.stop()
@@ -331,11 +379,15 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 elapsed_ms(started),
             )
             self._send_json(
-                502,
-                {"error": {"message": "Upstream request timed out"}},
+                504,
+                _error_body(
+                    "Upstream request timed out",
+                    "server_error",
+                    "upstream_timeout",
+                ),
                 trace=trace,
             )
-            self._finish_trace(trace, "upstream_error", http_status=502)
+            self._finish_trace(trace, "upstream_error", http_status=504)
             return
         except urllib3.exceptions.HTTPError as exc:
             spinner.stop()
@@ -345,11 +397,15 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 exc,
             )
             self._send_json(
-                502,
-                {"error": {"message": f"Upstream request failed: {exc}"}},
+                500,
+                _error_body(
+                    f"Upstream request failed: {exc}",
+                    "server_error",
+                    "upstream_failure",
+                ),
                 trace=trace,
             )
-            self._finish_trace(trace, "upstream_error", http_status=502)
+            self._finish_trace(trace, "upstream_error", http_status=500)
             return
         except Exception:
             spinner.stop()
@@ -514,6 +570,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             for name, value in headers:
                 self.send_header(name, value)
+            if hasattr(self, '_request_id'):
+                self.send_header("x-request-id", self._request_id)
             self.end_headers()
         except (BrokenPipeError, ConnectionError) as exc:
             LOG.warning("client disconnected while %s: %s", disconnect_context, exc)
@@ -684,8 +742,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         except (OSError, http.client.IncompleteRead, socket.timeout, ValueError) as exc:
             LOG.warning("failed to read upstream response body: %s", exc)
             self._send_json(
-                502,
-                {"error": {"message": f"Failed to read upstream response body: {exc}"}},
+                500,
+                _error_body(
+                    f"Failed to read upstream response body: {exc}",
+                    "server_error",
+                    "response_read_failed",
+                ),
                 trace=trace,
             )
             return ProxyResponseResult(False, None)
@@ -950,6 +1012,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 display_adapter.rewrite_chunk(chunk)
             if "model" in chunk:
                 chunk["model"] = original_model
+            if "system_fingerprint" not in chunk:
+                chunk["system_fingerprint"] = SYSTEM_FINGERPRINT
             ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
             return (
                 (
@@ -1333,6 +1397,7 @@ def recovery_notice_chunk(
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model,
+        "system_fingerprint": SYSTEM_FINGERPRINT,
         "choices": [
             {
                 "index": 0,
