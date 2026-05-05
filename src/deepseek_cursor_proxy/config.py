@@ -35,6 +35,7 @@ DEFAULT_CORS = False
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
+DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
 
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml."
@@ -211,6 +212,7 @@ class ProxyConfig:
     cors: bool = DEFAULT_CORS
     verbose: bool = DEFAULT_VERBOSE
     ngrok: bool = DEFAULT_NGROK
+    ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL
     trace_dir: Path | None = None
 
     @classmethod
@@ -294,6 +296,10 @@ class ProxyConfig:
             ngrok=as_bool(
                 setting_value(settings, "ngrok"),
                 DEFAULT_NGROK,
+            ),
+            ngrok_health_check_interval=as_float(
+                setting_value(settings, "ngrok_health_check_interval"),
+                DEFAULT_NGROK_HEALTH_CHECK_INTERVAL,
             ),
             max_pool_connections=as_int(
                 setting_value(settings, "max_pool_connections"),

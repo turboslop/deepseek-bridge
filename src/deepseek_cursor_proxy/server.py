@@ -8,8 +8,10 @@ from http.client import HTTPException
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import signal
 import socket
 import sys
+import threading
 import time
 from typing import Any
 import urllib3
@@ -29,12 +31,20 @@ from .logging import (
 from .reasoning_store import ReasoningStore, conversation_scope
 from .streaming import CursorReasoningDisplayAdapter, StreamAccumulator
 from .trace import TraceRequest, TraceWriter
-from .tunnel import NgrokTunnel, local_tunnel_target
+from .tunnel import HealthCheckConfig, NgrokTunnel, local_tunnel_target
 from .transform import (
     RECOVERY_NOTICE_CONTENT,
     prepare_upstream_request,
     rewrite_response_body,
 )
+
+
+_shutdown_requested = threading.Event()
+
+
+def _handle_shutdown_signal(signum, frame):
+    LOG.info("received signal %s, initiating graceful shutdown", signum)
+    _shutdown_requested.set()
 
 
 class RequestBodyTooLarge(ValueError):
@@ -1006,6 +1016,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Start an ngrok tunnel and print the Cursor base URL",
     )
     parser.add_argument(
+        "--ngrok-health-check-interval",
+        type=float,
+        default=None,
+        help=(
+            "Ngrok health check interval in seconds (0 to disable), "
+            "default from config or 30.0"
+        ),
+    )
+    parser.add_argument(
         "--verbose",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1388,6 +1407,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_content_path"] = args.reasoning_content_path
     if args.ngrok is not None:
         updates["ngrok"] = args.ngrok
+    if args.ngrok_health_check_interval is not None:
+        updates["ngrok_health_check_interval"] = args.ngrok_health_check_interval
     if args.verbose is not None:
         updates["verbose"] = args.verbose
     if args.trace_dir is not None:
@@ -1463,6 +1484,11 @@ def main(argv: list[str] | None = None) -> int:
             server.server_close()
             store.close()
             return 2
+        if config.ngrok_health_check_interval > 0:
+            tunnel.health_check = HealthCheckConfig(
+                check_interval=config.ngrok_health_check_interval,
+            )
+            tunnel.start_health_check()
     local_base_url = f"http://{config.host}:{config.port}/v1"
     api_base_url = (
         f"{public_url.rstrip('/')}/v1" if public_url is not None else local_base_url
@@ -1496,15 +1522,28 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("upstream_url: %s/chat/completions", config.upstream_base_url)
     LOG.info("local_base_url: %s", local_base_url)
     LOG.info("api_base_url: %s", api_base_url)
+    signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     try:
-        server.serve_forever()
+        signal.signal(signal.SIGINT, _handle_shutdown_signal)
+    except ValueError:
+        pass  # SIGINT already handled (non-main thread)
+    try:
+        server.timeout = 0.5
+        while not _shutdown_requested.is_set():
+            server.handle_request()
     except KeyboardInterrupt:
-        LOG.info("shutting down")
+        LOG.info("received SIGINT, initiating graceful shutdown")
+        _shutdown_requested.set()
     finally:
+        if isinstance(server, BoundedThreadPoolHTTPServer):
+            LOG.info("graceful shutdown: draining active requests...")
+            server.executor.shutdown(wait=True, cancel_futures=False)
         if tunnel is not None:
             tunnel.stop()
-        server.server_close()
+        store.prune()
         store.close()
+        server.server_close()
+        LOG.info("graceful shutdown: complete")
     return 0
 
 
