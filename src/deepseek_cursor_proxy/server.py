@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, replace
 import gzip
+import http.client
 from http.client import HTTPException
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import socket
 import sys
 import time
 from typing import Any
@@ -50,6 +52,7 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     config: ProxyConfig
     reasoning_store: ReasoningStore
     trace_writer: TraceWriter | None
+    request_count: int = 0
 
 
 class DeepSeekProxyHandler(BaseHTTPRequestHandler):
@@ -93,6 +96,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"error": {"message": "Not found"}})
 
     def do_POST(self) -> None:
+        self.server.request_count += 1  # type: ignore[attr-defined]
+        if self.server.request_count % 500 == 0:  # type: ignore[attr-defined]
+            LOG.info(
+                "heartbeat: processed %s requests",
+                self.server.request_count,  # type: ignore[attr-defined]
+            )
         started = time.monotonic()
         request_path = urlparse(self.path).path
         trace = self._start_trace(request_path)
@@ -539,7 +548,13 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         *,
         trace: TraceRequest | None = None,
     ) -> None:
-        body = read_response_body(exc)
+        try:
+            body = read_response_body(exc)
+        except (OSError, http.client.IncompleteRead, socket.timeout, ValueError) as exc2:
+            LOG.warning("failed to read upstream error body: %s", exc2)
+            body = json.dumps(
+                {"error": {"message": "Upstream error, body unreadable"}}
+            ).encode("utf-8")
         if self.config.verbose:
             log_bytes("upstream error body", body)
         headers = {
@@ -576,7 +591,16 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         record_response_messages: list[dict[str, Any]] | None = None,
         record_response_contexts: list[tuple[str, list[dict[str, Any]]]] | None = None,
     ) -> ProxyResponseResult:
-        body = read_response_body(response)
+        try:
+            body = read_response_body(response)
+        except (OSError, http.client.IncompleteRead, socket.timeout, ValueError) as exc:
+            LOG.warning("failed to read upstream response body: %s", exc)
+            self._send_json(
+                502,
+                {"error": {"message": f"Failed to read upstream response body: {exc}"}},
+                trace=trace,
+            )
+            return ProxyResponseResult(False, None)
         upstream_body = body
         usage = usage_from_body(upstream_body)
         try:
@@ -1210,13 +1234,21 @@ def summarize_chat_payload(payload: dict[str, Any]) -> str:
 
 
 def read_response_body(response: Any) -> bytes:
-    body = response.read()
+    try:
+        body = response.read()
+    except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
+        raise ValueError(f"failed to read upstream response body: {exc}") from exc
     encoding = (response.headers.get("Content-Encoding") or "").lower()
     if encoding == "gzip":
-        return gzip.decompress(body)
+        try:
+            return gzip.decompress(body)
+        except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
+            raise ValueError(f"failed to decompress upstream response body: {exc}") from exc
     if encoding == "deflate":
         try:
             return zlib.decompress(body)
+        except (OSError, http.client.IncompleteRead, socket.timeout) as exc:
+            raise ValueError(f"failed to decompress upstream response body: {exc}") from exc
         except zlib.error:
             return zlib.decompress(body, -zlib.MAX_WBITS)
     return body

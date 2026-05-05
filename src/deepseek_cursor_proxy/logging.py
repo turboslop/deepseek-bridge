@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging as stdlib_logging
 import sys
 import threading
+import types
 from typing import Any
 
 
@@ -37,6 +38,21 @@ def configure_logging(*, verbose: bool) -> None:
         handlers=[handler],
         force=True,
     )
+
+    def _log_unhandled_exception(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
+        LOG.critical(
+            "unhandled exception",
+            exc_info=(exc_type, exc_value, exc_traceback),
+        )
+
+    import sys as _sys
+
+    _sys.excepthook = _log_unhandled_exception
+    LOG.info("error logging: enabled (warnings visible without --verbose)")
 
 
 class TerminalSpinner:
