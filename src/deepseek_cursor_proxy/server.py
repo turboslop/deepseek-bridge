@@ -479,7 +479,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             raise RequestBodyTooLarge(
                 f"Request body is too large; limit is {self.config.max_request_body_bytes} bytes"
             )
-        raw_body = self.rfile.read(length)
+        try:
+            raw_body = self.rfile.read(length)
+        except (ConnectionError, OSError) as exc:
+            LOG.warning("client disconnected while reading request body: %s", exc)
+            raise ValueError("Client disconnected") from exc
         if not raw_body:
             raise ValueError("Request body is empty")
         try:
