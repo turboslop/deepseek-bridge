@@ -36,6 +36,7 @@ DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
+DEFAULT_LOG_DIR: str | None = None
 
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml."
@@ -214,6 +215,7 @@ class ProxyConfig:
     ngrok: bool = DEFAULT_NGROK
     ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL
     trace_dir: Path | None = None
+    log_dir: Path | None = None
 
     @classmethod
     def from_file(
@@ -312,5 +314,8 @@ class ProxyConfig:
             max_thread_pool=as_int(
                 setting_value(settings, "max_thread_pool"),
                 DEFAULT_MAX_THREAD_POOL,
+            ),
+            log_dir=(
+                Path(v) if (v := setting_value(settings, "log_dir")) is not MISSING and v else None
             ),
         )

@@ -1266,6 +1266,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Write full structured request traces to this directory",
     )
     parser.add_argument(
+        "--log-dir",
+        type=Path,
+        help="Write persistent timestamped log files to this directory (auto-purges old logs, keeps 5)",
+    )
+    parser.add_argument(
         "--display-reasoning",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1673,7 +1678,7 @@ def main(argv: list[str] | None = None) -> int:
     if updates:
         config = replace(config, **updates)
 
-    configure_logging(verbose=config.verbose)
+    configure_logging(verbose=config.verbose, log_dir=args.log_dir or config.log_dir)
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,

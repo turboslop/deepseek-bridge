@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 import logging as stdlib_logging
+from pathlib import Path
 import sys
 import threading
 import types
@@ -30,14 +32,47 @@ class ConsoleLogFormatter(stdlib_logging.Formatter):
         return self._warning_formatter.format(record)
 
 
-def configure_logging(*, verbose: bool) -> None:
-    handler = stdlib_logging.StreamHandler()
-    handler.setFormatter(ConsoleLogFormatter(verbose=verbose))
+def _purge_old_logs(log_dir: Path, keep: int = 5) -> None:
+    """Remove old log files, keeping the most recent *keep* files."""
+    log_files = sorted(
+        log_dir.glob("proxy-*.log"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for stale in log_files[keep:]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def configure_logging(
+    *,
+    verbose: bool,
+    log_dir: str | Path | None = None,
+) -> None:
+    handlers: list[stdlib_logging.Handler] = []
+    console_handler = stdlib_logging.StreamHandler()
+    console_handler.setFormatter(ConsoleLogFormatter(verbose=verbose))
+    handlers.append(console_handler)
+    if log_dir:
+        log_path = Path(log_dir).expanduser()
+        log_path.mkdir(parents=True, exist_ok=True)
+        _purge_old_logs(log_path, keep=5)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_file = log_path / f"proxy-{timestamp}.log"
+        file_handler = stdlib_logging.FileHandler(str(log_file), encoding="utf-8")
+        file_handler.setFormatter(
+            stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
+        )
+        handlers.append(file_handler)
     stdlib_logging.basicConfig(
         level=stdlib_logging.INFO,
-        handlers=[handler],
+        handlers=handlers,
         force=True,
     )
+    if log_dir:
+        LOG.info("log file: %s", log_file)
 
     def _log_unhandled_exception(
         exc_type: type[BaseException],
