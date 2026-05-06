@@ -63,9 +63,9 @@ class TuiApp(App[None]):
 
     CSS = """
     #top-left { height: auto; }
-    #bottom-left { height: 1fr; border-top: dashed $primary; }
-    #left-col { width: 2fr; }
-    #right-panel { width: 1fr; padding: 1 2 1 1; }
+    #bottom-left { height: 1fr; }
+    #left-col { width: 2fr; padding: 1 1 1 2; }
+    #right-panel { width: 1fr; padding: 1 2; }
     """
 
     BINDINGS = [
@@ -75,6 +75,7 @@ class TuiApp(App[None]):
         Binding("right", "cfg_right", "Cycle right", show=False),
         Binding("enter", "cfg_edit", "Edit", show=False),
         Binding("ctrl+s", "save_config", "Save"),
+        Binding("p", "toggle_pause", "Pause"),
     ]
 
     _cfg_cursor: int = 0
@@ -165,6 +166,8 @@ class TuiApp(App[None]):
             f"  threads   {active}/{max_workers}   queue {queue}\n"
             f"  db        {db_size}   {db_rows} rows"
         )
+        if getattr(self.server, "paused", False):
+            stats += "\n  [reverse bold]  PAUSED  [/]"
         self.query_one("#stats", Static).update(stats)
 
         if config:
@@ -173,7 +176,7 @@ class TuiApp(App[None]):
             local = f"http://{host}:{port}/v1"
             ollama = f"http://{host}:{port}"
             public = getattr(server, "public_url", None)
-            urls = f"  local   {local}"
+            urls = f"\n  local   {local}"
             if public:
                 urls += f"\n  ngrok   {public.rstrip('/')}/v1"
             urls += f"\n  ollama  {ollama}"
@@ -201,10 +204,8 @@ class TuiApp(App[None]):
                 else:
                     val = str(raw)
 
-                marker = "[reverse] >[/] " if i == self._cfg_cursor else "   "
-
                 if i == self._editing:
-                    display = f"{marker}{label}: [bold underline]{self._edit_buf}_[/]"
+                    display = f"  {label}: [bold underline]{self._edit_buf}_[/]"
                 elif choices:
                     try:
                         idx = choices.index(val)
@@ -213,9 +214,12 @@ class TuiApp(App[None]):
                     parts = []
                     for ci, cv in enumerate(choices):
                         parts.append(f"[reverse]{cv}[/]" if ci == idx else cv)
-                    display = f"{marker}{label}: {' '.join(parts)}"
+                    display = f"  {label}: {' '.join(parts)}"
                 else:
-                    display = f"{marker}{label}: {val}"
+                    display = f"  {label}: {val}"
+
+                if i == self._cfg_cursor:
+                    display = f"[reverse]{display}[/]"
 
                 lines.append(display)
 
@@ -295,6 +299,13 @@ class TuiApp(App[None]):
             self._editing = None
             self._edit_buf = ""
             self._refresh()
+
+    def action_toggle_pause(self) -> None:
+        if self.server is None:
+            return
+        self.server.paused = not getattr(self.server, "paused", False)
+        state = "paused" if self.server.paused else "resumed"
+        _add_log(f"proxy {state}")
 
     def _apply(self, attr: str, raw: str) -> None:
         config = self.server_config

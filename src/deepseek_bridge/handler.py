@@ -307,6 +307,22 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             for legacy_key in ("suffix", "best_of", "echo"):
                 payload.pop(legacy_key, None)
 
+        if getattr(self.server, "paused", False):
+            self._send_json(
+                503,
+                {
+                    "error": {
+                        "message": "Server paused",
+                        "type": "server_error",
+                        "code": "server_paused",
+                        "param": None,
+                    }
+                },
+                trace=trace,
+            )
+            self._finish_trace(trace, "rejected", http_status=503)
+            return
+
         if trace is not None:
             trace.record_cursor_body(payload)
 
