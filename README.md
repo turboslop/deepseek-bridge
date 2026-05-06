@@ -1,5 +1,5 @@
-<!-- <h1><img src="assets/logo.png" width="120" alt="deepseek-cursor-proxy logo" style="vertical-align: middle;">&nbsp;DeepSeek Cursor Proxy</h1> -->
-<h1 align="center"><img src="assets/logo.png" width="150" alt="deepseek-cursor-proxy logo"><br>DeepSeek Cursor Proxy</h1>
+<!-- <h1><img src="assets/logo.png" width="120" alt="deepseek-bridge logo" style="vertical-align: middle;">&nbsp;DeepSeek Cursor Proxy</h1> -->
+<h1 align="center"><img src="assets/logo.png" width="150" alt="deepseek-bridge logo"><br>DeepSeek Cursor Proxy</h1>
 
 A compatibility proxy that connects Cursor to DeepSeek thinking models (`deepseek-v4-pro` and `deepseek-v4-flash`) by properly handling the `reasoning_content` field for DeepSeek tool-call reasoning API requests.
 
@@ -38,7 +38,7 @@ This proxy can also help **other applications and coding agents** beyond Cursor 
 
 ## TUI Dashboard
 
-Starting with v0.2.0, `deepseek-cursor-proxy` opens a **Terminal UI dashboard** by default. The dashboard provides live monitoring and configuration in the terminal:
+Starting with v0.2.0, `deepseek-bridge` opens a **Terminal UI dashboard** by default. The dashboard provides live monitoring and configuration in the terminal:
 
 - **Dashboard tab** — Real-time request metrics, uptime, ngrok status, and pool utilization
 - **Config tab** — Edit proxy settings (model, network, storage) live without restarting
@@ -71,7 +71,7 @@ Provider returned error:
 
 Cursor blocks non-public API URLs such as `localhost`, so the proxy needs a public HTTPS URL. [ngrok](https://ngrok.com/) can expose the local proxy to Cursor without opening router ports. Alternatively, you may use [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/setup/). Create an ngrok account and visit [ngrok's dashboard](https://dashboard.ngrok.com). You will find the authtoken and public URL there.
 
-If you're using this proxy with another application that allows localhost API endpoints, you can skip this step entirely by setting `ngrok: false` in `~/.deepseek-cursor-proxy/config.yaml`, or by starting the proxy with `--no-ngrok`.
+If you're using this proxy with another application that allows localhost API endpoints, you can skip this step entirely by setting `ngrok: false` in `~/.deepseek-bridge/config.yaml`, or by starting the proxy with `--no-ngrok`.
 
 <img src="assets/ngrok_dashboard.png" width="600" alt="ngrok dashboard">
 
@@ -92,9 +92,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install and start
 # uv installs the program in .venv/ under the repo local folder
-git clone https://github.com/yxlao/deepseek-cursor-proxy.git
-cd deepseek-cursor-proxy
-uv run deepseek-cursor-proxy
+git clone https://github.com/yxlao/deepseek-bridge.git
+cd deepseek-bridge
+uv run deepseek-bridge
 ```
 
 **Run with Conda**
@@ -106,35 +106,35 @@ uv run deepseek-cursor-proxy
 # Install
 conda create -n dcp python=3.10 -y
 conda activate dcp
-git clone https://github.com/yxlao/deepseek-cursor-proxy.git
-cd deepseek-cursor-proxy
+git clone https://github.com/yxlao/deepseek-bridge.git
+cd deepseek-bridge
 pip install -e .
 
 # Start
-deepseek-cursor-proxy
+deepseek-bridge
 ```
 
-When ngrok is enabled, `deepseek-cursor-proxy` will print the ngrok public URL on start. If it differs from the one in Cursor, update it in Cursor's Base URL field.
+When ngrok is enabled, `deepseek-bridge` will print the ngrok public URL on start. If it differs from the one in Cursor, update it in Cursor's Base URL field.
 
-On the first run, `deepseek-cursor-proxy` will create:
+On the first run, `deepseek-bridge` will create:
 
-- `~/.deepseek-cursor-proxy/config.yaml`: the configuration file
-- `~/.deepseek-cursor-proxy/reasoning_content.sqlite3`: the reasoning content cache
+- `~/.deepseek-bridge/config.yaml`: the configuration file
+- `~/.deepseek-bridge/reasoning_content.sqlite3`: the reasoning content cache
 
-Persistent settings live in `~/.deepseek-cursor-proxy/config.yaml`. You can also override the config with command-line flags, for example:
+Persistent settings live in `~/.deepseek-bridge/config.yaml`. You can also override the config with command-line flags, for example:
 
 ```bash
 # Hide thinking tokens displaying in Cursor UI
-deepseek-cursor-proxy --no-display-reasoning
+deepseek-bridge --no-display-reasoning
 
 # Show full incoming and outgoing requests
-deepseek-cursor-proxy --verbose
+deepseek-bridge --verbose
 
 # Run without ngrok (run on localhost directly)
-deepseek-cursor-proxy --no-ngrok
+deepseek-bridge --no-ngrok
 
 # Use a different local port
-deepseek-cursor-proxy --port 9000
+deepseek-bridge --port 9000
 ```
 
 ### Step 3: Add Cursor Custom Model
@@ -237,37 +237,37 @@ uv run pre-commit run --all-files
 Run with verbose output:
 
 ```bash
-deepseek-cursor-proxy --verbose
+deepseek-bridge --verbose
 ```
 
 Run without ngrok for local curl testing:
 
 ```bash
-deepseek-cursor-proxy --no-ngrok --port 9000 --verbose
+deepseek-bridge --no-ngrok --port 9000 --verbose
 ```
 
 Capture full structured request traces for debugging:
 
 ```bash
-deepseek-cursor-proxy --verbose --trace-dir ./trace-dumps
+deepseek-bridge --verbose --trace-dir ./trace-dumps
 ```
 
 Use another config file:
 
 ```bash
-deepseek-cursor-proxy --config ./dev.config.yaml
+deepseek-bridge --config ./dev.config.yaml
 ```
 
 Clear the local reasoning cache:
 
 ```bash
-deepseek-cursor-proxy --clear-reasoning-cache
+deepseek-bridge --clear-reasoning-cache
 ```
 
 Persist logs to a directory for debugging:
 
 ```bash
-deepseek-cursor-proxy --log-dir ~/proxy-logs
+deepseek-bridge --log-dir ~/proxy-logs
 # Each launch creates a timestamped file, auto-purges old logs (keeps last 5)
 cat ~/proxy-logs/proxy-*.log | grep -E "WARNING|ERROR|disconnected"
 ```
@@ -275,7 +275,7 @@ cat ~/proxy-logs/proxy-*.log | grep -E "WARNING|ERROR|disconnected"
 Full CLI reference:
 
 ```bash
-deepseek-cursor-proxy --help
+deepseek-bridge --help
 ```
 
 Key flags:

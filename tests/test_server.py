@@ -12,7 +12,6 @@ from __future__ import annotations
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
-import gzip
 import json
 import logging
 from pathlib import Path
@@ -22,28 +21,25 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-import zlib
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.logging import (
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.logging import (
     ConsoleLogFormatter,
     TerminalSpinner,
     configure_logging,
 )
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import (
+from deepseek_bridge.reasoning_store import ReasoningStore
+from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
     DeepSeekProxyServer,
     UpstreamPool,
     build_arg_parser,
     read_response_body,
-    summarize_chat_payload,
     _truncate_message_content,
 )
-
 
 # ---------------------------------------------------------------------------
 # Stubs for fast in-process tests of internal handler methods
@@ -132,7 +128,7 @@ class CliAndHelperTests(unittest.TestCase):
                 "--no-ngrok",
                 "--no-verbose",
                 "--no-display-reasoning",
-                "--no-collasible-resoning",
+                "--no-collapsible-reasoning",
                 "--cors",
                 "--trace-dir",
                 "/tmp/dcp-traces",
@@ -148,7 +144,7 @@ class CliAndHelperTests(unittest.TestCase):
     def test_default_console_logging_hides_info_prefix_and_timestamp(self) -> None:
         formatter = ConsoleLogFormatter(verbose=False)
         info_record = logging.LogRecord(
-            "deepseek_cursor_proxy",
+            "deepseek_bridge",
             logging.INFO,
             __file__,
             1,
@@ -157,7 +153,7 @@ class CliAndHelperTests(unittest.TestCase):
             None,
         )
         warning_record = logging.LogRecord(
-            "deepseek_cursor_proxy",
+            "deepseek_bridge",
             logging.WARNING,
             __file__,
             1,
@@ -177,7 +173,7 @@ class CliAndHelperTests(unittest.TestCase):
     def test_verbose_console_logging_shows_timestamp_and_level(self) -> None:
         formatter = ConsoleLogFormatter(verbose=True)
         record = logging.LogRecord(
-            "deepseek_cursor_proxy",
+            "deepseek_bridge",
             logging.INFO,
             __file__,
             1,
@@ -242,12 +238,8 @@ class CliAndHelperTests(unittest.TestCase):
     def test_version_flag_exists(self) -> None:
         """--version flag is registered."""
         parser = build_arg_parser()
-        version_actions = [
-            a for a in parser._actions if hasattr(a, "version")
-        ]
-        self.assertTrue(
-            len(version_actions) > 0, "No --version flag found"
-        )
+        version_actions = [a for a in parser._actions if hasattr(a, "version")]
+        self.assertTrue(len(version_actions) > 0, "No --version flag found")
 
     def test_headless_flag_defaults_false(self) -> None:
         """--headless flag defaults to False."""
@@ -273,9 +265,7 @@ class CliAndHelperTests(unittest.TestCase):
     def test_truncate_message_content_multimodal(self) -> None:
         """Content truncation handles multimodal arrays."""
         payload = {
-            "messages": [
-                {"role": "user", "content": [{"type": "text", "text": "hi"}]}
-            ]
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
         }
         result = _truncate_message_content(payload, max_len=50)
         content = result["messages"][0]["content"]
@@ -318,7 +308,7 @@ class HandlerStubTests(unittest.TestCase):
             }
         ).encode("utf-8")
         try:
-            with self.assertLogs("deepseek_cursor_proxy", level="WARNING") as captured:
+            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
                 result = handler._proxy_regular_response(
                     _FakeResponse(body),
                     "deepseek-v4-pro",
@@ -344,7 +334,7 @@ class HandlerStubTests(unittest.TestCase):
             ]
         )
         try:
-            with self.assertLogs("deepseek_cursor_proxy", level="WARNING") as captured:
+            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
                 result = handler._proxy_streaming_response(
                     response,
                     "deepseek-v4-pro",
@@ -360,7 +350,7 @@ class HandlerStubTests(unittest.TestCase):
     def test_streaming_response_handles_upstream_read_failure(self) -> None:
         handler = _make_handler_stub(BytesIO())
         try:
-            with self.assertLogs("deepseek_cursor_proxy", level="WARNING") as captured:
+            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
                 result = handler._proxy_streaming_response(
                     _FailingStreamingResponse(),
                     "deepseek-v4-pro",
@@ -598,7 +588,7 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("data: [DONE]", body)
 
     def test_normal_logging_summarizes_without_bodies_or_keys(self) -> None:
-        with self.assertLogs("deepseek_cursor_proxy", level="INFO") as captured:
+        with self.assertLogs("deepseek_bridge", level="INFO") as captured:
             status, _ = _post(
                 f"{self.proxy.url}/v1/chat/completions",
                 self._request(),
@@ -623,7 +613,7 @@ class HttpBoundaryTests(unittest.TestCase):
 
     def test_verbose_logging_includes_bodies_but_redacts_api_key(self) -> None:
         self.proxy.server.config = replace(self.proxy.server.config, verbose=True)
-        with self.assertLogs("deepseek_cursor_proxy", level="INFO") as captured:
+        with self.assertLogs("deepseek_bridge", level="INFO") as captured:
             _post(
                 f"{self.proxy.url}/v1/chat/completions",
                 self._request(),

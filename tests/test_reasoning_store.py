@@ -7,8 +7,8 @@ import stat
 from tempfile import TemporaryDirectory
 import unittest
 
-from deepseek_cursor_proxy.config import _auto_cache_max_rows
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore, conversation_scope
+from deepseek_bridge.config import _auto_cache_max_rows
+from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
 
 
 class ReasoningStoreTests(unittest.TestCase):
@@ -77,9 +77,7 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(p)
             c = sqlite3.connect(p)
             av = c.execute("PRAGMA auto_vacuum").fetchone()[0]
-            self.assertEqual(
-                av, 2, f"auto_vacuum should be 2 (INCREMENTAL), got {av}"
-            )
+            self.assertEqual(av, 2, f"auto_vacuum should be 2 (INCREMENTAL), got {av}")
             s.close()
             c.close()
 

@@ -8,10 +8,13 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer, UpstreamPool
-
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.reasoning_store import ReasoningStore
+from deepseek_bridge.server import (
+    DeepSeekProxyHandler,
+    DeepSeekProxyServer,
+    UpstreamPool,
+)
 
 LIVE_DEEPSEEK = os.getenv("RUN_LIVE_DEEPSEEK_TESTS") == "1" and bool(
     os.getenv("LIVE_DEEPSEEK_KEY")

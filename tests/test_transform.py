@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import unittest
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.reasoning_store import (
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.reasoning_store import (
     ReasoningStore,
     conversation_scope,
     message_signature,
 )
-from deepseek_cursor_proxy.transform import (
+from deepseek_bridge.transform import (
     RECOVERY_NOTICE_CONTENT,
     RECOVERY_NOTICE_TEXT,
     extract_text_content,
@@ -137,7 +137,7 @@ class RequestPreparationTests(unittest.TestCase):
     def test_standard_openai_fields_are_forwarded_without_warning(self) -> None:
         # Cursor and the OpenAI SDK send these on every request; forward them
         # so DeepSeek can use what it understands and ignore the rest.
-        with self.assertNoLogs("deepseek_cursor_proxy", level="WARNING"):
+        with self.assertNoLogs("deepseek_bridge", level="WARNING"):
             prepared = prepare_upstream_request(
                 {
                     "model": "deepseek-v4-pro",
@@ -156,7 +156,7 @@ class RequestPreparationTests(unittest.TestCase):
         self.assertEqual(prepared.payload["logit_bias"], {"50256": -100})
 
     def test_unknown_request_fields_are_dropped_with_warning(self) -> None:
-        with self.assertLogs("deepseek_cursor_proxy", level="WARNING") as captured:
+        with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
             prepared = prepare_upstream_request(
                 {
                     "model": "deepseek-v4-pro",
@@ -174,7 +174,7 @@ class RequestPreparationTests(unittest.TestCase):
         self.assertIn("service_tier", log)
 
     def test_non_deepseek_model_is_rewritten_with_warning(self) -> None:
-        with self.assertLogs("deepseek_cursor_proxy", level="WARNING") as captured:
+        with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
             prepared = prepare_upstream_request(
                 {
                     "model": "gpt-4",

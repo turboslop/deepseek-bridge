@@ -22,10 +22,13 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import DeepSeekProxyHandler, DeepSeekProxyServer, UpstreamPool
-
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.reasoning_store import ReasoningStore
+from deepseek_bridge.server import (
+    DeepSeekProxyHandler,
+    DeepSeekProxyServer,
+    UpstreamPool,
+)
 
 # Canonical fake-DeepSeek reasoning/answer text reused across tests.
 THINKING_1_1 = "Thinking 1.1 - need to look up the date."
@@ -584,7 +587,7 @@ class RecoveryTests(_StrictUpstreamCase):
             sent["messages"][-1]["content"], "Thanks. What about Saturday?"
         )
         self.assertIn(
-            "[deepseek-cursor-proxy] Refreshed reasoning",
+            "[deepseek-bridge] Refreshed reasoning",
             response["choices"][0]["message"]["content"],
         )
 
@@ -657,7 +660,7 @@ class RecoveryTests(_StrictUpstreamCase):
         for message in sent["messages"]:
             if message.get("role") != "assistant":
                 continue
-            self.assertNotIn("deepseek-cursor-proxy", message.get("content", ""))
+            self.assertNotIn("deepseek-bridge", message.get("content", ""))
 
     def test_recover_mode_does_not_short_circuit_with_409(self) -> None:
         """In `recover` mode, a payload with no user message leaves the

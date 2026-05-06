@@ -1,0 +1,86 @@
+{
+  "active_plan": "/home/breixopd14/Downloads/deepseek-cursor-proxy/.sisyphus/plans/deepseek-bridge-overhaul.md",
+  "started_at": "2026-05-06T16:53:01.883Z",
+  "session_ids": [
+    "ses_201e048b5ffexLdpmgo4n7illW"
+  ],
+  "session_origins": {
+    "ses_201e048b5ffexLdpmgo4n7illW": "direct"
+  },
+  "plan_name": "deepseek-bridge-overhaul",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Rename project: pyproject.toml, package dir, CLI, config dir",
+      "session_id": "ses_201c815bbffePtkCB4bDTK6Ozj",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-06T16:59:30.443Z"
+    },
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "Update README and all documentation",
+      "session_id": "ses_201c30f3fffery16AYtFpZxQRn",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-05-06T17:05:02.341Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Add Responses API → Chat Completions converter",
+      "session_id": "ses_201ba2c8bffenqPYRwnGQlB64v",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-06T17:14:04.813Z"
+    },
+    "todo:11": {
+      "task_key": "todo:11",
+      "task_label": "11",
+      "task_title": "Integrate Responses API converter into proxy handler",
+      "session_id": "ses_201b5a303ffea004yKZDxrEasw",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-06T17:18:13.620Z"
+    },
+    "todo:12": {
+      "task_key": "todo:12",
+      "task_label": "12",
+      "task_title": "Split server.py into handler.py, cli.py, helpers.py",
+      "session_id": "ses_201b28c16ffek7ExdoUF4gtBIr",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-06T17:27:33.363Z"
+    },
+    "todo:13": {
+      "task_key": "todo:13",
+      "task_label": "13",
+      "task_title": "Fix anti-pattern tests in test_resilience.py",
+      "session_id": "ses_201aad449ffezIcSZYVxbuf9La",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-06T17:31:52.534Z"
+    },
+    "todo:16": {
+      "task_key": "todo:16",
+      "task_label": "16",
+      "task_title": "Add mypy type checking to CI",
+      "session_id": "ses_201a20ca6ffeUO4Q0jZwVPaRGz",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-06T17:48:40.191Z"
+    },
+    "todo:20": {
+      "task_key": "todo:20",
+      "task_label": "20",
+      "task_title": "Update .gitignore for new project name",
+      "session_id": "ses_201921657ffebdwdTcYvD763Ic",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-06T17:59:37.353Z"
+    }
+  }
+}

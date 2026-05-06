@@ -1,0 +1,3 @@
+usage: deepseek-bridge [-h] [--model MODEL] [--thinking {enabled,disabled}]
+                       [--reasoning-effort {low,medium,high,max,xhigh}]
+                       [--display-reasoning | --no-display-reasoning]

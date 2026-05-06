@@ -140,9 +140,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
-.deepseek_cursor_reasoning.sqlite3*
-.deepseek-cursor/
-.deepseek-cursor-proxy/
+.deepseek-bridge/
 trace-dumps/
 reasoning_content.sqlite3*
 .venv

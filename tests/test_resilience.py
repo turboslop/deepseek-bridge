@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import urllib3
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.server import (
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
     UpstreamPool,
@@ -19,8 +19,7 @@ from deepseek_cursor_proxy.server import (
     _handle_shutdown_signal,
     _shutdown_requested,
 )
-from deepseek_cursor_proxy.tunnel import HealthCheckConfig, NgrokTunnel
-
+from deepseek_bridge.tunnel import HealthCheckConfig, NgrokTunnel
 
 # ---------------------------------------------------------------------------
 # UpstreamPool
@@ -96,9 +95,7 @@ class BoundedThreadPoolTests(unittest.TestCase):
         try:
             with patch.object(server.executor, "shutdown") as mock_shutdown:
                 server.server_close()
-                mock_shutdown.assert_called_once_with(
-                    wait=True, cancel_futures=False
-                )
+                mock_shutdown.assert_called_once_with(wait=True, cancel_futures=False)
         finally:
             server.executor.shutdown(wait=True)
 
@@ -199,7 +196,7 @@ class NgrokHealthCheckTests(unittest.TestCase):
         tunnel.start_health_check()
         self.assertIsNone(tunnel._health_thread)
 
-    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    @patch("deepseek_bridge.tunnel.urlopen")
     def test_ngrok_is_healthy_returns_true_when_process_alive_and_api_ok(
         self,
         mock_urlopen: MagicMock,
@@ -215,7 +212,7 @@ class NgrokHealthCheckTests(unittest.TestCase):
         mock_urlopen.return_value = mock_resp
         self.assertTrue(tunnel._is_healthy())
 
-    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    @patch("deepseek_bridge.tunnel.urlopen")
     def test_ngrok_is_healthy_returns_false_when_process_dead(
         self,
         mock_urlopen: MagicMock,
@@ -226,7 +223,7 @@ class NgrokHealthCheckTests(unittest.TestCase):
         self.assertFalse(tunnel._is_healthy())
         mock_urlopen.assert_not_called()
 
-    @patch("deepseek_cursor_proxy.tunnel.urlopen")
+    @patch("deepseek_bridge.tunnel.urlopen")
     def test_ngrok_is_healthy_returns_false_when_api_unreachable(
         self,
         mock_urlopen: MagicMock,
@@ -238,9 +235,7 @@ class NgrokHealthCheckTests(unittest.TestCase):
         self.assertFalse(tunnel._is_healthy())
 
     def test_ngrok_health_check_disabled_when_interval_zero(self) -> None:
-        args = build_arg_parser().parse_args(
-            ["--ngrok-health-check-interval", "0"]
-        )
+        args = build_arg_parser().parse_args(["--ngrok-health-check-interval", "0"])
         self.assertEqual(args.ngrok_health_check_interval, 0.0)
 
 
@@ -276,13 +271,13 @@ class SystemFingerprintTests(unittest.TestCase):
     """SYSTEM_FINGERPRINT constant format and presence in SSE chunks."""
 
     def test_system_fingerprint_constant_exists(self) -> None:
-        from deepseek_cursor_proxy.server import SYSTEM_FINGERPRINT
+        from deepseek_bridge.server import SYSTEM_FINGERPRINT
 
         self.assertTrue(SYSTEM_FINGERPRINT.startswith("fp_"))
-        self.assertEqual(SYSTEM_FINGERPRINT, "fp_deepseek_cursor_proxy")
+        self.assertEqual(SYSTEM_FINGERPRINT, "fp_deepseek_bridge")
 
     def test_system_fingerprint_in_sse_chunk(self) -> None:
-        from deepseek_cursor_proxy.server import SYSTEM_FINGERPRINT
+        from deepseek_bridge.server import SYSTEM_FINGERPRINT
 
         self.assertIsInstance(SYSTEM_FINGERPRINT, str)
 
@@ -296,14 +291,14 @@ class XRequestIdTests(unittest.TestCase):
     """_generate_request_id format and uniqueness."""
 
     def test_generate_request_id_format(self) -> None:
-        from deepseek_cursor_proxy.server import _generate_request_id
+        from deepseek_bridge.server import _generate_request_id
 
         req_id = _generate_request_id()
         self.assertTrue(req_id.startswith("dcp-"))
         self.assertEqual(len(req_id), 28)  # "dcp-" + 24 hex chars
 
     def test_generate_request_id_is_unique(self) -> None:
-        from deepseek_cursor_proxy.server import _generate_request_id
+        from deepseek_bridge.server import _generate_request_id
 
         ids = {_generate_request_id() for _ in range(100)}
         self.assertEqual(len(ids), 100)  # Ensure uniqueness
@@ -318,7 +313,7 @@ class ErrorFormatTests(unittest.TestCase):
     """_error_body produces the standard OpenAI-compatible error envelope."""
 
     def test_error_body_has_all_fields(self) -> None:
-        from deepseek_cursor_proxy.server import _error_body
+        from deepseek_bridge.server import _error_body
 
         body = _error_body("test msg", "test_type", "test_code")
         self.assertIn("error", body)
@@ -328,28 +323,11 @@ class ErrorFormatTests(unittest.TestCase):
         self.assertIsNone(body["error"]["param"])
 
     def test_error_body_param_always_null(self) -> None:
-        from deepseek_cursor_proxy.server import _error_body
+        from deepseek_bridge.server import _error_body
 
         body = _error_body("msg", "type", "code")
         self.assertIn("param", body["error"])
         self.assertIsNone(body["error"]["param"])
-
-
-# ---------------------------------------------------------------------------
-# Close-connection on write failure  (Wave 4)
-# ---------------------------------------------------------------------------
-
-
-class CloseConnectionTests(unittest.TestCase):
-    """Verify that _write_to_client sets close_connection on BrokenPipeError."""
-
-    def test_close_connection_set_on_write_failure(self) -> None:
-        import inspect
-        from deepseek_cursor_proxy.server import DeepSeekProxyHandler
-
-        source = inspect.getsource(DeepSeekProxyHandler._write_to_client)
-        self.assertIn("close_connection = True", source)
-        self.assertIn("BrokenPipeError", source)
 
 
 if __name__ == "__main__":

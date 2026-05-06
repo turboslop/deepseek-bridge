@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from deepseek_cursor_proxy.config import (
+from deepseek_bridge.config import (
     DEFAULT_COLLAPSIBLE_REASONING,
     DEFAULT_MISSING_REASONING_STRATEGY,
     DEFAULT_NGROK,
@@ -22,24 +22,24 @@ from deepseek_cursor_proxy.config import (
     default_reasoning_content_path,
 )
 
-from deepseek_cursor_proxy import __version__
+from deepseek_bridge import __version__
 
 
 class ConfigTests(unittest.TestCase):
     def test_default_paths_live_in_visible_user_app_directory(self) -> None:
         home = Path("/tmp/home")
 
-        with patch("deepseek_cursor_proxy.config.Path.home", return_value=home):
+        with patch("deepseek_bridge.config.Path.home", return_value=home):
             self.assertEqual(
-                default_config_path(), home / ".deepseek-cursor-proxy" / "config.yaml"
+                default_config_path(), home / ".deepseek-bridge" / "config.yaml"
             )
             self.assertEqual(
                 default_reasoning_content_path(),
-                home / ".deepseek-cursor-proxy" / "reasoning_content.sqlite3",
+                home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
             self.assertEqual(
                 ProxyConfig().reasoning_content_path,
-                home / ".deepseek-cursor-proxy" / "reasoning_content.sqlite3",
+                home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
             self.assertEqual(ProxyConfig().ngrok, DEFAULT_NGROK)
             self.assertEqual(
@@ -52,7 +52,7 @@ class ConfigTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             home = Path(temp_dir)
 
-            with patch("deepseek_cursor_proxy.config.Path.home", return_value=home):
+            with patch("deepseek_bridge.config.Path.home", return_value=home):
                 config = ProxyConfig.from_file(config_path=None)
                 config_path = default_config_path()
 
@@ -90,12 +90,10 @@ class ConfigTests(unittest.TestCase):
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
             )
             self.assertIn(
-                "# log_dir: null  # auto: ~/.deepseek-cursor-proxy/logs",
+                "# log_dir: null  # auto: ~/.deepseek-bridge/logs",
                 config_text,
             )
-            self.assertEqual(
-                config.log_dir, home / ".deepseek-cursor-proxy" / "logs"
-            )
+            self.assertEqual(config.log_dir, home / ".deepseek-bridge" / "logs")
 
     def test_missing_explicit_config_file_is_not_populated(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -130,7 +128,7 @@ class ConfigTests(unittest.TestCase):
                         "max_request_body_bytes: 1234",
                         "cors: true",
                         "display_reasoning: false",
-                        "collasible_reasoning: false",
+                        "collapsible_reasoning: false",
                         f"reasoning_content_path: {reasoning_content_path}",
                         "missing_reasoning_strategy: reject",
                         "reasoning_cache_max_age_seconds: 60",
@@ -267,9 +265,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_version_matches_pyproject_toml(self) -> None:
         parts = __version__.split(".")
-        self.assertEqual(
-            len(parts), 3, f"version should be X.Y.Z, got {__version__}"
-        )
+        self.assertEqual(len(parts), 3, f"version should be X.Y.Z, got {__version__}")
         self.assertNotEqual(
             __version__, "0.1.0", "version should have been updated from 0.1.0"
         )
@@ -288,7 +284,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_version_flag_in_arg_parser(self) -> None:
         """--version is available via argparse version action."""
-        from deepseek_cursor_proxy.server import build_arg_parser
+        from deepseek_bridge.server import build_arg_parser
 
         parser = build_arg_parser()
         try:

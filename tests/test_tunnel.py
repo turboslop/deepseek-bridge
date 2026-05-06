@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from deepseek_cursor_proxy.tunnel import (
+from deepseek_bridge.tunnel import (
     local_tunnel_target,
     ngrok_agent_urls,
     parse_ngrok_public_url,

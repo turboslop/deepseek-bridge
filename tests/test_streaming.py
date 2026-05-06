@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore, conversation_scope
-from deepseek_cursor_proxy.streaming import (
+from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
+from deepseek_bridge.streaming import (
     CursorReasoningDisplayAdapter,
     StreamAccumulator,
     fold_reasoning_into_content,

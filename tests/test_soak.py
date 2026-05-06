@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Soak test for deepseek-cursor-proxy connection resilience.
+"""Soak test for deepseek-bridge connection resilience.
 
 Spawns a fake upstream + real proxy, launches N concurrent workers that hammer
 the proxy with random streaming/non-streaming requests, randomly cancelling
@@ -25,14 +25,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from deepseek_cursor_proxy.config import ProxyConfig
-from deepseek_cursor_proxy.reasoning_store import ReasoningStore
-from deepseek_cursor_proxy.server import (
+from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.reasoning_store import ReasoningStore
+from deepseek_bridge.server import (
     DeepSeekProxyHandler,
     DeepSeekProxyServer,
     UpstreamPool,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake upstream — answers fast so the test exercises the proxy, not the wire
@@ -59,22 +58,16 @@ class _FakeUpstream(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             for i in range(3):
-                chunk = {
-                    "choices": [
-                        {"index": 0, "delta": {"content": f"chunk{i}"}}
-                    ]
-                }
-                self.wfile.write(
-                    f"data: {json.dumps(chunk)}\n\n".encode()
-                )
+                chunk = {"choices": [{"index": 0, "delta": {"content": f"chunk{i}"}}]}
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.flush()
                 time.sleep(0.01)  # tiny delay so clients can cancel mid-stream
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
         else:
-            body = json.dumps(
-                {"choices": [{"message": {"content": "ok"}}]}
-            ).encode("utf-8")
+            body = json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode(
+                "utf-8"
+            )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -126,8 +119,8 @@ class Stats:
         self.total = 0
         self.completed = 0  # fully read by worker
         self.cancelled = 0  # worker closed early
-        self.errors = 0     # proxy returned error / unreachable / timeout
-        self.crashes = 0    # unhandled exception in worker
+        self.errors = 0  # proxy returned error / unreachable / timeout
+        self.crashes = 0  # unhandled exception in worker
 
     def snapshot(self) -> dict[str, int]:
         with self.lock:
@@ -273,7 +266,9 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Start services
     # ------------------------------------------------------------------
-    print(f"=== soak test: duration={args.duration}s  concurrency={args.concurrency} ===")
+    print(
+        f"=== soak test: duration={args.duration}s  concurrency={args.concurrency} ==="
+    )
 
     upstream_srv, upstream_url = _start_upstream()
     print(f"  upstream  → {upstream_url}")
