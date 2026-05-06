@@ -41,6 +41,10 @@ class _DashboardSnapshot:
     last_model: str = ""
     last_elapsed: str = ""
     last_tokens: str = ""
+    local_url: str = ""
+    api_url: str = ""
+    upstream_url: str = ""
+    ollama_url: str = ""
 
 
 class DashboardScreen(Vertical):
@@ -114,11 +118,28 @@ class DashboardScreen(Vertical):
             snap.db_size = "N/A"
             snap.db_rows = -1
 
+        config = getattr(server, "config", None)
+        if config:
+            host = config.host or "127.0.0.1"
+            port = config.port or 9000
+            snap.local_url = f"http://{host}:{port}/v1"
+            public_url = getattr(server, "public_url", None)
+            snap.api_url = f"{public_url.rstrip('/')}/v1" if public_url else snap.local_url
+            snap.upstream_url = f"{config.upstream_base_url}/chat/completions"
+            snap.ollama_url = f"http://{host}:{port}"
+
         lines: list[str] = []
         lines.append(f"  [bold]Requests[/]     {snap.req_count:,} total  |  {snap.req_rate:.1f} req/s")
         lines.append(f"  [bold]Thread Pool[/]  {snap.active_threads}/{snap.max_workers} active  |  queue: {snap.queue_size}")
         lines.append(f"  [bold]DB[/]           {snap.db_size}  |  {snap.db_rows:,} rows")
         lines.append(f"  [bold]Uptime[/]       {_fmt_hms(snap.uptime_seconds)}")
+
+        if snap.local_url:
+            lines.append("")
+            lines.append("[bold]Connection[/]")
+            lines.append(f"  Cursor Base URL: {snap.api_url}")
+            lines.append(f"  Upstream:        {snap.upstream_url}")
+            lines.append(f"  Ollama:          {snap.ollama_url}")
 
         widget = self.query_one("#dashboard-text", Static)
         widget.update("\n".join(lines))

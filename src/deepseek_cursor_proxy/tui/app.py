@@ -14,14 +14,16 @@ from .logs import LogsScreen
 class TuiApp(App[None]):
     """Textual TUI dashboard for deepseek-cursor-proxy."""
 
-    CSS = """
-    TabbedContent {
-        height: 1fr;
-    }
+    TITLE = "DeepSeek Cursor Proxy"
 
-    Screen {
-        overflow-y: auto;
-    }
+    CSS = """
+    TabbedContent { height: 1fr; }
+    Screen { overflow-y: auto; }
+    .config-group { border: solid $primary; margin: 0 1; padding: 1; }
+    .group-header { text-style: bold; padding: 1 0; }
+    .input-row { height: 3; }
+    Input { margin: 0 2; }
+    #save-btn { margin: 1 2; width: 20; }
     """
 
     def __init__(

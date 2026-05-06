@@ -1493,10 +1493,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     group_other.add_argument(
-        "--tui",
+        "--headless",
         action="store_true",
         default=False,
-        help="Launch TUI dashboard (requires textual library)",
+        help="Run without TUI dashboard (for CI/script usage)",
     )
     group_other.add_argument(
         "--version",
@@ -1917,6 +1917,7 @@ def main(argv: list[str] | None = None) -> int:
                 check_interval=config.ngrok_health_check_interval,
             )
             tunnel.start_health_check()
+    server.public_url = public_url
     local_base_url = f"http://{config.host}:{config.port}/v1"
     api_base_url = (
         f"{public_url.rstrip('/')}/v1" if public_url is not None else local_base_url
@@ -1969,16 +1970,15 @@ def main(argv: list[str] | None = None) -> int:
         pass  # SIGINT already handled (non-main thread)
 
     try:
-        if args.tui:
+        use_tui = not args.headless
+        if use_tui:
             try:
                 from .tui import TuiApp  # noqa: PLC0415
             except ImportError:
-                LOG.error(
-                    "textual library not installed. "
-                    "Run: uv pip install textual  or  pip install textual"
-                )
-                store.close()
-                return 1
+                LOG.info("textual not available; running in headless mode. Run: uv pip install textual")
+                use_tui = False
+
+        if use_tui:
             server_thread = threading.Thread(
                 target=_run_server, args=(server,), daemon=True,
             )
