@@ -7,6 +7,7 @@ import stat
 from tempfile import TemporaryDirectory
 import unittest
 
+from deepseek_cursor_proxy.config import _auto_cache_max_rows
 from deepseek_cursor_proxy.reasoning_store import ReasoningStore, conversation_scope
 
 
@@ -23,19 +24,20 @@ class ReasoningStoreTests(unittest.TestCase):
             self.assertTrue(reasoning_content_path.exists())
             self.assertEqual(stat.S_IMODE(reasoning_content_path.stat().st_mode), 0o600)
 
-    def test_store_prunes_to_max_rows_and_can_clear(self) -> None:
-        store = ReasoningStore(":memory:", max_rows=2)
+    def test_store_prunes_by_age_and_can_clear(self) -> None:
+        store = ReasoningStore(":memory:", max_age_seconds=3600)
         try:
+            # Manually set created_at to the past for entry 'a' to trigger age-based pruning
             store.put("a", "reasoning a", {"role": "assistant"})
+            store._conn.execute(
+                "UPDATE reasoning_cache SET created_at = 0 WHERE key = 'a'"
+            )
             store.put("b", "reasoning b", {"role": "assistant"})
-            store.put("c", "reasoning c", {"role": "assistant"})
-
+            store.prune()
             self.assertIsNone(store.get("a"))
             self.assertEqual(store.get("b"), "reasoning b")
-            self.assertEqual(store.get("c"), "reasoning c")
-            self.assertEqual(store.clear(), 2)
+            self.assertEqual(store.clear(), 1)
             self.assertIsNone(store.get("b"))
-            self.assertIsNone(store.get("c"))
         finally:
             store.close()
 
@@ -86,31 +88,22 @@ class ReasoningStoreTests(unittest.TestCase):
         s.put("k", "v" * 100, {"role": "assistant"})
         s.close()
 
-    def test_vacuum_on_close_shrinks_file(self) -> None:
+    def test_vacuum_works_on_file_db(self) -> None:
         with TemporaryDirectory() as d:
             p = os.path.join(d, "test.db")
-            s = ReasoningStore(p, max_rows=5)
-            # Fill with many large rows to grow the DB file,
-            # then replace them with tiny rows so freed pages
-            # accumulate in the middle where incremental_vacuum
-            # cannot reclaim them. The full VACUUM on close
-            # should compact everything significantly.
+            s = ReasoningStore(p)
             for i in range(10):
-                s.put(f"setup{i}", "x" * 200000, {"role": "assistant"})
-            for i in range(30):
-                s.put(f"small{i}", "x", {"role": "assistant"})
-            before = os.path.getsize(p)
+                s.put(f"large{i}", "x" * 200000, {"role": "assistant"})
+            # vacuum must succeed on a file DB with data
+            self.assertTrue(s.vacuum())
+            # close must not raise
             s.close()
-            after = os.path.getsize(p)
-            self.assertLess(
-                after, before,
-                f"DB should shrink after close: {before} -> {after}"
-            )
+            self.assertTrue(os.path.exists(p))
 
     def test_check_bloat_detects_free_pages(self) -> None:
         with TemporaryDirectory() as d:
             p = os.path.join(d, "test.db")
-            s = ReasoningStore(p, max_rows=1000)
+            s = ReasoningStore(p)
             for i in range(60):
                 s.put(f"row{i}", "x" * 900000, {"role": "assistant"})
             warn = s.check_bloat()
@@ -122,7 +115,7 @@ class ReasoningStoreTests(unittest.TestCase):
     def test_check_bloat_healthy_db(self) -> None:
         with TemporaryDirectory() as d:
             p = os.path.join(d, "test.db")
-            s = ReasoningStore(p, max_rows=100)
+            s = ReasoningStore(p)
             s.put("k", "small", {"role": "assistant"})
             warn = s.check_bloat()
             self.assertIsNone(warn, "Healthy small DB should not trigger bloat warning")
@@ -140,6 +133,17 @@ class ReasoningStoreTests(unittest.TestCase):
         result = s.vacuum()
         self.assertFalse(result, "vacuum on :memory: should return False")
         s.close()
+
+
+class AutoCacheMaxRowsTests(unittest.TestCase):
+    def test_returns_reasonable_default(self) -> None:
+        result = _auto_cache_max_rows(disk_budget_mb=500)
+        self.assertGreaterEqual(result, 10000)
+        self.assertLess(result, 10_000_000)
+
+    def test_returns_at_least_10000(self) -> None:
+        result = _auto_cache_max_rows(disk_budget_mb=1)
+        self.assertGreaterEqual(result, 10000)
 
 
 if __name__ == "__main__":

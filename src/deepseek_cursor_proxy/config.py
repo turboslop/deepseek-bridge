@@ -33,7 +33,7 @@ DEFAULT_MAX_THREAD_POOL = 20
 DEFAULT_CORS = True
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
-DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
+DEFAULT_REASONING_CACHE_DISK_MB = 500
 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
 DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 
@@ -205,6 +205,19 @@ def _auto_pool_connections(max_thread_pool: int, explicit: Any = None) -> int:
     return max(max_thread_pool // 2, 5)
 
 
+def _auto_cache_max_rows(disk_budget_mb: int = DEFAULT_REASONING_CACHE_DISK_MB) -> int:
+    """Auto-calculate max rows based on disk budget."""
+    try:
+        import shutil
+
+        available_gb = shutil.disk_usage(default_app_dir()).free / (1024**3)
+        budget_mb = min(disk_budget_mb, available_gb * 1024 * 0.05)
+    except Exception:
+        budget_mb = disk_budget_mb
+    est_row_bytes = 1500  # avg ~1.5KB per row
+    return max(int((budget_mb * 1024 * 1024) / est_row_bytes), 10000)
+
+
 @dataclass(frozen=True)
 class ProxyConfig:
     host: str = DEFAULT_HOST
@@ -219,7 +232,6 @@ class ProxyConfig:
     reasoning_content_path: Path = field(default_factory=default_reasoning_content_path)
     missing_reasoning_strategy: str = DEFAULT_MISSING_REASONING_STRATEGY
     reasoning_cache_max_age_seconds: int = DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS
-    reasoning_cache_max_rows: int = DEFAULT_REASONING_CACHE_MAX_ROWS
     display_reasoning: bool = DEFAULT_DISPLAY_REASONING
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
@@ -288,10 +300,6 @@ class ProxyConfig:
             reasoning_cache_max_age_seconds=as_int(
                 setting_value(settings, "reasoning_cache_max_age_seconds"),
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
-            ),
-            reasoning_cache_max_rows=as_int(
-                setting_value(settings, "reasoning_cache_max_rows"),
-                DEFAULT_REASONING_CACHE_MAX_ROWS,
             ),
             display_reasoning=as_bool(
                 setting_value(settings, "display_reasoning"),

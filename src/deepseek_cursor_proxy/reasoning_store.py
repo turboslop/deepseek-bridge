@@ -182,10 +182,8 @@ class ReasoningStore:
         self,
         reasoning_content_path: str | Path,
         max_age_seconds: int | None = None,
-        max_rows: int | None = None,
     ) -> None:
         self.max_age_seconds = max_age_seconds
-        self.max_rows = max_rows
         if str(reasoning_content_path) == ":memory:":
             self.reasoning_content_path: str | Path = ":memory:"
         else:
@@ -200,6 +198,9 @@ class ReasoningStore:
         if isinstance(self.reasoning_content_path, Path):
             self.reasoning_content_path.chmod(0o600)
             self._conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reasoning_cache (
@@ -210,7 +211,17 @@ class ReasoningStore:
             )
             """
         )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reasoning_cache_created_at "
+            "ON reasoning_cache(created_at)"
+        )
         self._conn.commit()
+        if isinstance(self.reasoning_content_path, Path):
+            from .config import _auto_cache_max_rows
+
+            self._max_rows = _auto_cache_max_rows()
+        else:
+            self._max_rows = None
         self.prune()
 
     def vacuum(self) -> bool:
@@ -378,7 +389,7 @@ class ReasoningStore:
             )
             deleted += cursor.rowcount if cursor.rowcount != -1 else 0
 
-        if self.max_rows is not None and self.max_rows > 0:
+        if self._max_rows is not None and self._max_rows > 0:
             cursor = self._conn.execute(
                 """
                 DELETE FROM reasoning_cache
@@ -389,7 +400,7 @@ class ReasoningStore:
                     LIMIT ?
                 )
                 """,
-                (self.max_rows,),
+                (self._max_rows,),
             )
             deleted += cursor.rowcount if cursor.rowcount != -1 else 0
 

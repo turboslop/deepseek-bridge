@@ -1307,54 +1307,52 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local DeepSeek Cursor proxy")
-    parser.add_argument(
-        "--config",
-        dest="config_path",
-        type=Path,
-        help=f"YAML config file, default {default_config_path()}",
-    )
-    parser.add_argument("--host", help="Bind host, default from config or 127.0.0.1")
-    parser.add_argument(
-        "--port",
-        type=int,
-        help="Bind port, default from config or 9000",
-    )
-    parser.add_argument(
+
+    group_model = parser.add_argument_group("Model")
+    group_model.add_argument(
         "--model",
         help=(
             "Fallback DeepSeek model when the request has no model, "
             "default from config or deepseek-v4-pro"
         ),
     )
-    parser.add_argument(
-        "--base-url",
-        help=("DeepSeek base URL, default from config or https://api.deepseek.com"),
-    )
-    parser.add_argument(
+    group_model.add_argument(
         "--thinking",
         choices=["enabled", "disabled"],
         help="DeepSeek thinking mode, default from config or enabled",
     )
-    parser.add_argument(
+    group_model.add_argument(
         "--reasoning-effort",
         choices=["low", "medium", "high", "max", "xhigh"],
         help="DeepSeek reasoning effort, default from config or max",
     )
-    parser.add_argument(
-        "--reasoning-content-path",
-        type=Path,
-        help=(
-            "SQLite reasoning_content cache path, "
-            f"default {default_reasoning_content_path()}"
-        ),
+    group_model.add_argument(
+        "--display-reasoning",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Mirror reasoning_content into Cursor-visible content",
     )
-    parser.add_argument(
+    group_model.add_argument(
+        "--collapsible-reasoning",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use Markdown details for mirrored reasoning when display is enabled",
+    )
+
+    group_net = parser.add_argument_group("Network")
+    group_net.add_argument("--host", help="Bind host, default from config or 127.0.0.1")
+    group_net.add_argument(
+        "--port",
+        type=int,
+        help="Bind port, default from config or 9000",
+    )
+    group_net.add_argument(
         "--ngrok",
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Start an ngrok tunnel and print the Cursor base URL",
     )
-    parser.add_argument(
+    group_net.add_argument(
         "--ngrok-health-check-interval",
         type=float,
         default=None,
@@ -1363,100 +1361,107 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "default from config or 30.0"
         ),
     )
-    parser.add_argument(
-        "--verbose",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Log detailed request metadata and full payloads",
+    group_net.add_argument(
+        "--base-url",
+        help=("DeepSeek base URL, default from config or https://api.deepseek.com"),
     )
-    parser.add_argument(
-        "--compact",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Compact 1-line-per-request output",
-    )
-    parser.add_argument(
-        "--trace-dir",
-        type=Path,
-        help="Write full structured request traces to this directory",
-    )
-    parser.add_argument(
-        "--log-dir",
-        type=Path,
-        help="Write persistent timestamped log files to this directory (auto-purges old logs, keeps 5)",
-    )
-    parser.add_argument(
-        "--no-log",
-        action="store_true",
-        help="Disable persistent log files (overrides default log directory)",
-    )
-    parser.add_argument(
-        "--display-reasoning",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Mirror reasoning_content into Cursor-visible content",
-    )
-    parser.add_argument(
-        "--collapsible-reasoning",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Use Markdown details for mirrored reasoning when display is enabled",
-    )
-    parser.add_argument(
-        "--collasible-reasoning",
-        "--collasible-resoning",
-        dest="collapsible_reasoning",
-        action="store_true",
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--no-collasible-reasoning",
-        "--no-collasible-resoning",
-        dest="collapsible_reasoning",
-        action="store_false",
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--no-markdown-reasoning",
-        dest="display_reasoning",
-        action="store_false",
-        default=argparse.SUPPRESS,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
+    group_net.add_argument(
         "--cors",
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Send permissive CORS headers",
     )
-    parser.add_argument(
-        "--request-timeout",
-        type=float,
-        help="Upstream request timeout in seconds, default from config or 300",
+
+    group_storage = parser.add_argument_group("Storage")
+    group_storage.add_argument(
+        "--log-dir",
+        type=Path,
+        help="Write persistent timestamped log files to this directory (auto-purges old logs, keeps 5)",
     )
-    parser.add_argument(
-        "--stream-read-timeout",
-        type=float,
-        help="Streaming read timeout in seconds, default from config or 180",
+    group_storage.add_argument(
+        "--no-log",
+        action="store_true",
+        help="Disable persistent log files (overrides default log directory)",
     )
-    parser.add_argument(
-        "--max-request-body-bytes",
-        type=int,
-        help="Maximum accepted request body size, default from config",
+    group_storage.add_argument(
+        "--trace-dir",
+        type=Path,
+        help="Write full structured request traces to this directory",
     )
-    parser.add_argument(
+    group_storage.add_argument(
+        "--reasoning-content-path",
+        type=Path,
+        help=(
+            "SQLite reasoning_content cache path, "
+            f"default {default_reasoning_content_path()}"
+        ),
+    )
+    group_storage.add_argument(
         "--reasoning-cache-max-age-seconds",
         type=int,
         help="Maximum reasoning cache row age in seconds, default from config",
     )
-    parser.add_argument(
-        "--reasoning-cache-max-rows",
-        type=int,
-        help="Maximum reasoning cache rows, default from config",
+    group_storage.add_argument(
+        "--clear-reasoning-cache",
+        action="store_true",
+        help="Clear the local reasoning_content SQLite cache and exit",
     )
-    parser.add_argument(
+
+    group_perf = parser.add_argument_group("Performance")
+    group_perf.add_argument(
+        "--request-timeout",
+        type=float,
+        help="Upstream request timeout in seconds, default from config or 300",
+    )
+    group_perf.add_argument(
+        "--stream-read-timeout",
+        type=float,
+        help="Streaming read timeout in seconds, default from config or 180",
+    )
+    group_perf.add_argument(
+        "--max-pool-connections",
+        type=int,
+        help="Maximum upstream pool connections, default from config or 10",
+    )
+    group_perf.add_argument(
+        "--max-thread-pool",
+        type=int,
+        help="Maximum thread pool size for request handling, default from config or 20",
+    )
+    group_perf.add_argument(
+        "--max-request-body-bytes",
+        type=int,
+        help="Maximum accepted request body size, default from config",
+    )
+
+    group_ollama = parser.add_argument_group("Ollama / Copilot")
+    group_ollama.add_argument(
+        "--ollama",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable Ollama-compatible endpoints",
+    )
+
+    group_other = parser.add_argument_group("Other")
+    group_other.add_argument(
+        "--config",
+        dest="config_path",
+        type=Path,
+        help=f"YAML config file, default {default_config_path()}",
+    )
+    group_other.add_argument(
+        "--verbose",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Log detailed request metadata and full payloads",
+    )
+    group_other.add_argument(
+        "--compact",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Compact 1-line-per-request output",
+    )
+    group_other.add_argument(
         "--missing-reasoning-strategy",
         choices=["recover", "reject"],
         help=(
@@ -1464,26 +1469,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "recover (friendly default) or reject (strict debugging mode)"
         ),
     )
-    parser.add_argument(
-        "--max-pool-connections",
-        type=int,
-        help="Maximum upstream pool connections, default from config or 10",
-    )
-    parser.add_argument(
-        "--max-thread-pool",
-        type=int,
-        help="Maximum thread pool size for request handling, default from config or 20",
-    )
-    parser.add_argument(
-        "--clear-reasoning-cache",
+    group_other.add_argument(
+        "--collasible-reasoning",
+        "--collasible-resoning",
+        dest="collapsible_reasoning",
         action="store_true",
-        help="Clear the local reasoning_content SQLite cache and exit",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
     )
-    parser.add_argument(
-        "--ollama",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable Ollama-compatible endpoints",
+    group_other.add_argument(
+        "--no-collasible-reasoning",
+        "--no-collasible-resoning",
+        dest="collapsible_reasoning",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+    group_other.add_argument(
+        "--no-markdown-reasoning",
+        dest="display_reasoning",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+    group_other.add_argument(
+        "--version",
+        action="version",
+        version=f"deepseek-cursor-proxy {__version__}",
     )
     return parser
 
@@ -1492,7 +1504,30 @@ def elapsed_ms(started: float) -> int:
     return round((time.monotonic() - started) * 1000)
 
 
+def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
+    """Truncate message content fields to prevent code exposure in verbose logs."""
+    if not isinstance(payload, dict):
+        return payload
+    result = dict(payload)
+    if "messages" in result and isinstance(result["messages"], list):
+        truncated = []
+        for m in result["messages"]:
+            if not isinstance(m, dict):
+                truncated.append(m)
+                continue
+            m2 = dict(m)
+            content = m2.get("content")
+            if isinstance(content, str) and len(content) > max_len:
+                m2["content"] = content[:max_len] + "..."
+            elif isinstance(content, list):
+                m2["content"] = "[multimodal content array]"
+            truncated.append(m2)
+        result["messages"] = truncated
+    return result
+
+
 def log_json(label: str, payload: Any) -> None:
+    payload = _truncate_message_content(payload)
     LOG.info(
         "%s:\n%s",
         label,
@@ -1808,8 +1843,6 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_cache_max_age_seconds"] = (
             args.reasoning_cache_max_age_seconds
         )
-    if args.reasoning_cache_max_rows is not None:
-        updates["reasoning_cache_max_rows"] = args.reasoning_cache_max_rows
     if args.missing_reasoning_strategy is not None:
         updates["missing_reasoning_strategy"] = args.missing_reasoning_strategy
     if args.max_pool_connections is not None:
@@ -1827,7 +1860,6 @@ def main(argv: list[str] | None = None) -> int:
     store = ReasoningStore(
         config.reasoning_content_path,
         max_age_seconds=config.reasoning_cache_max_age_seconds,
-        max_rows=config.reasoning_cache_max_rows,
     )
     bloat_warning = store.check_bloat()
     if bloat_warning:

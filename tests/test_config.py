@@ -13,7 +13,6 @@ from deepseek_cursor_proxy.config import (
     DEFAULT_NGROK,
     DEFAULT_PORT,
     DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
-    DEFAULT_REASONING_CACHE_MAX_ROWS,
     DEFAULT_THINKING,
     DEFAULT_UPSTREAM_MODEL,
     DEFAULT_VERBOSE,
@@ -89,9 +88,6 @@ class ConfigTests(unittest.TestCase):
                 config.reasoning_cache_max_age_seconds,
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
             )
-            self.assertEqual(
-                config.reasoning_cache_max_rows, DEFAULT_REASONING_CACHE_MAX_ROWS
-            )
             self.assertIn(
                 "# log_dir: null  # auto: ~/.deepseek-cursor-proxy/logs",
                 config_text,
@@ -112,9 +108,6 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(
                 config.reasoning_cache_max_age_seconds,
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
-            )
-            self.assertEqual(
-                config.reasoning_cache_max_rows, DEFAULT_REASONING_CACHE_MAX_ROWS
             )
 
     def test_loads_config_from_user_yaml_file(self) -> None:
@@ -140,7 +133,6 @@ class ConfigTests(unittest.TestCase):
                         f"reasoning_content_path: {reasoning_content_path}",
                         "missing_reasoning_strategy: reject",
                         "reasoning_cache_max_age_seconds: 60",
-                        "reasoning_cache_max_rows: 50",
                     ]
                 ),
                 encoding="utf-8",
@@ -164,7 +156,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.reasoning_content_path, reasoning_content_path)
         self.assertEqual(config.missing_reasoning_strategy, "reject")
         self.assertEqual(config.reasoning_cache_max_age_seconds, 60)
-        self.assertEqual(config.reasoning_cache_max_rows, 50)
 
     def test_invalid_config_values_fall_back_to_defaults(self) -> None:
         with TemporaryDirectory() as temp_dir:
