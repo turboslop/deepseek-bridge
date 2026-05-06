@@ -11,50 +11,15 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Static
 
 
-def _fmt_hms(seconds: float) -> str:
-    s = int(seconds)
-    h, m = divmod(s, 3600)
-    m, s = divmod(m, 60)
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-
-FIELDS = [
-    ("thinking", "thinking", "Thinking", ["enabled", "disabled"]),
-    ("reasoning_effort", "reasoning_effort", "Effort", ["low", "medium", "high", "max", "xhigh"]),
-    ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("ngrok", "ngrok", "Ngrok", ["true", "false"]),
-    ("cors", "cors", "CORS", ["true", "false"]),
-    ("ollama", "ollama", "Ollama", ["true", "false"]),
-    ("verbose", "verbose", "Verbose", ["true", "false"]),
-    ("compact", "compact", "Compact", ["true", "false"]),
-    ("collapsible_reasoning", "collapsible_reasoning", "Collapsible", ["true", "false"]),
-    ("host", "host", "Host", None),
-    ("port", "port", "Port", None),
-    ("request_timeout", "request_timeout", "Timeout (s)", None),
-    ("log_dir", "log_dir", "Log Dir", None),
-]
-
-BOOL_FIELDS = {"display_reasoning", "ngrok", "cors", "ollama", "verbose", "compact", "collapsible_reasoning"}
-
-LOG_MAX = 12
-_log_lines: list[str] = []
-
-
-def _add_log(msg: str) -> None:
-    _log_lines.append(msg)
-    if len(_log_lines) > 100:
-        _log_lines[:] = _log_lines[-100:]
-
-
 class TuiApp(App[None]):
 
     TITLE = "DeepSeek Bridge"
 
     CSS = """
-    #top-left { height: auto; padding: 1 2; }
-    #bottom-left { height: 1fr; padding: 1 2; }
-    #right-panel { width: 50; padding: 1 2; }
-    Static { width: 1fr; }
+    #top-left { height: auto; }
+    #bottom-left { height: 1fr; border-top: dashed $primary; }
+    #left-col { width: 2fr; }
+    #right-panel { width: 1fr; padding: 1 2 1 1; }
     """
 
     BINDINGS = [
@@ -79,7 +44,7 @@ class TuiApp(App[None]):
 
     def compose(self) -> ComposeResult:
         with Horizontal():
-            with VerticalScroll():
+            with VerticalScroll(id="left-col"):
                 with VerticalScroll(id="top-left"):
                     yield Static("", id="stats")
                     yield Static("", id="urls")
@@ -145,34 +110,36 @@ class TuiApp(App[None]):
                     pass
 
         stats = (
-            f"[bold]DeepSeek Bridge[/]  uptime {uptime_s}\n\n"
-            f"  requests   {req:,}  ({rate:.1f}/s)\n"
-            f"  threads    {active}/{max_workers}  queue {queue}\n"
-            f"  db         {db_size}  {db_rows} rows"
+            f"  [bold]DeepSeek Bridge[/]  [dim]uptime {uptime_s}[/]\n"
+            f"  requests  {req:,}   ({rate:.1f}/s)\n"
+            f"  threads   {active}/{max_workers}   queue {queue}\n"
+            f"  db        {db_size}   {db_rows} rows"
         )
         self.query_one("#stats", Static).update(stats)
 
-        # --- URLs ---
         if config:
             host = config.host or "127.0.0.1"
             port = config.port or 9000
             local = f"http://{host}:{port}/v1"
             ollama = f"http://{host}:{port}"
             public = getattr(server, "public_url", None)
-            api = f"{public.rstrip('/')}/v1" if public else local
-            urls = f"[bold]Local[/]  {local}"
+            urls = f"  local   {local}"
             if public:
-                urls += f"\n[bold]Ngrok[/]  {api}"
-            urls += f"\n[bold]Ollama[/] {ollama}"
+                urls += f"\n  ngrok   {public.rstrip('/')}/v1"
+            urls += f"\n  ollama  {ollama}"
             self.query_one("#urls", Static).update(urls)
 
-        # --- Logs ---
         visible = _log_lines[-LOG_MAX:]
-        self.query_one("#logs", Static).update("\n".join(["[bold dim]Log[/]"] + visible) if visible else "")
+        log_text = "\n".join(f"  [dim]•[/] {line}" for line in visible) if visible else ""
+        self.query_one("#logs", Static).update(log_text)
 
         # --- Config (right panel) ---
         if config:
-            lines = ["[bold]Configuration[/]  ([italic]arrows[/] nav, [italic]enter[/] edit, [italic]Ctrl+S[/] save)", ""]
+            lines = [
+                "[bold]Configuration[/]",
+                "[dim]arrows nav  enter edit  ctrl+s save[/]",
+                "",
+            ]
             for i, (_wid, attr, label, choices) in enumerate(FIELDS):
                 raw = getattr(config, attr, "")
                 if raw is None:
