@@ -7,71 +7,33 @@ from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Input, Label, Static
 
-SELECT_FIELDS = [
-    ("thinking", "thinking", "Thinking", "Model", [
-        ("Enabled", "enabled"), ("Disabled", "disabled"),
-    ]),
-    ("reasoning_effort", "reasoning_effort", "Reasoning Effort", "Model", [
-        ("Low", "low"), ("Medium", "medium"), ("High", "high"),
-        ("Max", "max"), ("XHigh", "xhigh"),
-    ]),
-    ("display_reasoning", "display_reasoning", "Show Reasoning", "Model", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("collapsible_reasoning", "collapsible_reasoning", "Collapsible", "Model", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("host", "host", "Host", "Network", None),
-    ("port", "port", "Port", "Network", None),
-    ("ngrok", "ngrok", "Ngrok", "Network", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("cors", "cors", "CORS", "Network", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("ollama", "ollama", "Ollama", "Network", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("verbose", "verbose", "Verbose", "Storage", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("compact", "compact", "Compact", "Storage", [
-        ("On", "true"), ("Off", "false"),
-    ]),
-    ("request_timeout", "request_timeout", "Req Timeout (s)", "Storage", None),
-    ("log_dir", "log_dir", "Log Dir", "Storage", None),
+FIELDS = [
+    ("thinking", "thinking", "Thinking  (enabled / disabled)"),
+    ("reasoning_effort", "reasoning_effort", "Effort  (low / medium / high / max / xhigh)"),
+    ("display_reasoning", "display_reasoning", "Show Reasoning  (true / false)"),
+    ("collapsible_reasoning", "collapsible_reasoning", "Collapsible  (true / false)"),
+    ("host", "host", "Host"),
+    ("port", "port", "Port"),
+    ("ngrok", "ngrok", "Ngrok  (true / false)"),
+    ("cors", "cors", "CORS  (true / false)"),
+    ("ollama", "ollama", "Ollama  (true / false)"),
+    ("verbose", "verbose", "Verbose  (true / false)"),
+    ("compact", "compact", "Compact  (true / false)"),
+    ("request_timeout", "request_timeout", "Request Timeout (s)"),
+    ("log_dir", "log_dir", "Log Dir  (empty to disable)"),
 ]
 
 
 class ConfigScreen(VerticalScroll, can_focus=True):
-    """View and edit proxy configuration at runtime."""
 
     def compose(self) -> ComposeResult:
-        yield Static("[bold]Configuration[/] -- edit and apply changes", id="config-title")
+        yield Static("[bold]Configuration[/]  ([italic]Ctrl+S[/] to save)", id="config-title")
         yield Static("", id="config-status")
-
-        for category in ("Model", "Network", "Storage"):
-            yield Static(f" [bold italic]{category}[/]", classes="config-cat")
-            for widget_id, _attr, label, cat, options in SELECT_FIELDS:
-                if cat != category:
-                    continue
-                yield Label(f"  {label}")
-                if options is not None:
-                    yield Select(
-                        options,
-                        prompt=label,
-                        id=f"cfg-{widget_id}",
-                        allow_blank=False,
-                    )
-                else:
-                    yield Input(
-                        placeholder=label,
-                        id=f"cfg-{widget_id}",
-                    )
-
-        yield Button("Apply Changes", id="save-btn", variant="primary")
+        for widget_id, attr, label in FIELDS:
+            yield Label(f" {label}")
+            yield Input(placeholder=label, id=f"cfg-{widget_id}")
 
     def on_mount(self) -> None:
         self._populate()
@@ -80,79 +42,57 @@ class ConfigScreen(VerticalScroll, can_focus=True):
         config = getattr(self.app, "server_config", None)
         if config is None:
             return
-        for widget_id, attr, _label, _cat, options in SELECT_FIELDS:
+        for widget_id, attr, _label in FIELDS:
             try:
-                widget = self.query_one(f"#cfg-{widget_id}")
+                widget = self.query_one(f"#cfg-{widget_id}", Input)
             except Exception:
                 continue
             raw = getattr(config, attr, "")
-            if raw is None or raw == "None":
-                raw = ""
-            if isinstance(raw, bool):
-                raw = "true" if raw else "false"
+            if raw is None:
+                widget.value = ""
+            elif isinstance(raw, bool):
+                widget.value = "true" if raw else "false"
             else:
-                raw = str(raw)
-            if options is not None and isinstance(widget, Select):
-                widget.value = raw
-            elif isinstance(widget, Input):
-                widget.value = raw
+                widget.value = str(raw)
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "save-btn":
-            return
+    def action_save_config(self) -> None:
         config = getattr(self.app, "server_config", None)
         if config is None:
-            self._status("No configuration available")
+            self._status("no config")
             return
-
         updates: dict[str, Any] = {}
-        for widget_id, attr, _label, _cat, options in SELECT_FIELDS:
+        for widget_id, attr, _label in FIELDS:
             try:
-                widget = self.query_one(f"#cfg-{widget_id}")
+                widget = self.query_one(f"#cfg-{widget_id}", Input)
             except Exception:
                 continue
-
-            if isinstance(widget, Select):
-                raw = str(widget.value)
-            elif isinstance(widget, Input):
-                raw = widget.value.strip()
-            else:
-                continue
-
+            raw = widget.value.strip()
             if raw == "" and widget_id == "log_dir":
                 updates[attr] = None
                 continue
-
-            if options is not None and isinstance(widget, Select):
-                if raw in ("true", "false"):
-                    updates[attr] = raw == "true"
-                else:
-                    updates[attr] = raw
-                continue
-
             if widget_id == "port":
                 try:
-                    updates[attr] = int(raw) if raw else int(config.port)
+                    updates[attr] = int(raw)
                 except ValueError:
-                    self._status(f"Invalid port: {raw}")
+                    self._status(f"bad port: {raw}")
                     return
                 continue
-
             if widget_id == "request_timeout":
                 try:
-                    updates[attr] = float(raw) if raw else float(config.request_timeout)
+                    updates[attr] = float(raw)
                 except ValueError:
-                    self._status(f"Invalid timeout: {raw}")
+                    self._status(f"bad timeout: {raw}")
                     return
                 continue
-
-            updates[attr] = raw
-
+            if raw.lower() in ("true", "false", "enabled", "disabled"):
+                updates[attr] = raw.lower() in ("true", "enabled")
+            else:
+                updates[attr] = raw
         try:
             self.app.server_config = replace(config, **updates)  # type: ignore[attr-defined]
-            self._status("Applied -- some changes may require restart")
+            self._status("saved")
         except (TypeError, ValueError) as exc:
-            self._status(f"Error: {exc}")
+            self._status(f"error: {exc}")
 
     def _status(self, msg: str) -> None:
         try:

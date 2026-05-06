@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.widgets import TabbedContent, TabPane
 
 from .config import ConfigScreen
@@ -19,22 +20,22 @@ class TuiApp(App[None]):
 
     CSS = """
     TabbedContent { height: 1fr; }
-    TabPane { height: 1fr; }
+    TabbedContent > ContentSwitcher { height: 1fr; }
+    TabPane { height: 1fr; padding: 0; }
     Screen { overflow-y: auto; }
-    ConfigScreen { height: 1fr; padding: 1 3; }
-    ConfigScreen Label { padding-top: 1; }
-    ConfigScreen Select { width: 1fr; }
-    ConfigScreen Input { width: 1fr; }
+    Label { padding-top: 1; }
+    Input { border: none; background: transparent; width: 1fr; }
     #config-title { padding: 1 0; }
     #config-status { height: 1; }
-    #save-btn { margin: 1 0 0 3; min-height: 3; }
+    .config-cat { padding-top: 1; color: $text-muted; }
     DashboardScreen { height: 1fr; }
     #dashboard-left { width: 2fr; padding: 1 2; }
     #dashboard-right { width: 1fr; padding: 1 2; }
-    DashboardScreen Select { width: 1fr; }
-    DashboardScreen Input { width: 1fr; }
-    DashboardScreen Button { width: 1fr; }
     """
+
+    BINDINGS = [
+        Binding("ctrl+s", "save_config", "Save config"),
+    ]
 
     def __init__(
         self,
