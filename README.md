@@ -72,11 +72,30 @@ cd deepseek-bridge
 uv run deepseek-bridge
 ```
 
-### Quick Start
+### Usage
 
 ```bash
-# Run without ngrok for local testing
+# Full TUI dashboard (default)
+deepseek-bridge
+
+# Headless mode — no TUI, classic CLI output
+deepseek-bridge --headless
+
+# Local testing without ngrok
 deepseek-bridge --no-ngrok --port 9000
+
+# Verbose output with trace dumps
+deepseek-bridge --verbose --trace-dir ./dumps
+
+# Use a custom config file
+deepseek-bridge --config ./my-config.yaml
+
+# Clear reasoning cache and exit
+deepseek-bridge --clear-reasoning-cache
+
+# Disable thinking display in client UI
+deepseek-bridge --no-display-reasoning
+```
 
 # With verbose output
 deepseek-bridge --verbose
