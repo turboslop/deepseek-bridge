@@ -22,6 +22,8 @@ from deepseek_cursor_proxy.config import (
     default_reasoning_content_path,
 )
 
+from deepseek_cursor_proxy import __version__
+
 
 class ConfigTests(unittest.TestCase):
     def test_default_paths_live_in_visible_user_app_directory(self) -> None:
@@ -73,7 +75,7 @@ class ConfigTests(unittest.TestCase):
             )
             self.assertIn(f"ngrok: {str(DEFAULT_NGROK).lower()}", config_text)
             self.assertIn(
-                "collasible_reasoning: "
+                "collapsible_reasoning: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
                 config_text,
             )
@@ -93,6 +95,13 @@ class ConfigTests(unittest.TestCase):
             )
             self.assertEqual(
                 config.reasoning_cache_max_rows, DEFAULT_REASONING_CACHE_MAX_ROWS
+            )
+            self.assertIn(
+                "log_dir: null  # Directory for persistent log files",
+                config_text,
+            )
+            self.assertEqual(
+                config.log_dir, home / ".deepseek-cursor-proxy" / "logs"
             )
 
     def test_missing_explicit_config_file_is_not_populated(self) -> None:
@@ -267,6 +276,20 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertFalse(config.verbose)
+
+    def test_version_matches_pyproject_toml(self) -> None:
+        parts = __version__.split(".")
+        self.assertEqual(
+            len(parts), 3, f"version should be X.Y.Z, got {__version__}"
+        )
+        self.assertNotEqual(
+            __version__, "0.1.0", "version should have been updated from 0.1.0"
+        )
+
+    def test_default_log_dir_is_set(self) -> None:
+        config = ProxyConfig()
+        self.assertIsNotNone(config.log_dir)
+        self.assertIn("logs", str(config.log_dir))
 
 
 if __name__ == "__main__":

@@ -199,6 +199,7 @@ class ReasoningStore:
         )
         if isinstance(self.reasoning_content_path, Path):
             self.reasoning_content_path.chmod(0o600)
+            self._conn.execute("PRAGMA auto_vacuum = INCREMENTAL")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reasoning_cache (
@@ -212,8 +213,57 @@ class ReasoningStore:
         self._conn.commit()
         self.prune()
 
+    def vacuum(self) -> bool:
+        if not isinstance(self.reasoning_content_path, Path):
+            return False
+        try:
+            size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
+            if size_mb > 1024:
+                # Use lazy import for LOG to avoid circular import issues
+                from .logging import LOG
+
+                LOG.warning(
+                    "reasoning DB is %.0f MB; skipping automatic VACUUM. Run manually.",
+                    size_mb,
+                )
+                return False
+            self._conn.execute("VACUUM")
+            return True
+        except Exception:
+            return False
+
+    def check_bloat(self) -> str | None:
+        """Return a warning string if the DB is bloated, or None if healthy."""
+        if not isinstance(self.reasoning_content_path, Path):
+            return None
+        try:
+            page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
+            freelist_count = self._conn.execute("PRAGMA freelist_count").fetchone()[0]
+            if page_count == 0:
+                return None
+            free_pct = freelist_count / page_count
+            size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
+            if free_pct > 0.8:
+                return (
+                    f"reasoning DB is {size_mb:.0f} MB with {free_pct:.0%} free pages "
+                    f"({freelist_count}/{page_count}). Run with --clear-reasoning-cache "
+                    f"or restart to reclaim space."
+                )
+            if size_mb > 50:
+                row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+                row_count = int(row[0]) if row else 0
+                if row_count < 2000:
+                    return (
+                        f"reasoning DB is {size_mb:.0f} MB but only has {row_count} rows. "
+                        f"Consider running with --clear-reasoning-cache."
+                    )
+            return None
+        except Exception:
+            return None
+
     def close(self) -> None:
         with self._lock:
+            self.vacuum()
             self._conn.close()
 
     def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
@@ -342,4 +392,10 @@ class ReasoningStore:
                 (self.max_rows,),
             )
             deleted += cursor.rowcount if cursor.rowcount != -1 else 0
+
+        if deleted > 0 and isinstance(self.reasoning_content_path, Path):
+            try:
+                self._conn.execute("PRAGMA incremental_vacuum(100)")
+            except Exception:
+                pass
         return deleted

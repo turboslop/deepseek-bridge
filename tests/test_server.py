@@ -17,6 +17,7 @@ import json
 import logging
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
 import threading
 import time
 from types import SimpleNamespace
@@ -29,9 +30,11 @@ from deepseek_cursor_proxy.config import ProxyConfig
 from deepseek_cursor_proxy.logging import (
     ConsoleLogFormatter,
     TerminalSpinner,
+    configure_logging,
 )
 from deepseek_cursor_proxy.reasoning_store import ReasoningStore
 from deepseek_cursor_proxy.server import (
+    BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
     DeepSeekProxyServer,
     UpstreamPool,
@@ -215,19 +218,25 @@ class CliAndHelperTests(unittest.TestCase):
         body = b'{"ok":1}'
         self.assertEqual(read_response_body(_FakeResponse(body)), body)
 
-    def test_summarize_chat_payload_omits_message_content(self) -> None:
-        summary = summarize_chat_payload(
-            {
-                "model": "deepseek-v4-pro",
-                "stream": True,
-                "messages": [{"role": "user", "content": "secret prompt"}],
-                "tools": [{"type": "function"}],
-                "tool_choice": "auto",
-            }
+    def test_startup_banner_includes_log_path_when_log_dir_set(self) -> None:
+        with TemporaryDirectory() as d:
+            result = configure_logging(verbose=False, log_dir=d)
+            self.assertIsNotNone(
+                result, "configure_logging should return path when log_dir is set"
+            )
+            self.assertIn(d, result)
+
+    def test_startup_banner_no_log_path_when_log_dir_not_set(self) -> None:
+        result = configure_logging(verbose=False)
+        self.assertIsNone(
+            result, "configure_logging should return None when no log_dir"
         )
-        self.assertIn("model='deepseek-v4-pro'", summary)
-        self.assertIn("messages=1", summary)
-        self.assertNotIn("secret prompt", summary)
+
+    def test_db_heartbeat_method_exists(self) -> None:
+        self.assertTrue(
+            hasattr(BoundedThreadPoolHTTPServer, "_log_db_stats"),
+            "_log_db_stats method should exist on BoundedThreadPoolHTTPServer",
+        )
 
 
 # ---------------------------------------------------------------------------

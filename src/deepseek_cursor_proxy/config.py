@@ -36,10 +36,12 @@ DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
-DEFAULT_LOG_DIR: str | None = None
+DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 
 DEFAULT_CONFIG_HEADER = (
-    "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml."
+    "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml.\n"
+    "# Log files are saved to ~/.deepseek-cursor-proxy/logs/ by default.\n"
+    "# Use --no-log to disable or --log-dir to choose another directory."
 )
 DEFAULT_CONFIG_TEXT = f"""{DEFAULT_CONFIG_HEADER}
 # API keys are read from Cursor's Authorization header and forwarded upstream.
@@ -51,7 +53,7 @@ model: {DEFAULT_UPSTREAM_MODEL}
 thinking: {DEFAULT_THINKING}
 reasoning_effort: {DEFAULT_REASONING_EFFORT}
 display_reasoning: {str(DEFAULT_DISPLAY_REASONING).lower()}
-collasible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
+collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
@@ -65,6 +67,8 @@ reasoning_content_path: {REASONING_CONTENT_FILE_NAME}
 missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
 reasoning_cache_max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
 reasoning_cache_max_rows: {DEFAULT_REASONING_CACHE_MAX_ROWS}
+
+log_dir: null  # Directory for persistent log files (auto-purges old, keeps last 5)
 """
 
 
@@ -78,6 +82,10 @@ def default_config_path() -> Path:
 
 def default_reasoning_content_path() -> Path:
     return default_app_dir() / REASONING_CONTENT_FILE_NAME
+
+
+def default_log_dir() -> Path:
+    return default_app_dir() / "logs"
 
 
 def populate_default_config_file(config_path: Path) -> None:
@@ -215,7 +223,7 @@ class ProxyConfig:
     ngrok: bool = DEFAULT_NGROK
     ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL
     trace_dir: Path | None = None
-    log_dir: Path | None = None
+    log_dir: Path | None = field(default_factory=default_log_dir)
 
     @classmethod
     def from_file(
@@ -316,6 +324,6 @@ class ProxyConfig:
                 DEFAULT_MAX_THREAD_POOL,
             ),
             log_dir=(
-                Path(v) if (v := setting_value(settings, "log_dir")) is not MISSING and v else None
+                Path(v) if (v := setting_value(settings, "log_dir")) is not MISSING and v else default_log_dir()
             ),
         )

@@ -19,6 +19,8 @@ import urllib3
 import urllib3.exceptions
 from urllib.parse import urlparse
 
+from deepseek_cursor_proxy import __version__
+
 from .config import (
     ProxyConfig,
     default_config_path,
@@ -134,6 +136,21 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             self.executor._max_workers, active, queue_size,
         )
 
+    def _log_db_stats(self) -> None:
+        try:
+            store = self.reasoning_store
+            if not isinstance(store.reasoning_content_path, Path):
+                return
+            size_mb = store.reasoning_content_path.stat().st_size / (1024 * 1024)
+            row = store._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+            row_count = int(row[0]) if row else 0
+            LOG.info(
+                "db stats: %s size=%.1fMB rows=%s",
+                store.reasoning_content_path, size_mb, format_count(row_count),
+            )
+        except Exception as exc:
+            LOG.warning("failed to log DB stats: %s", exc)
+
     def server_close(self):
         self.executor.shutdown(wait=True, cancel_futures=False)
         super().server_close()
@@ -196,6 +213,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 "heartbeat: processed %s requests",
                 self.server.request_count,  # type: ignore[attr-defined]
             )
+            if hasattr(self.server, 'reasoning_store'):
+                self.server._log_db_stats()  # type: ignore[attr-defined]
         if self.server.request_count % 100 == 0:  # type: ignore[attr-defined]
             self.server._log_pool_utilization()  # type: ignore[attr-defined]
         started = time.monotonic()
@@ -1271,6 +1290,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Write persistent timestamped log files to this directory (auto-purges old logs, keeps 5)",
     )
     parser.add_argument(
+        "--no-log",
+        action="store_true",
+        help="Disable persistent log files (overrides default log directory)",
+    )
+    parser.add_argument(
         "--display-reasoning",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1678,13 +1702,19 @@ def main(argv: list[str] | None = None) -> int:
     if updates:
         config = replace(config, **updates)
 
-    configure_logging(verbose=config.verbose, log_dir=args.log_dir or config.log_dir)
+    if args.no_log:
+        config = replace(config, log_dir=None)
+
+    log_file_path = configure_logging(verbose=config.verbose, log_dir=args.log_dir or config.log_dir)
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,
         max_age_seconds=config.reasoning_cache_max_age_seconds,
         max_rows=config.reasoning_cache_max_rows,
     )
+    bloat_warning = store.check_bloat()
+    if bloat_warning:
+        LOG.warning("reasoning DB health: %s", bloat_warning)
     if args.clear_reasoning_cache:
         deleted = store.clear()
         LOG.info("cleared %s reasoning cache row(s)", deleted)
@@ -1731,34 +1761,45 @@ def main(argv: list[str] | None = None) -> int:
         f"{public_url.rstrip('/')}/v1" if public_url is not None else local_base_url
     )
 
-    LOG.info(
-        "default_model: %s (%s, %s)",
-        config.upstream_model,
+    # ── Startup Banner ──────────────────────────────────────────
+    LOG.info("")
+    LOG.info("╔══════════════════════════════════════════════╗")
+    LOG.info("║   DeepSeek Cursor Proxy v%s               ║", __version__)
+    LOG.info("╚══════════════════════════════════════════════╝")
+    LOG.info("")
+    LOG.info("Model")
+    LOG.info("  %s (%s, %s)", config.upstream_model,
         "thinking" if config.thinking == "enabled" else "no thinking",
-        config.reasoning_effort,
-    )
-
-    if config.verbose:
-        display_reasoning = "off"
-        if config.display_reasoning:
-            display_reasoning = (
-                "on (collapsible)" if config.collapsible_reasoning else "on"
-            )
-        LOG.info("display_reasoning: %s", display_reasoning)
-        LOG.info("missing_reasoning_strategy: %s", config.missing_reasoning_strategy)
-        LOG.info("reasoning_cache: %s", config.reasoning_content_path)
-        LOG.warning(
-            "verbose logging enabled; prompts and code may be written to stdout"
+        config.reasoning_effort)
+    display_reasoning = "off"
+    if config.display_reasoning:
+        display_reasoning = (
+            "on (collapsible)" if config.collapsible_reasoning else "on"
         )
-    if trace_writer is not None:
-        LOG.info("trace_dir: %s", trace_writer.session_dir)
-        LOG.warning("trace logging enabled; prompts and code will be written to disk")
-    if public_url is None and not config.ngrok:
-        LOG.info("public_tunnel: off")
+    LOG.info("  Display reasoning: %s", display_reasoning)
     if config.verbose:
-        LOG.info("upstream_url: %s/chat/completions", config.upstream_base_url)
-    LOG.info("local_base_url: %s", local_base_url)
-    LOG.info("api_base_url: %s", api_base_url)
+        LOG.info("  Missing reasoning strategy: %s", config.missing_reasoning_strategy)
+    LOG.info("")
+    LOG.info("Network")
+    LOG.info("  Local:     %s", local_base_url)
+    LOG.info("  API Base:  %s", api_base_url)
+    if public_url is not None:
+        LOG.info("  Tunnel:    %s", public_url)
+    elif not config.ngrok:
+        LOG.info("  Tunnel:    off")
+    LOG.info("")
+    LOG.info("Storage")
+    LOG.info("  Reasoning DB: %s", config.reasoning_content_path)
+    if log_file_path:
+        LOG.info("  Logs:         %s", log_file_path)
+    else:
+        LOG.info("  Logs:         disabled")
+    LOG.info("")
+    if config.verbose:
+        LOG.warning("verbose mode: prompts and code may be written to stdout")
+    if trace_writer is not None:
+        LOG.info("Trace dir: %s", trace_writer.session_dir)
+        LOG.warning("trace logging enabled; prompts and code will be written to disk")
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     try:
         signal.signal(signal.SIGINT, _handle_shutdown_signal)

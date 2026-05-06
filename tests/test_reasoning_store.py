@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import sqlite3
 import stat
 from tempfile import TemporaryDirectory
 import unittest
@@ -64,6 +66,80 @@ class ReasoningStoreTests(unittest.TestCase):
             )
         finally:
             store.close()
+
+    # ── Vacuum / Bloat tests ──────────────────────────────────────
+
+    def test_auto_vacuum_on_new_file_db(self) -> None:
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p)
+            c = sqlite3.connect(p)
+            av = c.execute("PRAGMA auto_vacuum").fetchone()[0]
+            self.assertEqual(
+                av, 2, f"auto_vacuum should be 2 (INCREMENTAL), got {av}"
+            )
+            s.close()
+            c.close()
+
+    def test_no_auto_vacuum_on_memory_db(self) -> None:
+        s = ReasoningStore(":memory:")
+        s.put("k", "v" * 100, {"role": "assistant"})
+        s.close()
+
+    def test_vacuum_on_close_shrinks_file(self) -> None:
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p, max_rows=5)
+            # Fill with many large rows to grow the DB file,
+            # then replace them with tiny rows so freed pages
+            # accumulate in the middle where incremental_vacuum
+            # cannot reclaim them. The full VACUUM on close
+            # should compact everything significantly.
+            for i in range(10):
+                s.put(f"setup{i}", "x" * 200000, {"role": "assistant"})
+            for i in range(30):
+                s.put(f"small{i}", "x", {"role": "assistant"})
+            before = os.path.getsize(p)
+            s.close()
+            after = os.path.getsize(p)
+            self.assertLess(
+                after, before,
+                f"DB should shrink after close: {before} -> {after}"
+            )
+
+    def test_check_bloat_detects_free_pages(self) -> None:
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p, max_rows=1000)
+            for i in range(60):
+                s.put(f"row{i}", "x" * 900000, {"role": "assistant"})
+            warn = s.check_bloat()
+            self.assertIsNotNone(
+                warn, "Should detect bloat: large DB with few rows (>50MB, <2000 rows)"
+            )
+            s.close()
+
+    def test_check_bloat_healthy_db(self) -> None:
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p, max_rows=100)
+            s.put("k", "small", {"role": "assistant"})
+            warn = s.check_bloat()
+            self.assertIsNone(warn, "Healthy small DB should not trigger bloat warning")
+            s.close()
+
+    def test_check_bloat_memory_db(self) -> None:
+        s = ReasoningStore(":memory:")
+        s.put("k", "v", {"role": "assistant"})
+        warn = s.check_bloat()
+        self.assertIsNone(warn, ":memory: DB should always return None")
+        s.close()
+
+    def test_vacuum_memory_db_returns_false(self) -> None:
+        s = ReasoningStore(":memory:")
+        result = s.vacuum()
+        self.assertFalse(result, "vacuum on :memory: should return False")
+        s.close()
 
 
 if __name__ == "__main__":

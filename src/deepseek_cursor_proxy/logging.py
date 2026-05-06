@@ -50,7 +50,8 @@ def configure_logging(
     *,
     verbose: bool,
     log_dir: str | Path | None = None,
-) -> None:
+) -> str | None:
+    log_file_path: str | None = None
     handlers: list[stdlib_logging.Handler] = []
     console_handler = stdlib_logging.StreamHandler()
     console_handler.setFormatter(ConsoleLogFormatter(verbose=verbose))
@@ -61,7 +62,8 @@ def configure_logging(
         _purge_old_logs(log_path, keep=5)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         log_file = log_path / f"proxy-{timestamp}.log"
-        file_handler = stdlib_logging.FileHandler(str(log_file), encoding="utf-8")
+        log_file_path = str(log_file)
+        file_handler = stdlib_logging.FileHandler(log_file_path, encoding="utf-8")
         file_handler.setFormatter(
             stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
         )
@@ -88,6 +90,7 @@ def configure_logging(
 
     _sys.excepthook = _log_unhandled_exception
     LOG.info("error logging: enabled (warnings visible without --verbose)")
+    return log_file_path
 
 
 class TerminalSpinner:
