@@ -56,4 +56,5 @@ class TuiApp(App[None]):
                 yield LogsScreen()
 
     def on_mount(self) -> None:
-        self.title = "DeepSeek Bridge"
+        import sys
+        sys.stdout.write("\x1b]0;DeepSeek Bridge\x07")
