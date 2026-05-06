@@ -34,16 +34,15 @@ class ConfigScreen(Vertical):
         yield Static("[bold]Configuration[/] -- edit and apply changes", id="config-title")
         yield Static("", id="config-status")
 
-        categories: dict[str, Vertical] = {}
-        for display_key, dataclass_attr, label, category in CONFIG_FIELDS:
-            if category not in categories:
-                cat_container = Vertical(classes="config-group")
-                cat_container.border_title = category
-                categories[category] = cat_container
-                yield cat_container
-            cat_container.mount(Label(f"  {label}:"))
-            input_id = f"cfg-{display_key}"
-            cat_container.mount(Input(id=input_id, placeholder=str(display_key)))
+        # Yield categories with their children pre-built — NO .mount() in compose!
+        for category in ("Model", "Network", "Storage"):
+            with Vertical(classes="config-group") as group:
+                group.border_title = category
+                for display_key, dataclass_attr, label, cat in CONFIG_FIELDS:
+                    if cat != category:
+                        continue
+                    yield Label(f"  {label}:")
+                    yield Input(id=f"cfg-{display_key}", placeholder=str(display_key))
 
         yield Button("Apply Changes", id="save-btn", variant="primary")
 

@@ -36,6 +36,16 @@ This proxy can also help **other applications and coding agents** beyond Cursor 
 - ✅ Heartbeat and pool utilization counters.
 - ✅ Full structured request traces with `--trace-dir` (one JSON file per request).
 
+## TUI Dashboard
+
+Starting with v0.2.0, `deepseek-cursor-proxy` opens a **Terminal UI dashboard** by default. The dashboard provides live monitoring and configuration in the terminal:
+
+- **Dashboard tab** — Real-time request metrics, uptime, ngrok status, and pool utilization
+- **Config tab** — Edit proxy settings (model, network, storage) live without restarting
+- **Logs tab** — Streaming log viewer with filtering and search
+
+Use `--headless` to disable the TUI and run in classic CLI mode, or `--no-tui` to suppress it entirely.
+
 ## Why This Exists
 
 This repository fixes the following Cursor + DeepSeek tool-call error with thinking mode enabled:
@@ -271,11 +281,14 @@ deepseek-cursor-proxy --help
 Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--tui` | on | Terminal UI dashboard (default: Dashboard, Config, Logs tabs) |
+| `--headless` | off | Run without TUI (classic CLI mode) |
 | `--stream-read-timeout` | 180 | SSE read timeout in seconds |
 | `--max-thread-pool` | 20 | Max concurrent request threads |
 | `--max-pool-connections` | 10 | Max upstream connections |
 | `--ngrok-health-check-interval` | 30 | Tunnel health check interval (0=disable) |
 | `--log-dir` | none | Directory for persistent log files |
 | `--ollama` | on | Enable Ollama endpoints (/api/version, /api/tags, /api/show) |
+| `--no-ollama` | off | Disable Ollama endpoints |
 | `--no-log` | off | Disable persistent log files |
 | `--compact` | off | Compact 1-line-per-request output |
