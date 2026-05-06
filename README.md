@@ -1,9 +1,14 @@
-<h1 align="center"><img src="assets/logo.png" width="150" alt="deepseek-bridge logo"><br>DeepSeek Bridge</h1>
+# DeepSeek Bridge
+
+[![PyPI version](https://img.shields.io/pypi/v/deepseek-bridge)](https://pypi.org/project/deepseek-bridge/)
+[![Python versions](https://img.shields.io/pypi/pyversions/deepseek-bridge)](https://pypi.org/project/deepseek-bridge/)
+[![CI](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml)
+[![License](https://img.shields.io/pypi/l/deepseek-bridge)](https://github.com/breixopd/deepseek-bridge/blob/main/LICENSE)
 
 A local proxy that connects AI coding tools (Cursor, GitHub Copilot, Codex, and any OpenAI-compatible client) to DeepSeek's reasoning models by repairing the `reasoning_content` chain that these tools commonly drop from tool-call requests.
 
 ```bash
-pip install deepseek-bridge     # minimal
+pip install deepseek-bridge      # minimal
 pip install deepseek-bridge[tui] # with Terminal UI dashboard
 ```
 
