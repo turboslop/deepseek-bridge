@@ -19,12 +19,21 @@ class TuiApp(App[None]):
 
     CSS = """
     TabbedContent { height: 1fr; }
+    TabPane { height: 1fr; }
     Screen { overflow-y: auto; }
-    .config-group { border: solid $primary; margin: 0 1; padding: 1; }
-    .group-header { text-style: bold; padding: 1 0; }
-    .input-row { height: 3; }
-    Input { margin: 0 2; }
-    #save-btn { margin: 1 2; width: 20; }
+    ConfigScreen { height: 1fr; }
+    .config-group { 
+        border: solid $primary; 
+        margin: 0 1; 
+        padding: 1 2; 
+        height: auto;
+        max-height: 20;
+    }
+    Label { width: 100%; }
+    Input { width: 1fr; margin: 0 0 1 0; }
+    #save-btn { margin: 1 0; width: 100%; }
+    #config-title { padding: 1 2; }
+    #config-status { padding: 0 2; height: 1; }
     """
 
     def __init__(

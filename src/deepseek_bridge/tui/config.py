@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import VerticalScroll
 from textual.widgets import Button, Input, Label, Static
 
 CONFIG_FIELDS = [
@@ -29,7 +29,7 @@ CONFIG_FIELDS = [
 BOOLEAN_FIELDS = {"display_reasoning", "ngrok", "cors", "ollama", "verbose", "compact"}
 
 
-class ConfigScreen(Vertical):
+class ConfigScreen(VerticalScroll, can_focus=True):
     """View and edit proxy configuration at runtime."""
 
     def compose(self) -> ComposeResult:
@@ -38,15 +38,17 @@ class ConfigScreen(Vertical):
         )
         yield Static("", id="config-status")
 
-        # Yield categories with their children pre-built — NO .mount() in compose!
         for category in ("Model", "Network", "Storage"):
-            with Vertical(classes="config-group") as group:
+            with VerticalScroll(classes="config-group") as group:
                 group.border_title = category
                 for display_key, _dataclass_attr, label, cat in CONFIG_FIELDS:
                     if cat != category:
                         continue
                     yield Label(f"  {label}:")
-                    yield Input(id=f"cfg-{display_key}", placeholder=str(display_key))
+                    yield Input(
+                        id=f"cfg-{display_key}",
+                        placeholder=str(display_key),
+                    )
 
         yield Button("Apply Changes", id="save-btn", variant="primary")
 
