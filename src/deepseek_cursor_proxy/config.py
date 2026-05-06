@@ -29,27 +29,23 @@ DEFAULT_REQUEST_TIMEOUT = 300.0
 DEFAULT_STREAM_READ_TIMEOUT = 180.0
 DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_MAX_POOL_CONNECTIONS = 10
-DEFAULT_MAX_KEEPALIVE = 5
 DEFAULT_MAX_THREAD_POOL = 20
 DEFAULT_CORS = True
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
-DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
 DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 
 DEFAULT_CONFIG_HEADER = (
-    "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml.\n"
-    "# Log files are saved to ~/.deepseek-cursor-proxy/logs/ by default.\n"
-    "# Use --no-log to disable or --log-dir to choose another directory."
+    "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml."
 )
 DEFAULT_CONFIG_TEXT = f"""{DEFAULT_CONFIG_HEADER}
 # API keys are read from Cursor's Authorization header and forwarded upstream.
 
-# `model` is the fallback when a request has no model; Cursor's requested
-# DeepSeek model name is otherwise respected.
-base_url: {DEFAULT_UPSTREAM_BASE_URL}
+# Essential settings — these are the ones you'll most likely customize
 model: {DEFAULT_UPSTREAM_MODEL}
+base_url: {DEFAULT_UPSTREAM_BASE_URL}
 thinking: {DEFAULT_THINKING}
 reasoning_effort: {DEFAULT_REASONING_EFFORT}
 display_reasoning: {str(DEFAULT_DISPLAY_REASONING).lower()}
@@ -59,16 +55,15 @@ host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
 ngrok: {str(DEFAULT_NGROK).lower()}
 verbose: {str(DEFAULT_VERBOSE).lower()}
+cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
 max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
-cors: {str(DEFAULT_CORS).lower()}
 
-reasoning_content_path: {REASONING_CONTENT_FILE_NAME}
-missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
-reasoning_cache_max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
-reasoning_cache_max_rows: {DEFAULT_REASONING_CACHE_MAX_ROWS}
-
-log_dir: null  # Directory for persistent log files (auto-purges old, keeps last 5)
+# Advanced — defaults are fine for most users
+# missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
+# reasoning_content_path: {REASONING_CONTENT_FILE_NAME}  # auto: ~/.deepseek-cursor-proxy/reasoning_content.sqlite3
+# reasoning_cache_max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
+# log_dir: null  # auto: ~/.deepseek-cursor-proxy/logs
 """
 
 
@@ -198,6 +193,18 @@ def normalize_missing_reasoning_strategy(value: Any) -> str:
     return DEFAULT_MISSING_REASONING_STRATEGY
 
 
+def _auto_stream_timeout(request_timeout: float, explicit: Any = None) -> float:
+    if explicit is not None:
+        return as_float(explicit, DEFAULT_STREAM_READ_TIMEOUT)
+    return max(request_timeout * 0.6, 60.0)
+
+
+def _auto_pool_connections(max_thread_pool: int, explicit: Any = None) -> int:
+    if explicit is not None:
+        return as_int(explicit, DEFAULT_MAX_POOL_CONNECTIONS)
+    return max(max_thread_pool // 2, 5)
+
+
 @dataclass(frozen=True)
 class ProxyConfig:
     host: str = DEFAULT_HOST
@@ -216,10 +223,11 @@ class ProxyConfig:
     display_reasoning: bool = DEFAULT_DISPLAY_REASONING
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
-    max_keepalive: int = DEFAULT_MAX_KEEPALIVE
     max_thread_pool: int = DEFAULT_MAX_THREAD_POOL
     cors: bool = DEFAULT_CORS
+    ollama: bool = True
     verbose: bool = DEFAULT_VERBOSE
+    compact: bool = False
     ngrok: bool = DEFAULT_NGROK
     ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL
     trace_dir: Path | None = None
@@ -259,9 +267,11 @@ class ProxyConfig:
                 setting_value(settings, "request_timeout"),
                 DEFAULT_REQUEST_TIMEOUT,
             ),
-            stream_read_timeout=as_float(
-                setting_value(settings, "stream_read_timeout"),
-                DEFAULT_STREAM_READ_TIMEOUT,
+            stream_read_timeout=_auto_stream_timeout(
+                as_float(setting_value(settings, "request_timeout"), DEFAULT_REQUEST_TIMEOUT),
+                explicit=setting_value(settings, "stream_read_timeout")
+                if setting_value(settings, "stream_read_timeout") is not MISSING
+                else None,
             ),
             max_request_body_bytes=as_int(
                 setting_value(settings, "max_request_body_bytes"),
@@ -299,9 +309,17 @@ class ProxyConfig:
                 setting_value(settings, "cors"),
                 DEFAULT_CORS,
             ),
+            ollama=as_bool(
+                setting_value(settings, "ollama"),
+                True,
+            ),
             verbose=as_bool(
                 setting_value(settings, "verbose"),
                 DEFAULT_VERBOSE,
+            ),
+            compact=as_bool(
+                setting_value(settings, "compact"),
+                False,
             ),
             ngrok=as_bool(
                 setting_value(settings, "ngrok"),
@@ -311,13 +329,11 @@ class ProxyConfig:
                 setting_value(settings, "ngrok_health_check_interval"),
                 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL,
             ),
-            max_pool_connections=as_int(
-                setting_value(settings, "max_pool_connections"),
-                DEFAULT_MAX_POOL_CONNECTIONS,
-            ),
-            max_keepalive=as_int(
-                setting_value(settings, "max_keepalive"),
-                DEFAULT_MAX_KEEPALIVE,
+            max_pool_connections=_auto_pool_connections(
+                as_int(setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL),
+                explicit=setting_value(settings, "max_pool_connections")
+                if setting_value(settings, "max_pool_connections") is not MISSING
+                else None,
             ),
             max_thread_pool=as_int(
                 setting_value(settings, "max_thread_pool"),

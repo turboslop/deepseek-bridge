@@ -32,7 +32,7 @@ class UpstreamPoolTests(unittest.TestCase):
 
     def test_upstream_pool_initialization(self) -> None:
         with patch.object(urllib3, "PoolManager") as mock_pool_mgr:
-            pool = UpstreamPool(max_connections=5, max_keepalive=3)
+            pool = UpstreamPool(max_connections=5)
             mock_pool_mgr.assert_called_once()
             _args, kwargs = mock_pool_mgr.call_args
             self.assertEqual(kwargs["maxsize"], 5)
@@ -135,14 +135,11 @@ class CLITests(unittest.TestCase):
             [
                 "--max-pool-connections",
                 "5",
-                "--max-keepalive",
-                "3",
                 "--max-thread-pool",
                 "10",
             ]
         )
         self.assertEqual(args.max_pool_connections, 5)
-        self.assertEqual(args.max_keepalive, 3)
         self.assertEqual(args.max_thread_pool, 10)
 
 

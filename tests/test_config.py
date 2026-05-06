@@ -61,16 +61,12 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(config_path.exists())
             self.assertIn(f"model: {DEFAULT_UPSTREAM_MODEL}", config_text)
             self.assertIn(
-                f"missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}",
+                f"# missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}",
                 config_text,
             )
             self.assertIn(
-                "reasoning_cache_max_age_seconds: "
+                "# reasoning_cache_max_age_seconds: "
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
-                config_text,
-            )
-            self.assertIn(
-                f"reasoning_cache_max_rows: {DEFAULT_REASONING_CACHE_MAX_ROWS}",
                 config_text,
             )
             self.assertIn(f"ngrok: {str(DEFAULT_NGROK).lower()}", config_text)
@@ -97,7 +93,7 @@ class ConfigTests(unittest.TestCase):
                 config.reasoning_cache_max_rows, DEFAULT_REASONING_CACHE_MAX_ROWS
             )
             self.assertIn(
-                "log_dir: null  # Directory for persistent log files",
+                "# log_dir: null  # auto: ~/.deepseek-cursor-proxy/logs",
                 config_text,
             )
             self.assertEqual(

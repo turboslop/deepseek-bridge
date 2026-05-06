@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import http.client
@@ -86,7 +87,7 @@ class ProxyResponseResult:
 
 
 class UpstreamPool:
-    def __init__(self, max_connections: int = 10, max_keepalive: int = 5):
+    def __init__(self, max_connections: int = 10):
         self._pool = urllib3.PoolManager(
             maxsize=max_connections,
             block=True,
@@ -151,6 +152,25 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         except Exception as exc:
             LOG.warning("failed to log DB stats: %s", exc)
 
+    def _log_heartbeat(self) -> None:
+        parts = [f"heartbeat: req={format_count(self.request_count)}"]
+        try:
+            parts.append(f"pool={len(self.executor._threads)}/{self.executor._max_workers}")
+        except Exception:
+            parts.append("pool=?")
+        try:
+            store = self.reasoning_store
+            if isinstance(store.reasoning_content_path, Path):
+                size_mb = store.reasoning_content_path.stat().st_size / (1024 * 1024)
+                row = store._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+                row_count = int(row[0]) if row else 0
+                parts.append(f"db={size_mb:.0f}MB/{format_count(row_count)}rows")
+        except Exception:
+            parts.append("db=?")
+        uptime = int(time.monotonic() - self.start_time)
+        parts.append(f"uptime={uptime // 60}m")
+        LOG.info(" | ".join(parts))
+
     def server_close(self):
         self.executor.shutdown(wait=True, cancel_futures=False)
         super().server_close()
@@ -194,6 +214,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         request_path = urlparse(self.path).path
         if self.config.verbose:
             LOG.info("incoming GET %s from %s", request_path, self.client_address[0])
+        if self.config.ollama and request_path == "/api/version":
+            self._handle_api_version()
+            return
+        if self.config.ollama and request_path == "/api/tags":
+            self._handle_api_tags()
+            return
         if request_path in {"/healthz", "/v1/healthz", "/health", "/v1/health"}:
             self._send_health()
             return
@@ -208,15 +234,8 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self._request_id = _generate_request_id()
         self.server.request_count += 1  # type: ignore[attr-defined]
-        if self.server.request_count % 500 == 0:  # type: ignore[attr-defined]
-            LOG.info(
-                "heartbeat: processed %s requests",
-                self.server.request_count,  # type: ignore[attr-defined]
-            )
-            if hasattr(self.server, 'reasoning_store'):
-                self.server._log_db_stats()  # type: ignore[attr-defined]
         if self.server.request_count % 100 == 0:  # type: ignore[attr-defined]
-            self.server._log_pool_utilization()  # type: ignore[attr-defined]
+            self.server._log_heartbeat()  # type: ignore[attr-defined]
         started = time.monotonic()
         request_path = urlparse(self.path).path
         trace = self._start_trace(request_path)
@@ -228,6 +247,10 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 self.headers.get("Content-Length", "0"),
                 self.headers.get("User-Agent", ""),
             )
+        if self.config.ollama and request_path == "/api/show":
+            self._handle_api_show()
+            self._finish_trace(trace, "completed")
+            return
         if request_path in {"/embeddings", "/v1/embeddings"}:
             if self.config.verbose:
                 LOG.info(
@@ -318,8 +341,6 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         if self.config.verbose:
             log_json("cursor request body", payload)
 
-        log_cursor_request(payload, self.config)
-
         prepared = prepare_upstream_request(
             payload,
             self.config,
@@ -328,7 +349,17 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         )
         if trace is not None:
             trace.record_transform(prepared)
-        log_context_summary(prepared)
+
+        if self.config.compact:
+            LOG.info(
+                ">> %s | msg=%s | ctx=%s",
+                str(payload.get("model") or self.config.upstream_model),
+                format_count(message_count(payload)),
+                context_status(prepared),
+            )
+        else:
+            log_cursor_request(payload, self.config)
+            log_context_summary(prepared)
         if (
             prepared.missing_reasoning_messages
             and self.config.missing_reasoning_strategy == "reject"
@@ -399,10 +430,10 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             )
         stream = bool(prepared.payload.get("stream"))
 
-        if self.config.verbose:
+        if self.config.verbose and not self.config.compact:
             log_send_summary(prepared)
         spinner = TerminalSpinner(
-            enabled=stream and not self.config.verbose,
+            enabled=stream and not self.config.verbose and not self.config.compact,
             text="└ {frame}",
         ).start()
 
@@ -541,7 +572,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 )
                 return
             spinner.stop()
-            log_stats_summary(sent_response.usage)
+            log_stats_summary(sent_response.usage, elapsed_ms=elapsed_ms(started))
             self._finish_trace(
                 trace,
                 "completed",
@@ -779,6 +810,65 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 "uptime_seconds": uptime,
             },
         )
+
+    def _handle_api_version(self) -> None:
+        self._request_id = _generate_request_id()
+        self._send_json(200, {"version": "0.18.3"})
+
+    def _handle_api_tags(self) -> None:
+        self._request_id = _generate_request_id()
+        model_ids = list(dict.fromkeys([
+            self.config.upstream_model,
+            "deepseek-v4-pro",
+            "deepseek-v4-flash",
+        ]))
+        models = []
+        for model_id in model_ids:
+            models.append({
+                "name": model_id,
+                "model": model_id,
+                "modified_at": "2026-01-01T00:00:00.000Z",
+                "size": 4109865159,
+                "digest": f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}",
+                "details": {
+                    "format": "gguf",
+                    "family": "deepseek" if "deepseek" in model_id else "custom",
+                    "families": ["deepseek"] if "deepseek" in model_id else ["custom"],
+                    "parameter_size": "7B",
+                    "quantization_level": "Q4_K_M",
+                },
+            })
+        self._send_json(200, {"models": models})
+
+    def _handle_api_show(self) -> None:
+        self._request_id = _generate_request_id()
+        try:
+            payload = self._read_json_body()
+        except (ValueError, RequestBodyTooLarge):
+            self._send_json(400, {"error": "invalid request"})
+            return
+        model_name = str(payload.get("model") or self.config.upstream_model)
+        is_deepseek = "deepseek" in model_name
+        architecture = "deepseek" if is_deepseek else "custom"
+        response = {
+            "modelfile": f"# Modelfile for {model_name}\nFROM {model_name}\n",
+            "template": "{{ .Prompt }}",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": architecture,
+                "families": [architecture],
+                "parameter_size": "7B",
+                "quantization_level": "Q4_K_M",
+            },
+            "model_info": {
+                f"{architecture}.context_length": 128000,
+                f"{architecture}.embedding_length": 2048,
+            },
+            "capabilities": ["completion", "tools"],
+            "modified_at": "2026-01-01T00:00:00.000Z",
+        }
+        self._send_json(200, response)
 
     def _read_json_body(self) -> dict[str, Any]:
         try:
@@ -1280,6 +1370,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Log detailed request metadata and full payloads",
     )
     parser.add_argument(
+        "--compact",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Compact 1-line-per-request output",
+    )
+    parser.add_argument(
         "--trace-dir",
         type=Path,
         help="Write full structured request traces to this directory",
@@ -1318,6 +1414,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--no-collasible-reasoning",
         "--no-collasible-resoning",
         dest="collapsible_reasoning",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--no-markdown-reasoning",
+        dest="display_reasoning",
         action="store_false",
         default=argparse.SUPPRESS,
         help=argparse.SUPPRESS,
@@ -1367,11 +1470,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Maximum upstream pool connections, default from config or 10",
     )
     parser.add_argument(
-        "--max-keepalive",
-        type=int,
-        help="Maximum upstream keepalive connections, default from config or 5",
-    )
-    parser.add_argument(
         "--max-thread-pool",
         type=int,
         help="Maximum thread pool size for request handling, default from config or 20",
@@ -1380,6 +1478,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--clear-reasoning-cache",
         action="store_true",
         help="Clear the local reasoning_content SQLite cache and exit",
+    )
+    parser.add_argument(
+        "--ollama",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable Ollama-compatible endpoints",
     )
     return parser
 
@@ -1457,13 +1561,24 @@ def log_send_summary(prepared: Any) -> None:
     )
 
 
-def log_stats_summary(usage: dict[str, Any] | None) -> None:
+def log_stats_summary(
+    usage: dict[str, Any] | None,
+    elapsed_ms: int | None = None,
+) -> None:
+    elapsed_str = format_count(elapsed_ms) + "ms" if elapsed_ms is not None else "?"
+    tokens_per_sec = ""
+    if elapsed_ms and isinstance(usage, dict):
+        total_tokens = int_or_zero(usage.get("total_tokens"))
+        if total_tokens and elapsed_ms > 0:
+            tokens_per_sec = f" {total_tokens / (elapsed_ms / 1000):.1f} tok/s"
     LOG.info(
-        "└ stats   prompt=%s output=%s reasoning=%s cache_hit=%s",
+        "└ stats   prompt=%s output=%s reasoning=%s cache_hit=%s elapsed=%s%s",
         format_usage_count(usage, "prompt_tokens"),
         format_usage_count(usage, "completion_tokens"),
         format_count(reasoning_token_count(usage)),
         cache_hit_rate(usage),
+        elapsed_str,
+        tokens_per_sec,
     )
 
 
@@ -1671,6 +1786,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["ngrok_health_check_interval"] = args.ngrok_health_check_interval
     if args.verbose is not None:
         updates["verbose"] = args.verbose
+    if args.compact is not None:
+        updates["compact"] = args.compact
     if args.trace_dir is not None:
         updates["trace_dir"] = args.trace_dir
     if args.display_reasoning is not None:
@@ -1679,6 +1796,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["collapsible_reasoning"] = args.collapsible_reasoning
     if args.cors is not None:
         updates["cors"] = args.cors
+    if args.ollama is not None:
+        updates["ollama"] = args.ollama
     if args.request_timeout is not None:
         updates["request_timeout"] = args.request_timeout
     if args.stream_read_timeout is not None:
@@ -1695,8 +1814,6 @@ def main(argv: list[str] | None = None) -> int:
         updates["missing_reasoning_strategy"] = args.missing_reasoning_strategy
     if args.max_pool_connections is not None:
         updates["max_pool_connections"] = args.max_pool_connections
-    if args.max_keepalive is not None:
-        updates["max_keepalive"] = args.max_keepalive
     if args.max_thread_pool is not None:
         updates["max_thread_pool"] = args.max_thread_pool
     if updates:
@@ -1728,7 +1845,7 @@ def main(argv: list[str] | None = None) -> int:
             LOG.error("failed to initialize trace directory: %s", exc)
             store.close()
             return 2
-    pool = UpstreamPool(max_connections=config.max_pool_connections, max_keepalive=config.max_keepalive)
+    pool = UpstreamPool(max_connections=config.max_pool_connections)
     server = BoundedThreadPoolHTTPServer(
         (config.host, config.port), DeepSeekProxyHandler,
         max_workers=config.max_thread_pool,
@@ -1787,6 +1904,7 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("  Tunnel:    %s", public_url)
     elif not config.ngrok:
         LOG.info("  Tunnel:    off")
+    LOG.info("  Ollama:    %s", "enabled" if config.ollama else "disabled")
     LOG.info("")
     LOG.info("Storage")
     LOG.info("  Reasoning DB: %s", config.reasoning_content_path)

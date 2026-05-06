@@ -17,6 +17,7 @@ This proxy can also help **other applications and coding agents** beyond Cursor 
 - ✅ Configurable SSE read timeout (`--stream-read-timeout`, default 180s) prevents hung threads on silent upstreams.
 - ✅ Ngrok tunnel health check with auto-reconnect (`--ngrok-health-check-interval`).
 - ✅ Graceful shutdown on SIGTERM — active requests drain, reasoning cache is flushed.
+- ✅ GitHub Copilot integration via Ollama-compatible endpoints (enabled by default).
 
 **OpenAI API Compatibility:**
 - ✅ `system_fingerprint` in every streaming and non-streaming response.
@@ -162,6 +163,50 @@ Select `deepseek-v4-pro` in Cursor and use chat or agent mode as usual.
 - **Context caching compatibility:** The proxy preserves compatibility by never injecting synthetic thread IDs, timestamps, or cache-control messages. It restores `reasoning_content` as the exact original string, so repeated prefixes remain intact for [DeepSeek context cache](https://api-docs.deepseek.com/guides/kv_cache). Cache hit rates are logged in the terminal output.
 - **Additional compatibility fixes:** Beyond reasoning repair, the proxy converts legacy `functions`/`function_call` fields to `tools`/`tool_choice`, preserves required and named tool-choice semantics, normalizes `reasoning_effort` aliases, strips mirrored thinking display blocks from assistant content, flattens multi-part content arrays to plain text, and mirrors `reasoning_content` into Cursor-visible Markdown details blocks.
 
+## GitHub Copilot Integration
+
+The proxy acts as an Ollama-compatible server for GitHub Copilot Chat in VS Code. Copilot uses the Ollama-native API for model discovery and the OpenAI-compatible `/v1/chat/completions` for inference — both are supported by default.
+
+### Setup
+
+In VS Code, configure Copilot to use your local proxy:
+
+```json
+{
+  "github.copilot.chat.byok.ollamaEndpoint": "http://localhost:9000"
+}
+```
+
+Then open Copilot Chat → "Manage Models" → "Add Models" → your DeepSeek models appear automatically.
+
+### Agent Mode Support
+
+The `/api/show` endpoint advertises `"tools"` capability, enabling full Agent Mode in Copilot. The proxy's reasoning repair pipeline ensures tool-call chains work correctly.
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/version` | GET | Ollama version check (returns `0.18.3`) |
+| `/api/tags` | GET | Model list in Ollama format |
+| `/api/show` | POST | Model capabilities (includes `tools` for Agent Mode) |
+
+Disable Ollama endpoints with `--no-ollama`.
+
+## Known Limitations
+
+### Cursor Sub-Agents
+
+Cursor sub-agents do **not** inherit custom API base URL or API key settings — this is a Cursor-side bug (see [forum thread](https://forum.cursor.com/t/sub-agents-are-not-using-custom-openai-base-urls/152574)). When Cursor spawns a sub-agent (e.g., during multi-file edits), it routes through Cursor's own servers rather than your custom endpoint.
+
+**Workaround**: There is currently no proxy-side fix for sub-agent routing. The proxy ensures perfect OpenAI API compliance so that when sub-agents DO route through the proxy, they work correctly. Use the main agent (Cmd+Shift+0 to toggle) for direct DeepSeek chat, and sub-agents will fall back to Cursor's built-in models.
+
+### Reasoning Display
+
+Cursor's native reasoning UI (brain icon / thought bubble) is only available for Cursor's own models. For BYOK/custom endpoints, DeepSeek's `reasoning_content` is forwarded in SSE chunks (for potential future native support) and mirrored into visible Markdown `<details>` blocks as a real-time workaround.
+
+Use `--no-display-reasoning` (or its alias `--no-markdown-reasoning`) to hide the Markdown mirroring if you prefer to only use the native SSE field.
+
 ## Development
 
 Run unit tests:
@@ -231,3 +276,6 @@ Key flags:
 | `--max-pool-connections` | 10 | Max upstream connections |
 | `--ngrok-health-check-interval` | 30 | Tunnel health check interval (0=disable) |
 | `--log-dir` | none | Directory for persistent log files |
+| `--ollama` | on | Enable Ollama endpoints (/api/version, /api/tags, /api/show) |
+| `--no-log` | off | Disable persistent log files |
+| `--compact` | off | Compact 1-line-per-request output |
