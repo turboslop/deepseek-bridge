@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, TabbedContent, TabPane
+from textual.widgets import TabbedContent, TabPane
 
 from .config import ConfigScreen
 from .dashboard import DashboardScreen
@@ -46,7 +46,6 @@ class TuiApp(App[None]):
         self.server = server
 
     def compose(self) -> ComposeResult:
-        yield Header()
         with TabbedContent("Dashboard", "Config", "Logs"):
             with TabPane("Dashboard"):
                 yield DashboardScreen()
@@ -54,4 +53,6 @@ class TuiApp(App[None]):
                 yield ConfigScreen()
             with TabPane("Logs"):
                 yield LogsScreen()
-        yield Footer()
+
+    def on_mount(self) -> None:
+        self.title = "DeepSeek Bridge"
