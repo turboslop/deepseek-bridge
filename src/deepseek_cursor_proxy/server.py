@@ -1493,6 +1493,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     group_other.add_argument(
+        "--tui",
+        action="store_true",
+        default=False,
+        help="Launch TUI dashboard (requires textual library)",
+    )
+    group_other.add_argument(
         "--version",
         action="version",
         version=f"deepseek-cursor-proxy {__version__}",
@@ -1792,6 +1798,12 @@ def warn_if_insecure_upstream(url: str) -> None:
     LOG.warning("upstream base_url uses plain HTTP; bearer tokens may be exposed")
 
 
+def _run_server(server: BoundedThreadPoolHTTPServer) -> None:
+    server.timeout = 0.5
+    while not _shutdown_requested.is_set():
+        server.handle_request()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
@@ -1955,13 +1967,35 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGINT, _handle_shutdown_signal)
     except ValueError:
         pass  # SIGINT already handled (non-main thread)
+
     try:
-        server.timeout = 0.5
-        while not _shutdown_requested.is_set():
-            server.handle_request()
-    except KeyboardInterrupt:
-        LOG.info("received SIGINT, initiating graceful shutdown")
-        _shutdown_requested.set()
+        if args.tui:
+            try:
+                from .tui import TuiApp  # noqa: PLC0415
+            except ImportError:
+                LOG.error(
+                    "textual library not installed. "
+                    "Run: uv pip install textual  or  pip install textual"
+                )
+                store.close()
+                return 1
+            server_thread = threading.Thread(
+                target=_run_server, args=(server,), daemon=True,
+            )
+            server_thread.start()
+            try:
+                app = TuiApp(server_config=config, server=server)
+                app.run()
+            except KeyboardInterrupt:
+                pass
+            _shutdown_requested.set()
+            server_thread.join(timeout=5)
+        else:
+            try:
+                _run_server(server)
+            except KeyboardInterrupt:
+                LOG.info("received SIGINT, initiating graceful shutdown")
+                _shutdown_requested.set()
     finally:
         if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: draining active requests...")
