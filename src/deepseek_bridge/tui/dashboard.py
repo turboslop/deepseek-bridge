@@ -238,22 +238,26 @@ class DashboardScreen(Horizontal):
         if snap.local_url:
             lines.append("")
             lines.append("[bold]Connection[/]")
-            lines.append(f"  Cursor Base URL: {snap.api_url}")
-            lines.append(f"  Upstream:        {snap.upstream_url}")
-            lines.append(f"  Ollama:          {snap.ollama_url}")
-
+            lines.append(f"  {snap.api_url}")
+            lines.append(f"  upstream: {snap.upstream_url}")
+            lines.append(f"  ollama:   {snap.ollama_url}")
         self.query_one("#dashboard-text", Static).update("\n".join(lines))
 
         if config:
-            for widget_id, attr, _label, _options in DASH_CONFIG_FIELDS:
-                try:
-                    widget = self.query_one(f"#dash-{widget_id}", Select)
-                except Exception:
-                    continue
-                raw = getattr(config, attr, "")
-                if isinstance(raw, bool):
-                    raw = "true" if raw else "false"
-                try:
-                    widget.value = str(raw)
-                except Exception:
-                    pass
+            thinking = getattr(config, "thinking", "?")
+            effort = getattr(config, "reasoning_effort", "?")
+            model = getattr(config, "upstream_model", "?")
+            display = "on" if getattr(config, "display_reasoning", True) else "off"
+            ngrok = "on" if getattr(config, "ngrok", True) else "off"
+            cfg = [
+                "[bold]Config[/]",
+                "",
+                f"  model:        {model}",
+                f"  thinking:     {thinking}",
+                f"  effort:       {effort}",
+                f"  show thinking: {display}",
+                f"  ngrok:        {ngrok}",
+            ]
+            self.query_one("#dashboard-config", Static).update("\n".join(cfg))
+        else:
+            self.query_one("#dashboard-config", Static).update("[bold]Config[/]\n\n  (none)")
