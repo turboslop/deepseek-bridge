@@ -712,7 +712,7 @@ Max Concurrent: 6 (Wave 1 + Wave 2 overlap after Wave 1 foundation)
   **Update `SUPPORTED_REQUEST_FIELDS`** in `transform.py`:
   - Add `"thinking"` to supported fields (now expects object `{"type": "enabled"|"disabled"}`)
   - Add `"response_format"` (JSON mode support)
-  - Add `"logprobs"` and `"top_logprobs"` 
+  - Add `"logprobs"` and `"top_logprobs"`
   - Add `"user_id"`
   - Add `"max_completion_tokens"` as an alias for `max_tokens`
 
@@ -1342,7 +1342,7 @@ Max Concurrent: 6 (Wave 1 + Wave 2 overlap after Wave 1 foundation)
     [run]
     source = src/deepseek_bridge
     omit = */tui/*
-    
+
     [report]
     exclude_lines =
         pragma: no cover
@@ -1645,4 +1645,3 @@ uv run deepseek-bridge --no-collasible-reasoning --help 2>&1 | grep -qi "unrecog
 - [x] TUI is installable via `.[tui]` extra
 - [x] CLI typo aliases are gone (--collasible-reasoning returns error)
 - [x] DeepSeek legacy model mapping works (deepseek-chat → deepseek-v4-flash)
-

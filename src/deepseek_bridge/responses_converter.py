@@ -205,9 +205,7 @@ def _convert_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
                 "type": "function",
                 "function": {
                     "name": str(name),
-                    "description": str(
-                        tool.get("description", f"Custom tool: {name}")
-                    ),
+                    "description": str(tool.get("description", f"Custom tool: {name}")),
                     "parameters": parameters,
                 },
             }

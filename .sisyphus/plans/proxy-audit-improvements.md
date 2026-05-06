@@ -483,7 +483,7 @@ Final Wave (4 parallel reviews):
     Tool: Bash
     Steps:
       1. timeout 3 uv run python -m deepseek_cursor_proxy.server --no-ngrok --port 19999 2>&1
-    Expected Result: 
+    Expected Result:
       - Header with "DeepSeek Cursor Proxy" and version number
       - "Model:" section with model name and settings
       - "Network:" section with local and API base URLs

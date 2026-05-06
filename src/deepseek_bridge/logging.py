@@ -62,9 +62,7 @@ def configure_logging(
         log_file = log_path / f"proxy-{timestamp}.log"
         log_file_path = str(log_file)
         file_handler = stdlib_logging.FileHandler(log_file_path, encoding="utf-8")
-        file_handler.setFormatter(
-            stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
-        )
+        file_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
         handlers.append(file_handler)
     stdlib_logging.basicConfig(
         level=stdlib_logging.INFO,

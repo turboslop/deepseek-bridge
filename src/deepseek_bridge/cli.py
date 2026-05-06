@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import signal
 import sys
 import threading
@@ -292,7 +291,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_log:
         config = replace(config, log_dir=None)
 
-    log_file_path = configure_logging(verbose=config.verbose, log_dir=args.log_dir or config.log_dir)
+    log_file_path = configure_logging(
+        verbose=config.verbose, log_dir=args.log_dir or config.log_dir
+    )
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,
@@ -316,7 +317,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     pool = UpstreamPool(max_connections=config.max_pool_connections)
     server = BoundedThreadPoolHTTPServer(
-        (config.host, config.port), DeepSeekProxyHandler,
+        (config.host, config.port),
+        DeepSeekProxyHandler,
         max_workers=config.max_thread_pool,
     )
     server.config = config
@@ -355,14 +357,15 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("╚══════════════════════════════════════════════╝")
     LOG.info("")
     LOG.info("Model")
-    LOG.info("  %s (%s, %s)", config.upstream_model,
+    LOG.info(
+        "  %s (%s, %s)",
+        config.upstream_model,
         "thinking" if config.thinking == "enabled" else "no thinking",
-        config.reasoning_effort)
+        config.reasoning_effort,
+    )
     display_reasoning = "off"
     if config.display_reasoning:
-        display_reasoning = (
-            "on (collapsible)" if config.collapsible_reasoning else "on"
-        )
+        display_reasoning = "on (collapsible)" if config.collapsible_reasoning else "on"
     LOG.info("  Display reasoning: %s", display_reasoning)
     if config.verbose:
         LOG.info("  Missing reasoning strategy: %s", config.missing_reasoning_strategy)
@@ -398,12 +401,16 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 from .tui import TuiApp  # noqa: PLC0415
             except ImportError:
-                LOG.info("textual not available; running in headless mode. Run: uv pip install textual")
+                LOG.info(
+                    "textual not available; running in headless mode. Run: uv pip install textual"
+                )
                 use_tui = False
 
         if use_tui:
             server_thread = threading.Thread(
-                target=_run_server, args=(server,), daemon=True,
+                target=_run_server,
+                args=(server,),
+                daemon=True,
             )
             server_thread.start()
             try:

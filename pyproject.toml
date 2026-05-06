@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "deepseek-bridge"
-version = "0.3.0"
 description = "Local OpenAI-compatible proxy for AI coding tools and DeepSeek thinking models"
+dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -57,3 +57,5 @@ check_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 strict_optional = true
+
+[tool.setuptools_scm]

@@ -24,6 +24,7 @@ MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
 
 # ── Request ID ───────────────────────────────────────────────
 
+
 def _generate_request_id() -> str:
     return f"dcp-{uuid.uuid4().hex[:24]}"
 
@@ -39,6 +40,7 @@ def _handle_shutdown_signal(signum, frame):
 
 
 # ── Error helpers ────────────────────────────────────────────
+
 
 class RequestBodyTooLargeError(ValueError):
     pass
@@ -65,11 +67,13 @@ class ProxyResponseResult:
 
 # ── Timing ───────────────────────────────────────────────────
 
+
 def elapsed_ms(started: float) -> int:
     return round((time.monotonic() - started) * 1000)
 
 
 # ── Logging helpers ──────────────────────────────────────────
+
 
 def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
     """Truncate message content fields to prevent code exposure in verbose logs."""
@@ -186,6 +190,7 @@ def log_stats_summary(
 
 # ── Request inspection helpers ───────────────────────────────
 
+
 def context_status(prepared: Any) -> str:
     if prepared.recovered_reasoning_messages:
         return "recovered"
@@ -275,6 +280,7 @@ def int_or_zero(value: Any) -> int:
 
 
 # ── SSE helpers ──────────────────────────────────────────────
+
 
 def sse_data(payload: dict[str, Any]) -> bytes:
     return (

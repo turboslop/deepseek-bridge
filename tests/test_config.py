@@ -263,12 +263,11 @@ class ConfigTests(unittest.TestCase):
 
         self.assertFalse(config.verbose)
 
-    def test_version_matches_pyproject_toml(self) -> None:
+    def test_version_is_valid_pep440(self) -> None:
         parts = __version__.split(".")
-        self.assertEqual(len(parts), 3, f"version should be X.Y.Z, got {__version__}")
-        self.assertNotEqual(
-            __version__, "0.1.0", "version should have been updated from 0.1.0"
-        )
+        self.assertGreaterEqual(len(parts), 3)
+        self.assertTrue(parts[0].isdigit() and parts[1].isdigit())
+        self.assertNotEqual(__version__, "0.1.0")
 
     def test_default_log_dir_is_set(self) -> None:
         config = ProxyConfig()

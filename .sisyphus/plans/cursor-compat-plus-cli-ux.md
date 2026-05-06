@@ -322,7 +322,7 @@ Final Wave (4 parallel reviews):
      # After:
      def __init__(self, max_connections: int = 10):
      ```
-  2. In `config.py`, `ProxyConfig`: Remove `max_keepalive` field (line 211) and its default `DEFAULT_MAX_KEEPALIVE = 5` (line 32)  
+  2. In `config.py`, `ProxyConfig`: Remove `max_keepalive` field (line 211) and its default `DEFAULT_MAX_KEEPALIVE = 5` (line 32)
   3. In `config.py`, `ProxyConfig.from_file()`: Remove `max_keepalive=as_int(...)` loading block (~line 310-312)
   4. In `server.py`, `build_arg_parser()`: Remove `--max-keepalive` CLI argument (~line 1347-1349)
   5. In `server.py`, `main()`: Remove `if args.max_keepalive is not None:` update (~line 1674)
@@ -791,7 +791,7 @@ Final Wave (4 parallel reviews):
 
   **Findings from 3 log files**:
   - 0 ERROR lines ✅
-  - 0 WARNING lines ✅  
+  - 0 WARNING lines ✅
   - No heartbeat lines (proxy not kept running long enough for 100+ requests)
   - DB is 16K with 0 rows (empty — no chat completions processed yet)
   - Log format correct for all 3 startup sessions
@@ -845,7 +845,7 @@ Final Wave (4 parallel reviews):
   - Commit all remaining uncommitted changes with message:
     ```
     feat: ollama/copilot compat, cli ux overhaul, config simplification
-    
+
     - Add Ollama-compatible endpoints: /api/version, /api/tags, /api/show
     - Per-request output with elapsed time and tokens/sec
     - --compact mode for CI/script usage

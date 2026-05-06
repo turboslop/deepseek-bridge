@@ -126,9 +126,7 @@ class ResponsesConverterConversionTests(unittest.TestCase):
 
     def test_function_call_output_missing_call_id(self) -> None:
         payload = {
-            "input": [
-                {"type": "function_call_output", "output": "result"}
-            ],
+            "input": [{"type": "function_call_output", "output": "result"}],
             "model": "x",
         }
         result = convert_responses_to_chat(payload)
@@ -136,9 +134,7 @@ class ResponsesConverterConversionTests(unittest.TestCase):
 
     def test_function_call_output_missing_output(self) -> None:
         payload = {
-            "input": [
-                {"type": "function_call_output", "call_id": "abc"}
-            ],
+            "input": [{"type": "function_call_output", "call_id": "abc"}],
             "model": "x",
         }
         result = convert_responses_to_chat(payload)
@@ -302,9 +298,7 @@ class ResponsesConverterConversionTests(unittest.TestCase):
         result = convert_responses_to_chat(payload)
         self.assertIn("tools", result)
         self.assertEqual(result["tools"][0]["type"], "function")
-        self.assertEqual(
-            result["tools"][0]["function"]["name"], "get_weather"
-        )
+        self.assertEqual(result["tools"][0]["function"]["name"], "get_weather")
 
     def test_flat_function_tools_converted(self) -> None:
         payload = {
@@ -346,7 +340,9 @@ class ResponsesConverterConversionTests(unittest.TestCase):
         self.assertEqual(result["tools"][0]["type"], "function")
         self.assertEqual(result["tools"][0]["function"]["name"], "my_plugin")
         self.assertEqual(
-            result["tools"][0]["function"]["parameters"]["properties"]["action"]["type"],
+            result["tools"][0]["function"]["parameters"]["properties"]["action"][
+                "type"
+            ],
             "string",
         )
 
@@ -427,9 +423,7 @@ class ResponsesConverterConversionTests(unittest.TestCase):
 
     def test_fallback_content_on_unknown_type(self) -> None:
         payload = {
-            "input": [
-                {"type": "unknown_future_type", "content": "some text"}
-            ],
+            "input": [{"type": "unknown_future_type", "content": "some text"}],
             "model": "x",
         }
         result = convert_responses_to_chat(payload)
@@ -477,10 +471,12 @@ class ConvertToolsTests(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_mixed_tools(self) -> None:
-        result = _convert_tools([
-            {"type": "function", "function": {"name": "f1"}},
-            "not a dict",
-            {"type": "unknown_type", "name": "skip"},
-        ])
+        result = _convert_tools(
+            [
+                {"type": "function", "function": {"name": "f1"}},
+                "not a dict",
+                {"type": "unknown_type", "name": "skip"},
+            ]
+        )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["function"]["name"], "f1")

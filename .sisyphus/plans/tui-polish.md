@@ -47,4 +47,3 @@
 - [x] T1: Fix title + dashboard URLs + server public_url + CSS polish
 - [x] T2: Make config editor editable
 - [x] T3: Test suite + commit + push
-

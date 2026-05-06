@@ -504,7 +504,7 @@ Wave FINAL (After ALL — 4 parallel reviews):
   - Ensure `self.close_connection = True` is set in EVERY write-failure path
   - The streaming path already does this (line 787) — verify and extend to:
     - `_send_response_headers()` at ~line 517: set `self.close_connection = True` before returning False
-    - `_write_to_client()` at ~line 533: set `self.close_connection = True` before returning False  
+    - `_write_to_client()` at ~line 533: set `self.close_connection = True` before returning False
     - `_proxy_regular_response()` at ~line 746: confirm close_connection is already True
     - `_send_upstream_error()` at ~line 668: set `self.close_connection = True`
     - `_send_json()` at ~line 500: set `self.close_connection = True` on write failure

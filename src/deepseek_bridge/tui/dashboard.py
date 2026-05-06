@@ -1,4 +1,5 @@
 """Live stats dashboard screen."""
+
 from __future__ import annotations
 
 import time
@@ -124,18 +125,24 @@ class DashboardScreen(Vertical):
             port = config.port or 9000
             snap.local_url = f"http://{host}:{port}/v1"
             public_url = getattr(server, "public_url", None)
-            snap.api_url = f"{public_url.rstrip('/')}/v1" if public_url else snap.local_url
+            snap.api_url = (
+                f"{public_url.rstrip('/')}/v1" if public_url else snap.local_url
+            )
             snap.upstream_url = f"{config.upstream_base_url}/chat/completions"
             snap.ollama_url = f"http://{host}:{port}"
 
         lines: list[str] = []
-        lines.append(f"  [bold]Requests[/]     {snap.req_count:,} total  |  {snap.req_rate:.1f} req/s")
+        lines.append(
+            f"  [bold]Requests[/]     {snap.req_count:,} total  |  {snap.req_rate:.1f} req/s"
+        )
         pool_line = (
             f"  [bold]Thread Pool[/]  {snap.active_threads}/{snap.max_workers}"
             f" active  |  queue: {snap.queue_size}"
         )
         lines.append(pool_line)
-        lines.append(f"  [bold]DB[/]           {snap.db_size}  |  {snap.db_rows:,} rows")
+        lines.append(
+            f"  [bold]DB[/]           {snap.db_size}  |  {snap.db_rows:,} rows"
+        )
         lines.append(f"  [bold]Uptime[/]       {_fmt_hms(snap.uptime_seconds)}")
 
         if snap.local_url:

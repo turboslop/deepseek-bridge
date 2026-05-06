@@ -52,20 +52,7 @@ Use `--headless` to disable the TUI and run in classic CLI mode.
 
 ## Why This Exists
 
-DeepSeek's thinking-mode API enforces a strict contract: every assistant message that participates in a tool-call chain must include the full `reasoning_content` field. Some AI coding tools (including Cursor) drop this field from their chat transcript, causing DeepSeek to reject subsequent tool-call requests with:
-
-```
-Connection Error
-Provider returned error:
-{
-  "error": {
-    "message": "The reasoning_content in the thinking mode must be passed back to the API.",
-    "type": "invalid_request_error",
-    "param": null,
-    "code": "invalid_request_error"
-  }
-}
-```
+DeepSeek's thinking-mode API enforces a strict contract: every assistant message that participates in a tool-call chain must include the full `reasoning_content` field. Some AI coding tools (including Cursor) drop this field from their chat transcript, causing DeepSeek to reject subsequent tool-call requests.
 
 DeepSeek Bridge stores copies of `reasoning_content` from every response and patches missing entries back into requests before forwarding them upstream.
 
@@ -135,7 +122,7 @@ In Cursor, add a custom model with these settings:
 - **API Key**: Your DeepSeek API key
 - **Base URL**: Your ngrok HTTPS URL with `/v1` path (e.g., `https://example.ngrok-free.dev/v1`)
 
-Toggle the custom API with `Cmd+Shift+0` (macOS) or `Ctrl+Shift+0` (Windows/Linux).
+
 
 > **Note on ngrok**: Cursor blocks non-public URLs such as `localhost`. Use [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/setup) to expose the proxy. If your client supports localhost endpoints, disable ngrok with `--no-ngrok`.
 
@@ -247,3 +234,7 @@ uv run coverage report
 ## License
 
 MIT License
+
+## Acknowledgements
+
+Based on [yxlao/deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy), the original project that started this work.

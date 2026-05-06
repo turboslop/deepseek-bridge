@@ -20,7 +20,7 @@
 ### What was added
 12 new test cases across 3 test files:
 - **test_reasoning_store.py** (7 tests): auto_vacuum pragma, vacuum on close shrinkage, bloat detection (healthy/bloated/memory), vacuum on :memory:
-- **test_config.py** (2 tests): version format validation, default log_dir verification  
+- **test_config.py** (2 tests): version format validation, default log_dir verification
 - **test_server.py** (3 tests): configure_logging return value with/without log_dir, _log_db_stats method existence
 
 ### Key challenges

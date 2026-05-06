@@ -1,4 +1,5 @@
 """Config editor screen -- view and edit proxy configuration."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -32,7 +33,9 @@ class ConfigScreen(Vertical):
     """View and edit proxy configuration at runtime."""
 
     def compose(self) -> ComposeResult:
-        yield Static("[bold]Configuration[/] -- edit and apply changes", id="config-title")
+        yield Static(
+            "[bold]Configuration[/] -- edit and apply changes", id="config-title"
+        )
         yield Static("", id="config-status")
 
         # Yield categories with their children pre-built — NO .mount() in compose!

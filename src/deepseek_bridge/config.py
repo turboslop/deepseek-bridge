@@ -280,10 +280,14 @@ class ProxyConfig:
                 DEFAULT_REQUEST_TIMEOUT,
             ),
             stream_read_timeout=_auto_stream_timeout(
-                as_float(setting_value(settings, "request_timeout"), DEFAULT_REQUEST_TIMEOUT),
-                explicit=setting_value(settings, "stream_read_timeout")
-                if setting_value(settings, "stream_read_timeout") is not MISSING
-                else None,
+                as_float(
+                    setting_value(settings, "request_timeout"), DEFAULT_REQUEST_TIMEOUT
+                ),
+                explicit=(
+                    setting_value(settings, "stream_read_timeout")
+                    if setting_value(settings, "stream_read_timeout") is not MISSING
+                    else None
+                ),
             ),
             max_request_body_bytes=as_int(
                 setting_value(settings, "max_request_body_bytes"),
@@ -334,16 +338,22 @@ class ProxyConfig:
                 DEFAULT_NGROK_HEALTH_CHECK_INTERVAL,
             ),
             max_pool_connections=_auto_pool_connections(
-                as_int(setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL),
-                explicit=setting_value(settings, "max_pool_connections")
-                if setting_value(settings, "max_pool_connections") is not MISSING
-                else None,
+                as_int(
+                    setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
+                ),
+                explicit=(
+                    setting_value(settings, "max_pool_connections")
+                    if setting_value(settings, "max_pool_connections") is not MISSING
+                    else None
+                ),
             ),
             max_thread_pool=as_int(
                 setting_value(settings, "max_thread_pool"),
                 DEFAULT_MAX_THREAD_POOL,
             ),
             log_dir=(
-                Path(v) if (v := setting_value(settings, "log_dir")) is not MISSING and v else default_log_dir()
+                Path(v)
+                if (v := setting_value(settings, "log_dir")) is not MISSING and v
+                else default_log_dir()
             ),
         )

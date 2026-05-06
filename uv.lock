@@ -195,7 +195,6 @@ wheels = [
 
 [[package]]
 name = "deepseek-bridge"
-version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "pyyaml" },
@@ -215,12 +214,6 @@ tui = [
     { name = "textual" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "coverage" },
-    { name = "textual" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.1" },
@@ -234,12 +227,6 @@ requires-dist = [
     { name = "urllib3", specifier = ">=2.0" },
 ]
 provides-extras = ["tui", "dev"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "coverage", specifier = ">=7.10.0" },
-    { name = "textual", specifier = ">=8.2.5" },
-]
 
 [[package]]
 name = "distlib"

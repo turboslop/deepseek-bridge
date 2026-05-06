@@ -39,9 +39,6 @@ from .helpers import (
     sse_data,
     summarize_chat_payload,
     usage_from_body,
-    user_message_count,
-    tool_count,
-    reasoning_content_count,
 )
 from .logging import LOG, TerminalSpinner
 from .reasoning_store import ReasoningStore, conversation_scope
@@ -84,9 +81,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
 
     def process_request(self, request, client_address):
         with contextlib.suppress(RuntimeError):
-            self.executor.submit(
-                self.process_request_thread, request, client_address
-            )
+            self.executor.submit(self.process_request_thread, request, client_address)
 
     def _log_pool_utilization(self) -> None:
         try:
@@ -94,12 +89,18 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         except Exception:
             active = "?"
         try:
-            queue_size: int | str = self.executor._work_queue.qsize() if hasattr(self.executor, '_work_queue') else "?"
+            queue_size: int | str = (
+                self.executor._work_queue.qsize()
+                if hasattr(self.executor, "_work_queue")
+                else "?"
+            )
         except Exception:
             queue_size = "?"
         LOG.info(
             "thread pool: max_workers=%s active=%s queue=%s",
-            self.executor._max_workers, active, queue_size,
+            self.executor._max_workers,
+            active,
+            queue_size,
         )
 
     def _log_db_stats(self) -> None:
@@ -112,7 +113,9 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             row_count = int(row[0]) if row else 0
             LOG.info(
                 "db stats: %s size=%.1fMB rows=%s",
-                store.reasoning_content_path, size_mb, format_count(row_count),
+                store.reasoning_content_path,
+                size_mb,
+                format_count(row_count),
             )
         except Exception as exc:
             LOG.warning("failed to log DB stats: %s", exc)
@@ -120,14 +123,18 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     def _log_heartbeat(self) -> None:
         parts = [f"heartbeat: req={format_count(self.request_count)}"]
         try:
-            parts.append(f"pool={len(self.executor._threads)}/{self.executor._max_workers}")
+            parts.append(
+                f"pool={len(self.executor._threads)}/{self.executor._max_workers}"
+            )
         except Exception:
             parts.append("pool=?")
         try:
             store = self.reasoning_store
             if isinstance(store.reasoning_content_path, Path):
                 size_mb = store.reasoning_content_path.stat().st_size / (1024 * 1024)
-                row = store._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+                row = store._conn.execute(
+                    "SELECT COUNT(*) FROM reasoning_cache"
+                ).fetchone()
                 row_count = int(row[0]) if row else 0
                 parts.append(f"db={size_mb:.0f}MB/{format_count(row_count)}rows")
         except Exception:
@@ -428,7 +435,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 LOG.info("forwarding to %s", upstream_url)
             timeout = urllib3.Timeout(
                 connect=self.config.request_timeout,
-                read=self.config.stream_read_timeout if stream else self.config.request_timeout,
+                read=(
+                    self.config.stream_read_timeout
+                    if stream
+                    else self.config.request_timeout
+                ),
             )
             response = self.upstream_pool._pool.request(
                 "POST",
@@ -567,7 +578,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             )
         finally:
             spinner.stop()
-            if stream and 'response' in locals():
+            if stream and "response" in locals():
                 response.release_conn()
 
     def _start_trace(self, request_path: str) -> TraceRequest | None:
@@ -658,7 +669,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self._send_cors_headers()
             for name, value in headers:
                 self.send_header(name, value)
-            if hasattr(self, '_request_id'):
+            if hasattr(self, "_request_id"):
                 self.send_header("x-request-id", self._request_id)
             self.end_headers()
         except (BrokenPipeError, ConnectionError) as exc:
@@ -703,9 +714,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             LOG.warning("rejected embeddings request: %s", exc)
             self._send_json(
                 400,
-                _error_body(
-                    str(exc), "invalid_request_error", "invalid_request_error"
-                ),
+                _error_body(str(exc), "invalid_request_error", "invalid_request_error"),
             )
             return
 
@@ -787,7 +796,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"object": "list", "data": models})
 
     def _send_health(self) -> None:
-        uptime = int(time.monotonic() - self.server.start_time) if hasattr(self.server, "start_time") else 0
+        uptime = (
+            int(time.monotonic() - self.server.start_time)
+            if hasattr(self.server, "start_time")
+            else 0
+        )
         self._send_json(
             200,
             {
@@ -803,27 +816,35 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
 
     def _handle_api_tags(self) -> None:
         self._request_id = _generate_request_id()
-        model_ids = list(dict.fromkeys([
-            self.config.upstream_model,
-            "deepseek-v4-pro",
-            "deepseek-v4-flash",
-        ]))
+        model_ids = list(
+            dict.fromkeys(
+                [
+                    self.config.upstream_model,
+                    "deepseek-v4-pro",
+                    "deepseek-v4-flash",
+                ]
+            )
+        )
         models = []
         for model_id in model_ids:
-            models.append({
-                "name": model_id,
-                "model": model_id,
-                "modified_at": "2026-01-01T00:00:00.000Z",
-                "size": 4109865159,
-                "digest": f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}",
-                "details": {
-                    "format": "gguf",
-                    "family": "deepseek" if "deepseek" in model_id else "custom",
-                    "families": ["deepseek"] if "deepseek" in model_id else ["custom"],
-                    "parameter_size": "7B",
-                    "quantization_level": "Q4_K_M",
-                },
-            })
+            models.append(
+                {
+                    "name": model_id,
+                    "model": model_id,
+                    "modified_at": "2026-01-01T00:00:00.000Z",
+                    "size": 4109865159,
+                    "digest": f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}",
+                    "details": {
+                        "format": "gguf",
+                        "family": "deepseek" if "deepseek" in model_id else "custom",
+                        "families": (
+                            ["deepseek"] if "deepseek" in model_id else ["custom"]
+                        ),
+                        "parameter_size": "7B",
+                        "quantization_level": "Q4_K_M",
+                    },
+                }
+            )
         self._send_json(200, {"models": models})
 
     def _handle_api_show(self) -> None:
@@ -1124,7 +1145,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             while True:
                 try:
                     line = response.readline()
-                except (HTTPException, OSError, urllib3.exceptions.ReadTimeoutError) as exc:
+                except (
+                    HTTPException,
+                    OSError,
+                    urllib3.exceptions.ReadTimeoutError,
+                ) as exc:
                     if isinstance(exc, urllib3.exceptions.ReadTimeoutError):
                         LOG.warning(
                             "upstream streaming response read timed out after %ss: %s",
@@ -1296,6 +1321,3 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 chunk_usage if isinstance(chunk_usage, dict) else None,
             )
         return line, False, recovery_notice, None
-
-
-

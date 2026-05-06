@@ -35,9 +35,7 @@ class LogsScreen(Vertical):
             )
             return
 
-        self.query_one("#log-status", Static).update(
-            f"Tailing: {self._log_file}"
-        )
+        self.query_one("#log-status", Static).update(f"Tailing: {self._log_file}")
         self._tail()
         self.set_interval(2.0, self._tail)
 

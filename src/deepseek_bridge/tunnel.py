@@ -130,7 +130,8 @@ class NgrokTunnel:
         if self.health_check is None:
             return
         self._health_thread = threading.Thread(
-            target=self._health_check_loop, daemon=True,
+            target=self._health_check_loop,
+            daemon=True,
         )
         self._health_thread.start()
         LOG.info(
@@ -168,7 +169,8 @@ class NgrokTunnel:
                     time.sleep(hc.recovery_retry_delay)
                     public_url = self.start()
                     LOG.info(
-                        "ngrok tunnel recovered, new URL: %s", public_url,
+                        "ngrok tunnel recovered, new URL: %s",
+                        public_url,
                     )
                     self.public_url = public_url
                     recovered = True

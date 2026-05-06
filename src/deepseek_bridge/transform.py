@@ -142,7 +142,11 @@ def extract_text_content(content: Any) -> str | None:
                 continue
             item_type = item.get("type")
             text = item.get("text") or item.get("content")
-            if item_type in {"text", "input_text"} and isinstance(text, str) or isinstance(text, str):
+            if (
+                item_type in {"text", "input_text"}
+                and isinstance(text, str)
+                or isinstance(text, str)
+            ):
                 parts.append(text)
         return "\n".join(part for part in parts if part) or None
     if isinstance(content, (dict, tuple)):
@@ -764,10 +768,10 @@ def prepare_upstream_request(
 
     prepared["model"] = upstream_model
     if prepared.get("stream"):
+        stream_options = prepared.get("stream_options")
         stream_options = (
-            prepared.get("stream_options")
+            {} if not isinstance(stream_options, dict) else dict(stream_options)
         )
-        stream_options = {} if not isinstance(stream_options, dict) else dict(stream_options)
         stream_options["include_usage"] = True
         prepared["stream_options"] = stream_options
 
