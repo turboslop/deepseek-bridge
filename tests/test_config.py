@@ -17,6 +17,7 @@ from deepseek_cursor_proxy.config import (
     DEFAULT_UPSTREAM_MODEL,
     DEFAULT_VERBOSE,
     ProxyConfig,
+    _auto_cache_max_rows,
     default_config_path,
     default_reasoning_content_path,
 )
@@ -277,6 +278,23 @@ class ConfigTests(unittest.TestCase):
         config = ProxyConfig()
         self.assertIsNotNone(config.log_dir)
         self.assertIn("logs", str(config.log_dir))
+
+    def test_auto_cache_max_rows_returns_reasonable_value(self) -> None:
+        """Auto-calc returns a value >= 10000."""
+        rows = _auto_cache_max_rows(disk_budget_mb=500)
+        self.assertGreaterEqual(rows, 10000)
+        rows2 = _auto_cache_max_rows(disk_budget_mb=10)
+        self.assertGreaterEqual(rows2, 10000)  # floor
+
+    def test_version_flag_in_arg_parser(self) -> None:
+        """--version is available via argparse version action."""
+        from deepseek_cursor_proxy.server import build_arg_parser
+
+        parser = build_arg_parser()
+        try:
+            parser.parse_args(["--version"])
+        except SystemExit as e:
+            self.assertEqual(e.code, 0)
 
 
 if __name__ == "__main__":

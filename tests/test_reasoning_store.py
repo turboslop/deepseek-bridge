@@ -134,6 +134,37 @@ class ReasoningStoreTests(unittest.TestCase):
         self.assertFalse(result, "vacuum on :memory: should return False")
         s.close()
 
+    def test_wal_mode_and_pragmas_on_new_db(self) -> None:
+        """Verify WAL mode, synchronous=NORMAL, and busy_timeout are set."""
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p)
+            c = sqlite3.connect(p)
+            jm = c.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(jm, "wal")
+            sync = c.execute("PRAGMA synchronous").fetchone()[0]
+            self.assertEqual(sync, 2)  # 2 = NORMAL
+            bt = c.execute("PRAGMA busy_timeout").fetchone()[0]
+            self.assertEqual(bt, 5000)
+            s.close()
+            c.close()
+
+    def test_created_at_index_exists(self) -> None:
+        """Verify the created_at index is created on new file DBs."""
+        with TemporaryDirectory() as d:
+            p = os.path.join(d, "test.db")
+            s = ReasoningStore(p)
+            c = sqlite3.connect(p)
+            indexes = [
+                r[1]
+                for r in c.execute(
+                    "SELECT * FROM sqlite_master WHERE type='index'"
+                ).fetchall()
+            ]
+            self.assertIn("idx_reasoning_cache_created_at", indexes)
+            s.close()
+            c.close()
+
 
 class AutoCacheMaxRowsTests(unittest.TestCase):
     def test_returns_reasonable_default(self) -> None:

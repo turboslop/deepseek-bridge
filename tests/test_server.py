@@ -41,6 +41,7 @@ from deepseek_cursor_proxy.server import (
     build_arg_parser,
     read_response_body,
     summarize_chat_payload,
+    _truncate_message_content,
 )
 
 
@@ -237,6 +238,61 @@ class CliAndHelperTests(unittest.TestCase):
             hasattr(BoundedThreadPoolHTTPServer, "_log_db_stats"),
             "_log_db_stats method should exist on BoundedThreadPoolHTTPServer",
         )
+
+    def test_version_flag_exists(self) -> None:
+        """--version flag is registered."""
+        parser = build_arg_parser()
+        version_actions = [
+            a for a in parser._actions if hasattr(a, "version")
+        ]
+        self.assertTrue(
+            len(version_actions) > 0, "No --version flag found"
+        )
+
+    def test_headless_flag_defaults_false(self) -> None:
+        """--headless flag defaults to False."""
+        parser = build_arg_parser()
+        args = parser.parse_args([])
+        self.assertFalse(args.headless)
+
+    def test_truncate_message_content_basic(self) -> None:
+        """Content truncation truncates long strings."""
+        payload = {"messages": [{"role": "user", "content": "x" * 500}]}
+        result = _truncate_message_content(payload, max_len=50)
+        content = result["messages"][0]["content"]
+        self.assertEqual(len(content), 53)  # 50 chars + "..."
+        self.assertTrue(content.endswith("..."))
+
+    def test_truncate_message_content_short(self) -> None:
+        """Content truncation does NOT truncate short strings."""
+        payload = {"messages": [{"role": "user", "content": "hello"}]}
+        result = _truncate_message_content(payload, max_len=50)
+        content = result["messages"][0]["content"]
+        self.assertEqual(content, "hello")  # unchanged
+
+    def test_truncate_message_content_multimodal(self) -> None:
+        """Content truncation handles multimodal arrays."""
+        payload = {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hi"}]}
+            ]
+        }
+        result = _truncate_message_content(payload, max_len=50)
+        content = result["messages"][0]["content"]
+        self.assertEqual(content, "[multimodal content array]")
+
+    def test_truncate_message_content_non_dict(self) -> None:
+        """Content truncation passes through non-dict payloads."""
+        result = _truncate_message_content("hello", max_len=50)
+        self.assertEqual(result, "hello")  # unchanged
+
+    def test_ollama_endpoint_routing_in_parser(self) -> None:
+        """--ollama flag is accepted by parser."""
+        parser = build_arg_parser()
+        args = parser.parse_args(["--ollama"])
+        self.assertTrue(args.ollama)
+        args = parser.parse_args(["--no-ollama"])
+        self.assertFalse(args.ollama)
 
 
 # ---------------------------------------------------------------------------
