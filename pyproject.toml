@@ -59,3 +59,15 @@ ignore_missing_imports = true
 strict_optional = true
 
 [tool.setuptools_scm]
+
+[tool.coverage.run]
+source = ["src/deepseek_bridge"]
+omit = ["*/tui/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    'if __name__ == .__main__.:',
+]
