@@ -35,6 +35,8 @@ def _should_show_recovery_notice(scope: str) -> bool:
     """
     if scope in _recovery_notice_seen:
         return False
+    if len(_recovery_notice_seen) > 10_000:
+        _recovery_notice_seen.clear()
     _recovery_notice_seen.add(scope)
     return True
 

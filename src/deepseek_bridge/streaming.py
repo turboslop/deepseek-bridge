@@ -1,19 +1,12 @@
 from __future__ import annotations
 
+import html
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from .reasoning_store import ReasoningStore
 
-
-def _html_escape_light(text: str) -> str:
-    """Escape only HTML-special chars without double-escaping entities.
-
-    Unlike html.escape(), this does NOT escape & in pre-existing entities
-    like &amp; — it only escapes bare & that could form new tags.
-    """
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 THINKING_BLOCK_START = "<think>\n"
 THINKING_BLOCK_END = "\n</think>\n\n"
@@ -253,7 +246,7 @@ class CursorReasoningDisplayAdapter:
                 if index not in self._open_choices:
                     mirrored_parts.append(self._block_start)
                     self._open_choices.add(index)
-                mirrored_parts.append(_html_escape_light(reasoning_content))
+                mirrored_parts.append(html.escape(reasoning_content))
 
             existing_content = delta.get("content")
             should_close = index in self._open_choices and (
@@ -328,7 +321,7 @@ def fold_reasoning_into_content(
         content = message.get("content")
         message["content"] = (
             block_start
-            + _html_escape_light(reasoning)
+            + html.escape(reasoning)
             + block_end
             + (content if isinstance(content, str) else "")
         )

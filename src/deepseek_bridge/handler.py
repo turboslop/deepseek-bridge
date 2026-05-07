@@ -358,6 +358,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 payload.pop(legacy_key, None)
 
         if getattr(self.server, "paused", False):
+            LOG.warning("rejecting request from %s: server paused", self.client_address[0])
             self._send_json(
                 503,
                 {

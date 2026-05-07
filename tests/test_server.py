@@ -407,6 +407,32 @@ class HandlerStubTests(unittest.TestCase):
         result = handler._check_client_alive()
         self.assertFalse(result)
 
+    def test_pause_rejection_is_logged(self) -> None:
+        """Verify paused server rejection is logged at WARNING level."""
+        body = json.dumps({
+            "model": "deepseek",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        handler = _make_handler_stub(BytesIO())
+        handler.server.paused = True
+        handler.server.request_count = 0
+        handler.command = "POST"
+        handler.path = "/v1/chat/completions"
+        handler.client_address = ("127.0.0.1", 0)
+        handler.headers = {
+            "Authorization": "Bearer test-key",
+            "Content-Length": str(len(body)),
+        }
+        handler.rfile = BytesIO(body.encode("utf-8"))
+
+        with self.assertLogs("deepseek_bridge", level="WARNING") as log_ctx:
+            handler.do_POST()
+
+        self.assertTrue(
+            any("server paused" in msg for msg in log_ctx.output),
+            f"Expected 'server paused' in logs, got: {log_ctx.output}",
+        )
+
 
 # ---------------------------------------------------------------------------
 # HTTP-level boundary tests: real proxy + tiny upstream
