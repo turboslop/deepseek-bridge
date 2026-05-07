@@ -401,6 +401,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             except ImportError:
                 pass  # converter module not available (shouldn't happen)
 
+        if not self._check_client_alive():
+            LOG.info("client disconnected before message normalization")
+            self._finish_trace(trace, "aborted")
+            return
+
         prepared = prepare_upstream_request(
             payload,
             self.config,
@@ -497,6 +502,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             text="└ {frame}",
         ).start()
 
+        if not self._check_client_alive():
+            LOG.info("client disconnected before upstream request")
+            self._finish_trace(trace, "aborted")
+            return
+
         try:
             if self.config.verbose:
                 LOG.info("forwarding to %s", upstream_url)
@@ -526,6 +536,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                     urllib3.exceptions.ProtocolError,
                 ) as exc:
                     if attempt < max_retries:
+                        if not self._check_client_alive():
+                            LOG.info("client disconnected before upstream retry")
+                            spinner.stop()
+                            self._finish_trace(trace, "aborted")
+                            return
                         sleep_sec = 1 * (2**attempt)
                         LOG.warning(
                             "upstream request failed (%s), retrying in %ss (attempt %d/%d)",

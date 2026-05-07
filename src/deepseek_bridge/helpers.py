@@ -76,10 +76,12 @@ def elapsed_ms(started: float) -> int:
 
 
 def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
-    """Truncate message content fields to prevent code exposure in verbose logs."""
+    """Truncate verbose fields in log payloads: message content, tool descriptions,
+    tool call arguments, and any long string values to keep logs readable."""
     if not isinstance(payload, dict):
         return payload
     result = dict(payload)
+    # Truncate messages array
     if "messages" in result and isinstance(result["messages"], list):
         truncated = []
         for m in result["messages"]:
@@ -92,8 +94,57 @@ def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
                 m2["content"] = content[:max_len] + "..."
             elif isinstance(content, list):
                 m2["content"] = "[multimodal content array]"
+            # Truncate tool_call arguments
+            tool_calls = m2.get("tool_calls")
+            if isinstance(tool_calls, list):
+                tc2 = []
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        t = dict(tc)
+                        fn = t.get("function", {})
+                        if isinstance(fn, dict):
+                            args = fn.get("arguments", "")
+                            if isinstance(args, str) and len(args) > max_len:
+                                fn = dict(fn)
+                                fn["arguments"] = args[:max_len] + "..."
+                                t["function"] = fn
+                        tc2.append(t)
+                    else:
+                        tc2.append(tc)
+                m2["tool_calls"] = tc2
             truncated.append(m2)
         result["messages"] = truncated
+    # Truncate tools array (massive descriptions in function schemas)
+    if "tools" in result and isinstance(result["tools"], list):
+        tools2 = []
+        for tool in result["tools"]:
+            if isinstance(tool, dict):
+                t = dict(tool)
+                fn = t.get("function", {})
+                if isinstance(fn, dict):
+                    fn2 = dict(fn)
+                    desc = fn2.get("description", "")
+                    if isinstance(desc, str) and len(desc) > max_len:
+                        fn2["description"] = desc[:max_len] + f"... [{len(desc)} chars]"
+                    # Truncate long parameter descriptions too
+                    params = fn2.get("parameters", {})
+                    if isinstance(params, dict) and isinstance(params.get("properties"), dict):
+                        props2 = {}
+                        for pk, pv in params["properties"].items():
+                            if isinstance(pv, dict):
+                                pv2 = dict(pv)
+                                pd = pv2.get("description", "")
+                                if isinstance(pd, str) and len(pd) > max_len:
+                                    pv2["description"] = pd[:max_len] + "..."
+                                props2[pk] = pv2
+                            else:
+                                props2[pk] = pv
+                        fn2["parameters"] = {**params, "properties": props2}
+                    t["function"] = fn2
+                tools2.append(t)
+            else:
+                tools2.append(tool)
+        result["tools"] = tools2
     return result
 
 
@@ -192,11 +243,18 @@ def log_stats_summary(
 
 
 def context_status(prepared: Any) -> str:
+    parts: list[str] = []
+    if prepared.patched_reasoning_messages:
+        parts.append(f"patched={prepared.patched_reasoning_messages}")
     if prepared.recovered_reasoning_messages:
-        return "recovered"
+        parts.append(f"recovered={prepared.recovered_reasoning_messages}")
+    if prepared.recovery_dropped_messages:
+        parts.append(f"dropped={prepared.recovery_dropped_messages}")
     if prepared.missing_reasoning_messages:
-        return "missing"
-    return "ok"
+        parts.append(f"missing={prepared.missing_reasoning_messages}")
+    if not parts:
+        return "ok"
+    return " ".join(parts)
 
 
 def message_count(payload: dict[str, Any]) -> int:
