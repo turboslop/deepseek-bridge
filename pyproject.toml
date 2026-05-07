@@ -62,15 +62,11 @@ disable_error_code = ["import-untyped"]
 # infers the generator item type incorrectly.  Placed first so
 # it matches before the broader _*.py override below.
 [[tool.mypy.overrides]]
-files = ["src/deepseek_bridge/handler/_streaming.py"]
+module = "deepseek_bridge.handler._streaming"
 disable_error_code = ["attr-defined", "misc"]
 
-# Handler mixin classes access self attributes (config, headers,
-# _send_json, etc.) that are only resolved at composition time in
-# DeepSeekProxyHandler(BaseHTTPRequestHandler).  Mypy cannot trace
-# these through the MRO, so disable attr-defined for these modules.
 [[tool.mypy.overrides]]
-files = ["src/deepseek_bridge/handler/_*.py"]
+module = "deepseek_bridge.handler._*"
 disable_error_code = ["attr-defined"]
 
 [tool.setuptools_scm]
