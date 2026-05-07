@@ -804,6 +804,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         import socket
         sock = getattr(self, "request", None)
         if sock is not None:
+            # macOS: prevent SIGPIPE via socket option (MSG_NOSIGNAL unavailable)
+            if hasattr(socket, "SO_NOSIGPIPE"):
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_NOSIGPIPE, 1)
+                except OSError:
+                    pass
             try:
                 flags = getattr(socket, "MSG_NOSIGNAL", 0)
                 sock.sendall(b"", flags)

@@ -398,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     with contextlib.suppress(ValueError):
         signal.signal(signal.SIGINT, _handle_shutdown_signal)
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     try:
         use_tui = not args.headless
