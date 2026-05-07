@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import time
 
+import yaml
+
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -357,14 +359,35 @@ class TuiApp(App[None]):
         self._refresh()
 
     def action_save_config(self) -> None:
+        """Save current config to YAML file. Works regardless of editing state."""
+        from deepseek_bridge.config import default_config_path
+
         if self._editing is not None:
             _wid, attr, _label, _choices = FIELDS[self._editing]
             self._apply(attr, self._edit_buf)
             _tui_logger.info("cfg: %s=%s", _wid, self._edit_buf)
             self._editing = None
             self._edit_buf = ""
-            self._refresh()
-            self.notify("Config saved", severity="information", timeout=2)
+
+        config = self.server_config
+        if config is not None:
+            try:
+                path = default_config_path()
+                data = {
+                    k: v for k, v in config.__dict__.items()
+                    if not k.startswith("_")
+                }
+                with open(path, "w") as f:
+                    yaml.dump(data, f, default_flow_style=False)
+                _tui_logger.info("config saved to %s", path)
+                self.notify("Config saved", severity="information", timeout=2)
+            except Exception as exc:
+                _tui_logger.warning("config save failed: %s", exc)
+                self.notify("Save failed", severity="error", timeout=2)
+        else:
+            self.notify("No config to save", severity="warning", timeout=2)
+
+        self._refresh()
 
     def action_toggle_pause(self) -> None:
         if self.server is None:

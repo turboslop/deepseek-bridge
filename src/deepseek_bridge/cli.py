@@ -355,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── Startup Banner ──────────────────────────────────────────
+    _original_stderr = sys.stderr
+    if not args.headless:
+        import os  # noqa: PLC0415
+
+        sys.stderr = open(os.devnull, "w")  # noqa: SIM115
     LOG.info("")
     LOG.info("╔══════════════════════════════════════════════╗")
     LOG.info("║   DeepSeek Bridge v%s                     ║", __version__)
@@ -395,6 +400,9 @@ def main(argv: list[str] | None = None) -> int:
     if trace_writer is not None:
         LOG.info("Trace dir: %s", trace_writer.session_dir)
         LOG.warning("trace logging enabled; prompts and code will be written to disk")
+    if not args.headless:
+        sys.stderr.close()
+        sys.stderr = _original_stderr
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     with contextlib.suppress(ValueError):
         signal.signal(signal.SIGINT, _handle_shutdown_signal)

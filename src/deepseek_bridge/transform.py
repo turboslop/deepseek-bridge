@@ -610,6 +610,12 @@ def recover_messages_from_missing_reasoning(
             if not isinstance(msg.get("reasoning_content"), str):
                 msg["reasoning_content"] = "[reasoning recovered]"
             patched[idx] = msg
+    # Log patching activity for diagnostics
+    LOG.info(
+        "patched %d missing reasoning content(s) (messages preserved: %d, strategy: patch)",
+        len(missing_indexes),
+        len(patched),
+    )
     return (
         patched,
         0,
