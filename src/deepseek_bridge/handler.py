@@ -89,10 +89,35 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             request.settimeout(
                 self.socket.gettimeout() if hasattr(self, "socket") else 300
             )
+        # Check queue size before submitting — reject if overloaded
+        queue_size = self.executor._work_queue.qsize()
+        if queue_size > 50:
+            LOG.warning(
+                "rejecting request from %s: queue full (%s queued)",
+                client_address, queue_size,
+            )
+            self._reject_connection(request)
+            return
         with contextlib.suppress(RuntimeError):
             self.executor.submit(
                 self.process_request_thread, request, client_address
             )
+
+    @staticmethod
+    def _reject_connection(request: Any) -> None:
+        import socket
+
+        try:
+            if isinstance(request, socket.socket):
+                request.sendall(
+                    b"HTTP/1.1 503 Service Unavailable\r\n"
+                    b"Content-Length: 0\r\n"
+                    b"Connection: close\r\n"
+                    b"\r\n"
+                )
+                request.close()
+        except Exception:
+            pass
 
     def _log_pool_utilization(self) -> None:
         try:
@@ -468,14 +493,35 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                     else self.config.request_timeout
                 ),
             )
-            response = self.upstream_pool._pool.request(
-                "POST",
-                upstream_url,
-                body=upstream_body,
-                headers=upstream_headers,
-                preload_content=not stream,
-                timeout=timeout,
-            )
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    response = self.upstream_pool._pool.request(
+                        "POST",
+                        upstream_url,
+                        body=upstream_body,
+                        headers=upstream_headers,
+                        preload_content=not stream,
+                        timeout=timeout,
+                    )
+                    break
+                except (
+                    http.client.BadStatusLine,
+                    ConnectionError,
+                    urllib3.exceptions.ProtocolError,
+                ) as exc:
+                    if attempt < max_retries:
+                        sleep_sec = 1 * (2**attempt)
+                        LOG.warning(
+                            "upstream request failed (%s), retrying in %ss (attempt %d/%d)",
+                            exc,
+                            sleep_sec,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(sleep_sec)
+                        continue
+                    raise
         except urllib3.exceptions.MaxRetryError as exc:
             spinner.stop()
             LOG.warning(
