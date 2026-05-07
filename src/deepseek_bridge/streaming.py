@@ -137,6 +137,16 @@ class StreamAccumulator:
                     cache_namespace,
                     prior_messages,
                 )
+            elif self._has_tool_call_names(choice):
+                stored += self._store_choice(
+                    index,
+                    choice,
+                    store,
+                    scope,
+                    "eager",
+                    cache_namespace,
+                    prior_messages,
+                )
         return stored
 
     def messages(self) -> list[dict[str, Any]]:
@@ -191,7 +201,7 @@ class StreamAccumulator:
         cache_namespace: str = "",
         prior_messages: list[dict[str, Any]] | None = None,
     ) -> int:
-        stage_rank = {"tool_call": 1, "final": 2}
+        stage_rank = {"eager": 0, "tool_call": 1, "final": 2}
         storage_key = (index, scope)
         previous_stage = self._stored_choices.get(storage_key)
         if stage_rank.get(previous_stage or "", 0) >= stage_rank.get(stage, 0):
@@ -210,6 +220,14 @@ class StreamAccumulator:
         if not choice.has_reasoning_content or not choice.tool_calls:
             return False
         return all(bool(tool_call.get("id")) for tool_call in choice.tool_calls)
+
+    def _has_tool_call_names(self, choice: StreamingChoice) -> bool:
+        if not choice.has_reasoning_content or not choice.tool_calls:
+            return False
+        return any(
+            bool(tool_call.get("function", {}).get("name"))
+            for tool_call in choice.tool_calls
+        )
 
 
 class CursorReasoningDisplayAdapter:
