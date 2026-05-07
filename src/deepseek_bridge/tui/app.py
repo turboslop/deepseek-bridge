@@ -81,6 +81,7 @@ class TuiApp(App[None]):
     _edit_buf: str = ""
     _prev_req: int = 0
     _prev_time: float = 0.0
+    _tui_handler: object | None = None
 
     def __init__(self, server_config=None, server=None) -> None:
         super().__init__()
