@@ -1,4 +1,5 @@
 from __future__ import annotations
+# mypy: disable-error-code="attr-defined"
 
 import json
 from typing import Any

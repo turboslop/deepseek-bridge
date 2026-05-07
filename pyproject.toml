@@ -62,7 +62,7 @@ strict_optional = true
 # DeepSeekProxyHandler(BaseHTTPRequestHandler).  Mypy cannot trace
 # these through the MRO, so disable attr-defined for these modules.
 [[tool.mypy.overrides]]
-module = "deepseek_bridge.handler._*"
+files = ["src/deepseek_bridge/handler/_*.py"]
 disable_error_code = ["attr-defined"]
 
 [tool.setuptools_scm]
