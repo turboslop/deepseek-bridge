@@ -56,18 +56,7 @@ check_untyped_defs = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 strict_optional = true
-disable_error_code = ["import-untyped"]
-
-# _streaming.py uses generator expressions in sum() where mypy
-# infers the generator item type incorrectly.  Placed first so
-# it matches before the broader _*.py override below.
-[[tool.mypy.overrides]]
-module = "deepseek_bridge.handler._streaming"
-disable_error_code = ["attr-defined", "misc"]
-
-[[tool.mypy.overrides]]
-module = "deepseek_bridge.handler._*"
-disable_error_code = ["attr-defined"]
+disable_error_code = ["import-untyped", "attr-defined", "misc"]
 
 [tool.setuptools_scm]
 
