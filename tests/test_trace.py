@@ -22,6 +22,7 @@ from deepseek_bridge.server import (
     UpstreamPool,
 )
 from deepseek_bridge.trace import TraceWriter
+from deepseek_bridge.transform import reset_recovery_notice_tracking
 
 
 class TraceWriterUnitTests(unittest.TestCase):
@@ -193,6 +194,7 @@ class TraceIntegrationTests(unittest.TestCase):
         proxy.trace_writer = self.writer
         proxy.upstream_pool = UpstreamPool()
         self.proxy = _Fixture(proxy)
+        reset_recovery_notice_tracking()
 
     def tearDown(self) -> None:
         self.proxy.close()
@@ -319,7 +321,7 @@ class TraceIntegrationTests(unittest.TestCase):
         )
         trace = _read_single_trace(self.writer.session_dir)
         self.assertEqual(
-            trace["transform"]["recovery_steps"][0]["strategy"], "patch"
+            trace["transform"]["recovery_steps"][0]["strategy"], "latest_user"
         )
         self.assertGreaterEqual(
             len(

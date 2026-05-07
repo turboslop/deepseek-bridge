@@ -28,6 +28,15 @@ from .streaming import fold_reasoning_into_content
 _recovery_notice_seen: set[str] = set()
 
 
+def reset_recovery_notice_tracking() -> None:
+    """Clear the recovery-notice-shown tracking set.
+
+    Tests should call this in setUp to avoid cross-test leakage
+    when they exercise cold-cache recovery with the same scope.
+    """
+    _recovery_notice_seen.clear()
+
+
 def _should_show_recovery_notice(scope: str) -> bool:
     """Return True if the recovery notice should be shown for *scope*.
 
@@ -170,7 +179,7 @@ def extract_text_content(content: Any) -> str | None:
                 or isinstance(text, str)
             ):
                 parts.append(text)
-        return "\n".join(part for part in parts if part) or None
+        return "\n".join(part for part in parts if part) or ""
     if isinstance(content, (dict, tuple)):
         return json.dumps(content, ensure_ascii=False, sort_keys=True)
     return str(content)
@@ -271,12 +280,8 @@ def normalize_message(
     if role == "function":
         normalized["role"] = "tool"
 
-    content_val = normalized.get("content")
-    if content_val is not None:
-        if not isinstance(content_val, list):
-            normalized["content"] = extract_text_content(content_val) or ""
-    elif normalized["role"] in {"assistant", "tool", "system", "user"}:
-        normalized["content"] = ""
+    if "content" in normalized:
+        normalized["content"] = extract_text_content(normalized["content"]) or ""
     if normalized["role"] == "assistant" and isinstance(normalized.get("content"), str):
         normalized["content"] = strip_cursor_thinking_blocks(normalized["content"])
 
@@ -599,32 +604,88 @@ def recover_messages_from_missing_reasoning(
     messages: list[dict[str, Any]],
     missing_indexes: list[int],
 ) -> tuple[list[dict[str, Any]], int, str | None, dict[str, Any]]:
-    # Patch strategy: preserve ALL messages. Fill in missing reasoning
-    # content with a placeholder instead of dropping context. Previously,
-    # dropping messages caused the model to forget its entire tool-call
-    # chain and loop indefinitely.
-    patched = list(messages)
-    for idx in missing_indexes:
-        if idx < len(patched) and patched[idx].get("role") == "assistant":
-            msg = dict(patched[idx])
-            if not isinstance(msg.get("reasoning_content"), str):
-                msg["reasoning_content"] = "[reasoning recovered]"
-            patched[idx] = msg
-    # Log patching activity for diagnostics
-    LOG.info(
-        "patched %d missing reasoning content(s) (messages preserved: %d, strategy: patch)",
-        len(missing_indexes),
-        len(patched),
+    recovery_boundary_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if has_recovery_notice(messages[index])
+            and any(missing_index < index for missing_index in missing_indexes)
+        ),
+        -1,
     )
+    if recovery_boundary_index != -1:
+        context_user_index = next(
+            (
+                index
+                for index in range(recovery_boundary_index - 1, -1, -1)
+                if messages[index].get("role") == "user"
+            ),
+            -1,
+        )
+        leading_messages = leading_system_messages(messages)
+        recovered_tail = []
+        if context_user_index != -1:
+            recovered_tail.append(messages[context_user_index])
+        recovered_tail.extend(messages[recovery_boundary_index:])
+        recovered = [
+            *leading_messages,
+            {"role": "system", "content": RECOVERY_SYSTEM_CONTENT},
+            *recovered_tail,
+        ]
+        kept_context_messages = 1 if context_user_index != -1 else 0
+        omitted_messages = (
+            recovery_boundary_index - len(leading_messages) - kept_context_messages
+        )
+        return (
+            recovered,
+            omitted_messages,
+            None,
+            {
+                "strategy": "recovery_boundary",
+                "missing_indexes": missing_indexes,
+                "recovery_boundary_index": recovery_boundary_index,
+                "context_user_index": context_user_index,
+                "dropped_messages": omitted_messages,
+                "notice": None,
+            },
+        )
+
+    last_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if messages[index].get("role") == "user"
+        ),
+        -1,
+    )
+    if last_user_index == -1:
+        return (
+            messages,
+            0,
+            None,
+            {
+                "strategy": "none",
+                "missing_indexes": missing_indexes,
+                "last_user_index": None,
+                "dropped_messages": 0,
+                "notice": None,
+            },
+        )
+
+    recovered = leading_system_messages(messages)
+    omitted_messages = len(messages) - len(recovered) - 1
+    recovered.append({"role": "system", "content": RECOVERY_SYSTEM_CONTENT})
+    recovered.append(messages[last_user_index])
     return (
-        patched,
-        0,
-        None,
+        recovered,
+        omitted_messages,
+        RECOVERY_NOTICE_CONTENT,
         {
-            "strategy": "patch",
+            "strategy": "latest_user",
             "missing_indexes": missing_indexes,
-            "dropped_messages": 0,
-            "notice": None,
+            "last_user_index": last_user_index,
+            "dropped_messages": omitted_messages,
+            "notice": RECOVERY_NOTICE_CONTENT,
         },
     )
 
@@ -813,12 +874,7 @@ def prepare_upstream_request(
             recover_messages_from_missing_reasoning(messages, missing_indexes)
         )
         recovery_steps.append(recovery_step)
-        # Use recovered messages regardless — the patch strategy preserves all
-        # messages and fills missing reasoning with a placeholder instead of
-        # dropping context from the conversation.
-        messages = recovered_messages
         if not dropped_messages:
-            missing_indexes = []
             break
         recovered_count += len(missing_indexes)
         recovery_dropped_messages += dropped_messages
