@@ -70,6 +70,9 @@ class _FakeStreamingResponse:
             return b""
         return self._lines.pop(0)
 
+    def release_conn(self) -> None:
+        pass
+
 
 class _FailingStreamingResponse:
     status = 200
@@ -321,7 +324,7 @@ class HandlerStubTests(unittest.TestCase):
         self.assertIn("sending upstream response body", "\n".join(captured.output))
 
     def test_streaming_response_stops_on_client_disconnect(self) -> None:
-        handler = _make_handler_stub(_BrokenPipeWfile())
+        handler = _make_handler_stub(_BrokenPipeWfile(), verbose=True)
         chunk = {
             "id": "stream",
             "model": "deepseek-v4-pro",
@@ -334,7 +337,7 @@ class HandlerStubTests(unittest.TestCase):
             ]
         )
         try:
-            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
+            with self.assertLogs("deepseek_bridge", level="INFO") as captured:
                 result = handler._proxy_streaming_response(
                     response,
                     "deepseek-v4-pro",
@@ -344,8 +347,8 @@ class HandlerStubTests(unittest.TestCase):
         finally:
             handler.server.reasoning_store.close()
         self.assertFalse(result.sent)
-        self.assertEqual(response.readline_calls, 1)
-        self.assertIn("sending streaming response chunk", "\n".join(captured.output))
+        self.assertEqual(response.readline_calls, 0)
+        self.assertIn("client disconnected", "\n".join(captured.output))
 
     def test_streaming_response_handles_upstream_read_failure(self) -> None:
         handler = _make_handler_stub(BytesIO())

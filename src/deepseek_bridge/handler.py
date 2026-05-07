@@ -79,9 +79,20 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         )
         self.daemon_threads = True
 
-    def process_request(self, request, client_address):
+    def server_bind(self) -> None:
+        super().server_bind()
+        self.socket.settimeout(300)  # 5 minute idle timeout to match request_timeout
+
+    def process_request(self, request, client_address) -> None:
+        # Apply server socket timeout to accepted client connections
+        if hasattr(request, "settimeout"):
+            request.settimeout(
+                self.socket.gettimeout() if hasattr(self, "socket") else 300
+            )
         with contextlib.suppress(RuntimeError):
-            self.executor.submit(self.process_request_thread, request, client_address)
+            self.executor.submit(
+                self.process_request_thread, request, client_address
+            )
 
     def _log_pool_utilization(self) -> None:
         try:
@@ -711,6 +722,18 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _check_client_alive(self) -> bool:
+        """Check if downstream client is still connected.
+
+        Sends a zero-byte probe to detect disconnected clients without
+        consuming any data. Returns False if the connection is closed.
+        """
+        try:
+            self.wfile.write(b"")
+            return True
+        except (ConnectionError, BrokenPipeError, OSError):
+            return False
+
     def _handle_embeddings_request(self) -> None:
         cursor_authorization = self._cursor_authorization()
         if cursor_authorization is None:
@@ -1159,6 +1182,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         pending_recovery_notice = recovery_notice
         try:
             while True:
+                if not self._check_client_alive():
+                    if self.config.verbose:
+                        LOG.info("client disconnected, stopping upstream read")
+                    response.release_conn()
+                    return ProxyResponseResult(False, usage)
                 try:
                     line = response.readline()
                 except (
@@ -1201,6 +1229,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                 if not self._write_to_client(
                     rewritten, "sending streaming response chunk", flush=True
                 ):
+                    response.release_conn()
                     return ProxyResponseResult(False, usage)
                 if finalized:
                     break
