@@ -66,6 +66,13 @@ disable_error_code = ["import-untyped"]
 files = ["src/deepseek_bridge/handler/_*.py"]
 disable_error_code = ["attr-defined"]
 
+# _streaming.py uses generator expressions in sum() where mypy
+# infers the generator item type incorrectly.  Must also keep
+# attr-defined since overrides are exclusive (first match wins).
+[[tool.mypy.overrides]]
+files = ["src/deepseek_bridge/handler/_streaming.py"]
+disable_error_code = ["attr-defined", "misc"]
+
 [tool.setuptools_scm]
 
 [tool.coverage.run]
