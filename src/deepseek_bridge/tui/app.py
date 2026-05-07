@@ -59,7 +59,7 @@ class TuiApp(App[None]):
 
     CSS = """
     #top-left { height: auto; margin-bottom: 1; }
-    #logs { height: 1fr; border: solid $primary; margin: 0 1; background: $surface; }
+    #logs { height: 1fr; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
     """
@@ -111,7 +111,7 @@ class TuiApp(App[None]):
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
         for h in root.handlers[:]:
-            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout:
+            if isinstance(h, logging.StreamHandler) and h.stream in (sys.stdout, sys.stderr):
                 root.removeHandler(h)
         root.addHandler(handler)
         self._tui_handler = handler
