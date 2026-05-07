@@ -10,7 +10,7 @@ from typing import Any
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Static
+from textual.widgets import RichLog, Static
 
 
 FIELDS = [
@@ -59,7 +59,7 @@ class TuiApp(App[None]):
 
     CSS = """
     #top-left { height: auto; margin-bottom: 1; }
-    #bottom-left { height: 1fr; }
+    #logs { height: 1fr; border: solid $primary; margin: 0 1; background: $surface; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
     """
@@ -92,25 +92,35 @@ class TuiApp(App[None]):
                 with VerticalScroll(id="top-left"):
                     yield Static("", id="stats")
                     yield Static("", id="urls")
-                with VerticalScroll(id="bottom-left"):
-                    yield Static("", id="logs")
+                yield RichLog(id="logs", max_lines=1000, auto_scroll=True, highlight=True)
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
                 yield Static("", id="keybinds")
 
     def on_mount(self) -> None:
+        import logging
         import sys
         import time
+
+        from .log_handler import TuiLogHandler
 
         sys.stdout.write("\x1b]0;DeepSeek Bridge\x07")
         self._prev_time = time.monotonic()
         self.set_interval(1.0, self._refresh)
-        _tui_logger.info("started")
+
+        handler = TuiLogHandler(emit_fn=self._write_to_log)
+        root = logging.getLogger()
+        for h in root.handlers[:]:
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout:
+                root.removeHandler(h)
+        root.addHandler(handler)
+        self._tui_handler = handler
+
+        self.flush_pre_mount_buffer()
+        self._mounted = True
 
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""
-        # Import here to avoid circular dependency with Task 3
-        from textual.widgets import RichLog
         try:
             log_widget = self.query_one("#logs", RichLog)
             while _pre_mount_buffer:
@@ -118,6 +128,21 @@ class TuiApp(App[None]):
                 log_widget.write(msg)
         except Exception:
             pass  # Widget not ready yet — buffer remains
+
+    def _write_to_log(self, msg: str) -> None:
+        """Thread-safe write to the RichLog widget."""
+        try:
+            self.call_from_thread(self._write_to_log_now, msg)
+        except Exception:
+            pass  # TUI is shutting down
+
+    def _write_to_log_now(self, msg: str) -> None:
+        """Actually write to RichLog (must be called from main thread)."""
+        try:
+            log_widget = self.query_one("#logs", RichLog)
+            log_widget.write(msg)
+        except Exception:
+            pass  # Widget not available
 
     def _refresh(self) -> None:
         server = self.server
@@ -192,11 +217,7 @@ class TuiApp(App[None]):
             urls += f"\n  ollama  {ollama}"
             self.query_one("#urls", Static).update(urls)
 
-        visible = _log_lines[-LOG_MAX:]
-        log_text = "[bold]Logs[/]"
-        if visible:
-            log_text += "\n" + "\n".join(f"  [dim]•[/] {line}" for line in visible)
-        self.query_one("#logs", Static).update(log_text)
+
 
         # --- Config (right panel) ---
         if config:

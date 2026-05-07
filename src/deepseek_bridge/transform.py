@@ -871,7 +871,7 @@ def prepare_upstream_request(
             break
         recovered_count += len(missing_indexes)
         recovery_dropped_messages += dropped_messages
-        if notice:
+        if notice and _should_show_recovery_notice(record_response_scope):
             recovery_notice = notice
         (
             messages,
