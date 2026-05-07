@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import deque
+
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -49,7 +49,6 @@ BOOL_FIELDS = {
     "collapsible_reasoning",
 }
 
-_pre_mount_buffer: deque[str] = deque(maxlen=200)
 _tui_logger = logging.getLogger("deepseek_bridge.tui")
 
 
@@ -132,6 +131,8 @@ class TuiApp(App[None]):
 
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""
+        from .log_handler import _pre_mount_buffer
+
         try:
             log_widget = self.query_one("#logs", RichLog)
             while _pre_mount_buffer:

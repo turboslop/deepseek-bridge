@@ -294,6 +294,10 @@ def main(argv: list[str] | None = None) -> int:
     log_file_path = configure_logging(
         verbose=config.verbose, log_dir=args.log_dir or config.log_dir
     )
+    if not args.headless:
+        from deepseek_bridge.tui.log_handler import install_pre_mount_handler
+
+        install_pre_mount_handler()
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,
