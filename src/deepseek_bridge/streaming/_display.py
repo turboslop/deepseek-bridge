@@ -4,6 +4,7 @@ import html
 import time
 from typing import Any
 
+from ..logging import LOG
 from ._accumulator import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
@@ -42,6 +43,10 @@ class CursorReasoningDisplayAdapter:
             reasoning_content = delta.get("reasoning_content")
             if isinstance(reasoning_content, str) and reasoning_content:
                 if index not in self._open_choices:
+                    LOG.debug(
+                        "streaming.display: opened thinking block for choice[%s]",
+                        index,
+                    )
                     mirrored_parts.append(self._block_start)
                     self._open_choices.add(index)
                 mirrored_parts.append(html.escape(reasoning_content))
@@ -53,6 +58,10 @@ class CursorReasoningDisplayAdapter:
                 or raw_choice.get("finish_reason") is not None
             )
             if should_close:
+                LOG.debug(
+                    "streaming.display: closed thinking block for choice[%s]",
+                    index,
+                )
                 mirrored_parts.append(self._block_end)
                 self._open_choices.discard(index)
 

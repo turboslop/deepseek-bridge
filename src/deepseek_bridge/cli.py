@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = ProxyConfig.from_file(config_path=args.config_path)
     except ValueError as exc:
-        configure_logging(verbose=bool(args.verbose))
+        configure_logging(verbose=bool(args.verbose), debug=bool(args.debug))
         LOG.error("%s", exc)
         return 2
     updates: dict[str, Any] = {}

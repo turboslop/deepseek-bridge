@@ -4,6 +4,7 @@ import html
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..logging import LOG
 from ..reasoning_store import ReasoningStore
 
 
@@ -65,10 +66,21 @@ class StreamAccumulator:
             if isinstance(content, str):
                 choice.content += content
 
+            delta_type = "content" if delta.get("content") else ""
             reasoning_content = delta.get("reasoning_content")
             if isinstance(reasoning_content, str):
                 choice.has_reasoning_content = True
                 choice.reasoning_content += reasoning_content
+                delta_type = "reasoning"
+
+            if delta.get("tool_calls"):
+                delta_type = "tool_call"
+
+            LOG.debug(
+                "streaming.accumulator: chunk[%s], delta_type=%s",
+                index,
+                delta_type,
+            )
 
             self._merge_tool_call_deltas(choice, delta.get("tool_calls"))
 
@@ -161,6 +173,12 @@ class StreamAccumulator:
                 tool_call["id"] = raw_delta["id"]
             if raw_delta.get("type"):
                 tool_call["type"] = raw_delta["type"]
+            LOG.debug(
+                "streaming.accumulator: tool_call[%s] id=%s, name=%s",
+                index,
+                tool_call.get("id", ""),
+                (raw_delta.get("function") or {}).get("name", ""),
+            )
 
             function_delta = raw_delta.get("function")
             if not isinstance(function_delta, dict):
@@ -191,6 +209,11 @@ class StreamAccumulator:
         previous_stage = self._stored_choices.get(storage_key)
         if stage_rank.get(previous_stage or "", 0) >= stage_rank.get(stage, 0):
             return 0
+        if choice.finish_reason is not None:
+            LOG.debug(
+                "streaming.accumulator: finish_reason=%s, finalizing",
+                choice.finish_reason,
+            )
         stored = store.store_assistant_message(
             choice.to_message(),
             scope,
@@ -204,7 +227,12 @@ class StreamAccumulator:
     def _has_identified_tool_calls(self, choice: StreamingChoice) -> bool:
         if not choice.has_reasoning_content or not choice.tool_calls:
             return False
-        return all(bool(tool_call.get("id")) for tool_call in choice.tool_calls)
+        identified = all(bool(tool_call.get("id")) for tool_call in choice.tool_calls)
+        if identified:
+            LOG.debug(
+                "streaming.accumulator: all tool_call IDs identified, caching reasoning"
+            )
+        return identified
 
 
 def fold_reasoning_into_content(
