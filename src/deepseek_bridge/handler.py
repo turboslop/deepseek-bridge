@@ -621,6 +621,34 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                     stream,
                     elapsed_ms(started),
                 )
+            if upstream_status == 400 and not stream:
+                # Model name may be invalid — retry with default model once
+                try:
+                    body = read_response_body(response)
+                    if isinstance(body, bytes):
+                        text = body.decode("utf-8", errors="replace")
+                        if "model" in text.lower():
+                            LOG.warning(
+                                "upstream rejected model %s (status=400), retrying with %s",
+                                upstream_model,
+                                self.config.upstream_model,
+                            )
+                            response.release_conn()
+                            upstream_body = json.dumps(
+                                {**prepared.payload, "model": self.config.upstream_model}
+                            ).encode("utf-8")
+                            upstream_headers["Content-Length"] = str(len(upstream_body))
+                            response = self.upstream_pool._pool.request(
+                                "POST",
+                                upstream_url,
+                                body=upstream_body,
+                                headers=upstream_headers,
+                                preload_content=True,
+                                timeout=timeout,
+                            )
+                            upstream_status = response.status
+                except Exception:
+                    pass
             if upstream_status >= 400:
                 spinner.stop()
                 LOG.warning(
