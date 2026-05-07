@@ -1299,6 +1299,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                         )
                     else:
                         LOG.warning("upstream streaming response read failed: %s", exc)
+                    response.release_conn()
                     return ProxyResponseResult(False, usage)
                 if not line:
                     break

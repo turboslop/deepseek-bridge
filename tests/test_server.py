@@ -81,6 +81,9 @@ class _FailingStreamingResponse:
     def readline(self) -> bytes:
         raise OSError("record layer failure")
 
+    def release_conn(self) -> None:
+        pass
+
 
 class _BrokenPipeWfile:
     def write(self, body: bytes) -> None:

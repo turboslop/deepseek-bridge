@@ -82,7 +82,6 @@ class TuiApp(App[None]):
 
     def __init__(self, server_config=None, server=None) -> None:
         super().__init__()
-        self._mounted = False
         self._tui_handler = None
         self.server_config = server_config
         self.server = server
@@ -112,14 +111,13 @@ class TuiApp(App[None]):
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
+        root.addHandler(handler)       # Add FIRST so there's never a gap
+        self._tui_handler = handler
         for h in root.handlers[:]:
             if isinstance(h, logging.StreamHandler) and h.stream in (sys.stdout, sys.stderr):
-                root.removeHandler(h)
-        root.addHandler(handler)
-        self._tui_handler = handler
+                root.removeHandler(h)  # THEN remove old ones
 
         self.flush_pre_mount_buffer()
-        self._mounted = True
 
     def on_unmount(self) -> None:
         """Clean up TuiLogHandler when TUI shuts down and restore stderr logging."""
@@ -129,7 +127,6 @@ class TuiApp(App[None]):
         if self._tui_handler is None:
             return
 
-        self._mounted = False
         root = logging.getLogger()
         for h in root.handlers[:]:
             if isinstance(h, type(self._tui_handler)):
@@ -145,6 +142,8 @@ class TuiApp(App[None]):
             handler = logging.StreamHandler(sys.stderr)
             handler.setFormatter(logging.Formatter("%(message)s"))
             root.addHandler(handler)
+
+        _tui_logger.info("TUI shutdown complete")
 
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""

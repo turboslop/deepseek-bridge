@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from typing import Any, Callable
+import threading
+from typing import Callable
+
+from ..logging import LOG
 
 # Pre-mount buffer: captures log messages before TUI is mounted,
 # flushed to RichLog widget on mount.
 _pre_mount_buffer: deque[str] = deque(maxlen=200)
+_pre_mount_lock = threading.Lock()
 
 
 class PreMountLogHandler(logging.Handler):
@@ -19,7 +23,8 @@ class PreMountLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = record.getMessage()
-            self.buffer.append(msg)
+            with _pre_mount_lock:
+                self.buffer.append(msg)
         except Exception:
             pass
 
@@ -29,6 +34,7 @@ def install_pre_mount_handler() -> logging.Handler:
     Returns the handler for later removal."""
     handler = PreMountLogHandler(_pre_mount_buffer)
     logging.getLogger().addHandler(handler)
+    LOG.info("installed pre-mount log handler (buffer: %s)", _pre_mount_buffer.maxlen)
     return handler
 
 
