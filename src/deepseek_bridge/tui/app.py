@@ -119,6 +119,17 @@ class TuiApp(App[None]):
         self.flush_pre_mount_buffer()
         self._mounted = True
 
+    def on_unmount(self) -> None:
+        """Clean up TuiLogHandler when TUI shuts down."""
+        import logging
+
+        self._mounted = False
+        root = logging.getLogger()
+        for h in root.handlers[:]:
+            if isinstance(h, type(self._tui_handler)):
+                h.close()
+                root.removeHandler(h)
+
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""
         try:
@@ -332,6 +343,7 @@ class TuiApp(App[None]):
             self._editing = None
             self._edit_buf = ""
             self._refresh()
+            self.notify("Config saved", severity="information", timeout=2)
 
     def action_toggle_pause(self) -> None:
         if self.server is None:
