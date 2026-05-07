@@ -58,6 +58,13 @@ ignore_missing_imports = true
 strict_optional = true
 disable_error_code = ["import-untyped"]
 
+# _streaming.py uses generator expressions in sum() where mypy
+# infers the generator item type incorrectly.  Placed first so
+# it matches before the broader _*.py override below.
+[[tool.mypy.overrides]]
+files = ["src/deepseek_bridge/handler/_streaming.py"]
+disable_error_code = ["attr-defined", "misc"]
+
 # Handler mixin classes access self attributes (config, headers,
 # _send_json, etc.) that are only resolved at composition time in
 # DeepSeekProxyHandler(BaseHTTPRequestHandler).  Mypy cannot trace
@@ -65,13 +72,6 @@ disable_error_code = ["import-untyped"]
 [[tool.mypy.overrides]]
 files = ["src/deepseek_bridge/handler/_*.py"]
 disable_error_code = ["attr-defined"]
-
-# _streaming.py uses generator expressions in sum() where mypy
-# infers the generator item type incorrectly.  Must also keep
-# attr-defined since overrides are exclusive (first match wins).
-[[tool.mypy.overrides]]
-files = ["src/deepseek_bridge/handler/_streaming.py"]
-disable_error_code = ["attr-defined", "misc"]
 
 [tool.setuptools_scm]
 
