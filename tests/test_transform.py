@@ -640,7 +640,10 @@ class CrossModeAndModelTests(unittest.TestCase):
             ProxyConfig(missing_reasoning_strategy="recover"),
             self.store,
         )
-        self.assertEqual(first_recovered.recovered_reasoning_messages, 1)
+        # Patch strategy does not drop messages; all missing reasoning
+        # was filled with a placeholder so the count is 0.
+        self.assertEqual(first_recovered.recovered_reasoning_messages, 0)
+        self.assertEqual(first_recovered.missing_reasoning_messages, 0)
 
         # Simulate DeepSeek's response to the recovered request.
         response_body = json.dumps(
@@ -673,10 +676,10 @@ class CrossModeAndModelTests(unittest.TestCase):
         )
         recovered_assistant = json.loads(rewritten)["choices"][0]["message"]
 
-        # Reasoning must be recorded under BOTH scopes — pre-recovery (so
-        # subsequent Cursor requests echoing the with-prefix history hit) and
-        # post-recovery (so an immediate continuation also hits).
-        self.assertEqual(len(first_recovered.record_response_contexts), 2)
+        # The patch strategy preserves all messages (only adds placeholder
+        # reasoning_content, which is excluded from scope hashing), so pre-
+        # and post-pat scopes are identical — only 1 recording context.
+        self.assertEqual(len(first_recovered.record_response_contexts), 1)
         for scope, _messages in first_recovered.record_response_contexts:
             self.assertEqual(
                 self.store.get(
@@ -686,9 +689,9 @@ class CrossModeAndModelTests(unittest.TestCase):
             )
         recovered_assistant.pop("reasoning_content", None)
 
-        # Cursor's next request echoes the recovered assistant + tool result.
-        # The proxy should detect the recovery boundary, retire the prefix,
-        # and continue cleanly without recovering again.
+        # Cursor's next request echoes the patched assistant + tool result.
+        # No recovery boundary is needed (patch strategy leaves no trace),
+        # so the proxy handles it as a normal cache-hit continuation.
         second_payload = {
             "model": "deepseek-v4-pro",
             "messages": [
@@ -707,10 +710,12 @@ class CrossModeAndModelTests(unittest.TestCase):
         self.assertEqual(second_prepared.missing_reasoning_messages, 0)
         self.assertEqual(second_prepared.recovered_reasoning_messages, 0)
         self.assertEqual(second_prepared.recovery_dropped_messages, 0)
-        self.assertTrue(second_prepared.continued_recovery_boundary)
-        self.assertGreater(second_prepared.retired_prefix_messages, 0)
+        self.assertFalse(second_prepared.continued_recovery_boundary)
+        self.assertEqual(second_prepared.retired_prefix_messages, 0)
+        # Cached reasoning from the first response is patched into the
+        # echoed assistant (which had its reasoning_content stripped).
         self.assertEqual(
-            second_prepared.payload["messages"][2]["reasoning_content"],
+            second_prepared.payload["messages"][4]["reasoning_content"],
             "Need the new lookup.",
         )
 

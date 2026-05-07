@@ -58,7 +58,7 @@ class TuiApp(App[None]):
 
     CSS = """
     #top-left { height: auto; margin-bottom: 1; }
-    #logs { height: 1fr; scrollbar-visibility: hidden; }
+    #logs { height: 1fr; overflow-x: auto; overflow-y: auto; }
     #logs-heading { height: auto; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
@@ -93,7 +93,7 @@ class TuiApp(App[None]):
                     yield Static("", id="stats")
                     yield Static("", id="urls")
                 yield Static("[bold]Logs[/]", id="logs-heading")
-                yield RichLog(id="logs", max_lines=1000, auto_scroll=True, highlight=False)
+                yield RichLog(id="logs", max_lines=1000, auto_scroll=False, highlight=False)
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
                 yield Static("", id="keybinds")
@@ -169,7 +169,10 @@ class TuiApp(App[None]):
         """Actually write to RichLog (must be called from main thread)."""
         try:
             log_widget = self.query_one("#logs", RichLog)
+            was_at_bottom = log_widget.is_vertical_scroll_end
             log_widget.write(msg)
+            if was_at_bottom:
+                log_widget.scroll_end(animate=False, immediate=True)
         except Exception:
             pass  # Widget not available
 
