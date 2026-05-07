@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
                 check_interval=config.ngrok_health_check_interval,
             )
             tunnel.start_health_check()
-    server.public_url = public_url  # type: ignore[attr-defined]
+    server.public_url = public_url
     local_base_url = f"http://{config.host}:{config.port}/v1"
     api_base_url = (
         f"{public_url.rstrip('/')}/v1" if public_url is not None else local_base_url
