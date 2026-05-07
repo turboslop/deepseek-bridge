@@ -247,6 +247,7 @@ class ProxyConfig:
     cors: bool = DEFAULT_CORS
     ollama: bool = True
     verbose: bool = DEFAULT_VERBOSE
+    debug: bool = False
     compact: bool = False
     ngrok: bool = DEFAULT_NGROK
     ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL

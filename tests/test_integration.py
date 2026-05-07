@@ -32,8 +32,9 @@ class ProxyStartupTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
         )
-        # Wait for proxy to be ready (macOS CI runners can be slow to start uv+Python)
-        deadline = time.monotonic() + 30
+        # Wait for proxy to be ready (macOS CI runners can take 30-60s to cold-start uv+Python)
+        timeout_s = 60
+        deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             try:
                 conn = HTTPConnection("127.0.0.1", cls.port, timeout=1)
@@ -48,7 +49,9 @@ class ProxyStartupTests(unittest.TestCase):
         else:
             cls.proc.kill()
             stderr = cls.proc.stderr.read() if cls.proc.stderr else ""
-            raise RuntimeError(f"Proxy did not start within 10s. stderr:\n{stderr}")
+            raise RuntimeError(
+                f"Proxy did not start within {timeout_s}s. stderr:\n{stderr}"
+            )
 
     @classmethod
     def tearDownClass(cls) -> None:

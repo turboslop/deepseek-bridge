@@ -47,6 +47,7 @@ def _purge_old_logs(log_dir: Path, keep: int = 5) -> None:
 def configure_logging(
     *,
     verbose: bool,
+    debug: bool = False,
     log_dir: str | Path | None = None,
 ) -> str | None:
     log_file_path: str | None = None
@@ -64,8 +65,9 @@ def configure_logging(
         file_handler = stdlib_logging.FileHandler(log_file_path, encoding="utf-8")
         file_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
         handlers.append(file_handler)
+    level = stdlib_logging.DEBUG if debug else stdlib_logging.INFO
     stdlib_logging.basicConfig(
-        level=stdlib_logging.INFO,
+        level=level,
         handlers=handlers,
         force=True,
     )

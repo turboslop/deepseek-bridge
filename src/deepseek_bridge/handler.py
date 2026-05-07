@@ -114,6 +114,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         started = time.monotonic()
         request_path = urlparse(self.path).path
         trace = self._start_trace(request_path)
+        LOG.debug(
+            "handler.request: POST %s from %s, content-length=%s",
+            request_path,
+            self.client_address[0],
+            self.headers.get("Content-Length", "0"),
+        )
         if self.config.verbose:
             LOG.info(
                 "incoming POST %s from %s content_length=%s user_agent=%s",
@@ -265,6 +271,7 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self.reasoning_store,
             authorization=cursor_authorization,
         )
+        LOG.debug("handler.request: auth ok, model=%s", prepared.upstream_model)
         if trace is not None:
             trace.record_transform(prepared)
 
@@ -360,6 +367,11 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
             self._finish_trace(trace, "aborted")
             return
 
+        LOG.debug(
+            "handler.upstream: forwarding to %s, stream=%s",
+            upstream_url,
+            stream,
+        )
         try:
             if self.config.verbose:
                 LOG.info("forwarding to %s", upstream_url)
@@ -401,6 +413,12 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
                             sleep_sec,
                             attempt + 1,
                             max_retries,
+                        )
+                        LOG.debug(
+                            "handler.upstream: retry %s/%s, reason=%s",
+                            attempt + 1,
+                            max_retries,
+                            exc,
                         )
                         time.sleep(sleep_sec)
                         continue
@@ -1147,8 +1165,10 @@ class DeepSeekProxyHandler(BaseHTTPRequestHandler):
         finalized = False
         pending_recovery_notice = recovery_notice
         try:
+            sse_line_num = 0
             while True:
                 if not self._check_client_alive():
+                    LOG.debug("handler.disconnect: client disconnected at stage=streaming")
                     if self.config.verbose:
                         LOG.info("client disconnected, stopping upstream read")
                     response.release_conn()

@@ -225,15 +225,12 @@ class CliAndHelperTests(unittest.TestCase):
         import logging
         root = logging.getLogger()
         handlers_before = root.handlers[:]
-        try:
-            with TemporaryDirectory() as d:
-                result = configure_logging(verbose=False, log_dir=d)
-                self.assertIsNotNone(
-                    result, "configure_logging should return path when log_dir is set"
-                )
-                self.assertIn(d, result)
-        finally:
-            # Restore root logger handlers to avoid file lock on Windows
+        with TemporaryDirectory() as d:
+            result = configure_logging(verbose=False, log_dir=d)
+            self.assertIsNotNone(
+                result, "configure_logging should return path when log_dir is set"
+            )
+            self.assertIn(d, result)
             for h in root.handlers[:]:
                 if h not in handlers_before:
                     h.close()

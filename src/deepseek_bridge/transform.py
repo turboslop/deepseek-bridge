@@ -351,7 +351,7 @@ def normalize_messages(
     patched_count = 0
     missing_indexes: list[int] = []
     diagnostics: list[dict[str, Any]] = []
-    for message in messages:
+    for idx, message in enumerate(messages):
         normalized, patched, missing, diagnostic = normalize_message(
             message,
             store,
@@ -363,8 +363,24 @@ def normalize_messages(
         normalized_messages.append(normalized)
         if patched:
             patched_count += 1
+            LOG.debug(
+                "transform.normalize: message[%s] %s - patched from cache",
+                idx,
+                normalized["role"],
+            )
         if missing:
             missing_indexes.append(len(normalized_messages) - 1)
+            LOG.debug(
+                "transform.normalize: message[%s] %s - MISSING reasoning_content",
+                idx,
+                normalized["role"],
+            )
+        elif normalized["role"] == "assistant" and not patched:
+            LOG.debug(
+                "transform.normalize: message[%s] %s - no reasoning needed",
+                idx,
+                normalized["role"],
+            )
         if diagnostic is not None:
             diagnostics.append(diagnostic)
     return normalized_messages, patched_count, missing_indexes, diagnostics
@@ -494,6 +510,11 @@ def recover_messages_from_missing_reasoning(
         omitted_messages = (
             recovery_boundary_index - len(leading_messages) - kept_context_messages
         )
+        LOG.debug(
+            "transform.recovery: strategy=recovery_boundary, boundary_at=%s, dropped=%s",
+            recovery_boundary_index,
+            omitted_messages,
+        )
         return (
             recovered,
             omitted_messages,
@@ -517,6 +538,9 @@ def recover_messages_from_missing_reasoning(
         -1,
     )
     if last_user_index == -1:
+        LOG.debug(
+            "transform.recovery: strategy=none, no user messages to recover from",
+        )
         return (
             messages,
             0,
@@ -534,6 +558,11 @@ def recover_messages_from_missing_reasoning(
     omitted_messages = len(messages) - len(recovered) - 1
     recovered.append({"role": "system", "content": RECOVERY_SYSTEM_CONTENT})
     recovered.append(messages[last_user_index])
+    LOG.debug(
+        "transform.recovery: strategy=latest_user, boundary_at=%s, dropped=%s",
+        last_user_index,
+        omitted_messages,
+    )
     return (
         recovered,
         omitted_messages,
@@ -629,6 +658,12 @@ def prepare_upstream_request(
 ) -> PreparedRequest:
     original_model = str(payload.get("model") or config.upstream_model)
     upstream_model = upstream_model_for(original_model, config)
+    messages_raw = payload.get("messages")
+    LOG.debug(
+        "transform.prepare: starting request normalization, model=%s, messages=%s",
+        upstream_model,
+        len(messages_raw) if isinstance(messages_raw, list) else 0,
+    )
 
     prepared = {
         key: value for key, value in payload.items() if key in SUPPORTED_REQUEST_FIELDS
@@ -693,6 +728,10 @@ def prepare_upstream_request(
         prepared.get("reasoning_effort"),
         authorization,
     )
+    LOG.debug(
+        "transform.cache: namespace=%s...",
+        cache_namespace[:16],
+    )
     pre_repair_messages, _, _, _ = normalize_messages(
         payload.get("messages"),
         None,
@@ -721,9 +760,15 @@ def prepare_upstream_request(
             keep_reasoning=not thinking_disabled,
         )
     )
+    LOG.debug(
+        "transform.prepare: cache lookup found %s patched messages, %s still missing",
+        patched_count,
+        len(missing_indexes),
+    )
     if missing_indexes and thinking_enabled and config.missing_reasoning_strategy == "recover":
         boundary = active_messages_from_recovery_boundary(pre_repair_messages)
         if boundary is not None:
+            LOG.debug("transform.prepare: recovery boundary check - found")
             messages_for_repair, retired_prefix_messages, boundary_step = boundary
             continued_recovery_boundary = True
             recovery_steps.append(boundary_step)
@@ -736,6 +781,8 @@ def prepare_upstream_request(
                     keep_reasoning=not thinking_disabled,
                 )
             )
+        else:
+            LOG.debug("transform.prepare: recovery boundary check - not found")
     while missing_indexes and config.missing_reasoning_strategy == "recover":
         recovered_messages, dropped_messages, notice, recovery_step = (
             recover_messages_from_missing_reasoning(messages, missing_indexes)
@@ -745,6 +792,10 @@ def prepare_upstream_request(
             break
         recovered_count += len(missing_indexes)
         recovery_dropped_messages += dropped_messages
+        LOG.debug(
+            "transform.prepare: recovery dropped %s prefix messages",
+            recovery_dropped_messages,
+        )
         if notice and _should_show_recovery_notice(record_response_scope):
             recovery_notice = notice
         (

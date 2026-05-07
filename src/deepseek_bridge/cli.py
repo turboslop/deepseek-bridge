@@ -187,6 +187,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Log detailed request metadata and full payloads",
     )
     group_other.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable DEBUG-level log output showing internal proxy decisions",
+    )
+    group_other.add_argument(
         "--compact",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -260,6 +266,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["ngrok_health_check_interval"] = args.ngrok_health_check_interval
     if args.verbose is not None:
         updates["verbose"] = args.verbose
+    if args.debug:
+        updates["debug"] = True
     if args.compact is not None:
         updates["compact"] = args.compact
     if args.trace_dir is not None:
@@ -295,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         config = replace(config, log_dir=None)
 
     log_file_path = configure_logging(
-        verbose=config.verbose, log_dir=args.log_dir or config.log_dir
+        verbose=config.verbose, debug=config.debug, log_dir=args.log_dir or config.log_dir
     )
     if not args.headless:
         from deepseek_bridge.tui.log_handler import install_pre_mount_handler
