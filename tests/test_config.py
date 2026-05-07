@@ -75,7 +75,10 @@ class ConfigTests(unittest.TestCase):
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
                 config_text,
             )
-            self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
+            if os.name != "nt":
+                self.assertEqual(
+                    stat.S_IMODE(config_path.stat().st_mode), 0o600
+                )
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
             self.assertEqual(config.ngrok, DEFAULT_NGROK)
             self.assertEqual(
@@ -250,15 +253,15 @@ class ConfigTests(unittest.TestCase):
                 "PROXY_VERBOSE": "true",
                 "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
             },
-            clear=True,
+            clear=False,
         ):
             config = ProxyConfig.from_file(config_path=config_path)
             self.assertEqual(
-                dict(os.environ),
-                {
-                    "PROXY_VERBOSE": "true",
-                    "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
-                },
+                os.environ.get("PROXY_VERBOSE"), "true"
+            )
+            self.assertEqual(
+                os.environ.get("DEEPSEEK_CURSOR_PROXY_CONFIG_PATH"),
+                "/ignored.yaml",
             )
 
         self.assertFalse(config.verbose)

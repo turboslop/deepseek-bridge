@@ -22,7 +22,10 @@ class ReasoningStoreTests(unittest.TestCase):
             store.close()
 
             self.assertTrue(reasoning_content_path.exists())
-            self.assertEqual(stat.S_IMODE(reasoning_content_path.stat().st_mode), 0o600)
+            if os.name != "nt":
+                self.assertEqual(
+                    stat.S_IMODE(reasoning_content_path.stat().st_mode), 0o600
+                )
 
     def test_store_prunes_by_age_and_can_clear(self) -> None:
         store = ReasoningStore(":memory:", max_age_seconds=3600)
