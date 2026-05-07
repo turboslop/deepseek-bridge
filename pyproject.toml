@@ -57,6 +57,14 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 strict_optional = true
 
+# Handler mixin classes access self attributes (config, headers,
+# _send_json, etc.) that are only resolved at composition time in
+# DeepSeekProxyHandler(BaseHTTPRequestHandler).  Mypy cannot trace
+# these through the MRO, so disable attr-defined for these modules.
+[[tool.mypy.overrides]]
+module = "deepseek_bridge.handler._*"
+disable_error_code = ["attr-defined"]
+
 [tool.setuptools_scm]
 
 [tool.coverage.run]
