@@ -58,7 +58,8 @@ class TuiApp(App[None]):
 
     CSS = """
     #top-left { height: auto; margin-bottom: 1; }
-    #logs { height: 1fr; }
+    #logs { height: 1fr; scrollbar-visibility: hidden; }
+    #logs-heading { height: auto; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
     """
@@ -91,7 +92,8 @@ class TuiApp(App[None]):
                 with VerticalScroll(id="top-left"):
                     yield Static("", id="stats")
                     yield Static("", id="urls")
-                yield RichLog(id="logs", max_lines=1000, auto_scroll=True, highlight=True)
+                yield Static("[bold]Logs[/]", id="logs-heading")
+                yield RichLog(id="logs", max_lines=1000, auto_scroll=True, highlight=False)
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
                 yield Static("", id="keybinds")
