@@ -19,6 +19,26 @@ from .reasoning_store import (
 )
 from .streaming import fold_reasoning_into_content
 
+# Recovery notice tracking — prevents the cascade loop where the
+# recovery notice changes message content → changes conversation_scope
+# → next cache lookup fails → recovery fires again → notice again.
+# By tracking seen scopes, the visible notice is only injected once
+# per conversation. Recovery still fires and repairs reasoning silently
+# on subsequent misses.
+_recovery_notice_seen: set[str] = set()
+
+
+def _should_show_recovery_notice(scope: str) -> bool:
+    """Return True if the recovery notice should be shown for *scope*.
+
+    Returns False (and remembers the scope) on subsequent calls.
+    """
+    if scope in _recovery_notice_seen:
+        return False
+    _recovery_notice_seen.add(scope)
+    return True
+
+
 SUPPORTED_REQUEST_FIELDS = {
     "model",
     "messages",

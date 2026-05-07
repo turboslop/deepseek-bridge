@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import time
+from collections import deque
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -47,14 +49,8 @@ BOOL_FIELDS = {
     "collapsible_reasoning",
 }
 
-LOG_MAX = 12
-_log_lines: list[str] = []
-
-
-def _add_log(msg: str) -> None:
-    _log_lines.append(msg)
-    if len(_log_lines) > 100:
-        _log_lines[:] = _log_lines[-100:]
+_pre_mount_buffer: deque[str] = deque(maxlen=200)
+_tui_logger = logging.getLogger("deepseek_bridge.tui")
 
 
 class TuiApp(App[None]):
@@ -62,7 +58,7 @@ class TuiApp(App[None]):
     TITLE = "DeepSeek Bridge"
 
     CSS = """
-    #top-left { height: auto; }
+    #top-left { height: auto; margin-bottom: 1; }
     #bottom-left { height: 1fr; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
@@ -86,6 +82,7 @@ class TuiApp(App[None]):
 
     def __init__(self, server_config=None, server=None) -> None:
         super().__init__()
+        self._mounted = False
         self.server_config = server_config
         self.server = server
 
@@ -99,6 +96,7 @@ class TuiApp(App[None]):
                     yield Static("", id="logs")
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
+                yield Static("", id="keybinds")
 
     def on_mount(self) -> None:
         import sys
@@ -107,7 +105,19 @@ class TuiApp(App[None]):
         sys.stdout.write("\x1b]0;DeepSeek Bridge\x07")
         self._prev_time = time.monotonic()
         self.set_interval(1.0, self._refresh)
-        _add_log("started")
+        _tui_logger.info("started")
+
+    def flush_pre_mount_buffer(self) -> None:
+        """Push any buffered pre-mount log messages to the log widget."""
+        # Import here to avoid circular dependency with Task 3
+        from textual.widgets import RichLog
+        try:
+            log_widget = self.query_one("#logs", RichLog)
+            while _pre_mount_buffer:
+                msg = _pre_mount_buffer.popleft()
+                log_widget.write(msg)
+        except Exception:
+            pass  # Widget not ready yet — buffer remains
 
     def _refresh(self) -> None:
         server = self.server
@@ -183,9 +193,9 @@ class TuiApp(App[None]):
             self.query_one("#urls", Static).update(urls)
 
         visible = _log_lines[-LOG_MAX:]
-        log_text = (
-            "\n".join(f"  [dim]•[/] {line}" for line in visible) if visible else ""
-        )
+        log_text = "[bold]Logs[/]"
+        if visible:
+            log_text += "\n" + "\n".join(f"  [dim]•[/] {line}" for line in visible)
         self.query_one("#logs", Static).update(log_text)
 
         # --- Config (right panel) ---
@@ -229,6 +239,8 @@ class TuiApp(App[None]):
                 "[bold]Configuration[/]\n\n  (none)"
             )
 
+        self.query_one("#keybinds", Static).update("\n[dim]ctrl+s save    p pause proxy[/]")
+
     # --- Key bindings ---
 
     def action_cfg_up(self) -> None:
@@ -271,7 +283,7 @@ class TuiApp(App[None]):
             idx = 0
         new_val = choices[(idx + direction) % len(choices)]
         self._apply(attr, new_val)
-        _add_log(f"cfg: {_wid}={new_val}")
+        _tui_logger.info("cfg: %s=%s", _wid, new_val)
         self._refresh()
 
     def action_cfg_edit(self) -> None:
@@ -295,7 +307,7 @@ class TuiApp(App[None]):
         if self._editing is not None:
             _wid, attr, _label, _choices = FIELDS[self._editing]
             self._apply(attr, self._edit_buf)
-            _add_log(f"cfg: {_wid}={self._edit_buf}")
+            _tui_logger.info("cfg: %s=%s", _wid, self._edit_buf)
             self._editing = None
             self._edit_buf = ""
             self._refresh()
@@ -305,7 +317,7 @@ class TuiApp(App[None]):
             return
         self.server.paused = not getattr(self.server, "paused", False)
         state = "paused" if self.server.paused else "resumed"
-        _add_log(f"proxy {state}")
+        _tui_logger.info("proxy %s", state)
 
     def _apply(self, attr: str, raw: str) -> None:
         config = self.server_config
@@ -345,7 +357,7 @@ class TuiApp(App[None]):
         if event.name == "enter":
             _wid, attr, _label, _choices = FIELDS[self._editing]
             self._apply(attr, self._edit_buf)
-            _add_log(f"cfg: {_wid}={self._edit_buf}")
+            _tui_logger.info("cfg: %s=%s", _wid, self._edit_buf)
             self._editing = None
             self._edit_buf = ""
             self._refresh()
