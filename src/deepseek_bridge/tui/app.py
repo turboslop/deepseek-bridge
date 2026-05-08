@@ -55,6 +55,8 @@ _tui_logger = logging.getLogger("deepseek_bridge.tui")
 
 class TuiApp(App[None]):
 
+    ALLOW_SELECT = True  # Enables native terminal text selection
+
     TITLE = "DeepSeek Bridge"
 
     CSS = """
@@ -250,7 +252,6 @@ class TuiApp(App[None]):
             if public:
                 tunnel_label = {"ngrok": "ngrok", "localhostrun": "loc.run"}.get(config.tunnel, "tunnel")
                 urls += f"\n  {tunnel_label:<7} {public}"
-            urls += f"\n  [dim][ctrl+y] copy[/]"
             self.query_one("#urls", Static).update(urls)
 
 
@@ -416,12 +417,6 @@ class TuiApp(App[None]):
         url = f"{public}/v1" if public else f"http://{host}:{port}/v1"
         self.copy_to_clipboard(url)
         self.notify("Copied!", timeout=1)
-
-    def on_click(self, event) -> None:
-        """Copy URL when clicking the URLs display."""
-        widget = getattr(event, "widget", None)
-        if widget is not None and widget.id == "urls":
-            self.action_copy_url()
 
     def _apply(self, attr: str, raw: str) -> None:
         config = self.server_config
