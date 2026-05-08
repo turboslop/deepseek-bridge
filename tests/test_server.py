@@ -440,6 +440,58 @@ class HandlerStubTests(unittest.TestCase):
             f"Expected 'server paused' in logs, got: {log_ctx.output}",
         )
 
+    def test_cursor_authorization_extracts_bearer_token(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        handler.headers = {"Authorization": "Bearer sk-test-key"}
+        self.assertEqual(handler._cursor_authorization(), "Bearer sk-test-key")
+
+    def test_cursor_authorization_returns_none_for_missing_header(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        handler.headers = {}
+        self.assertIsNone(handler._cursor_authorization())
+
+    def test_cursor_authorization_returns_none_for_basic_auth(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        handler.headers = {"Authorization": "Basic dXNlcjpwYXNz"}
+        self.assertIsNone(handler._cursor_authorization())
+
+    def test_read_json_body_negative_content_length_raises(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        handler.headers = {"Content-Length": "-1"}
+        with self.assertRaises(ValueError):
+            handler._read_json_body()
+
+    def test_read_json_body_empty_body_raises(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        handler.headers = {"Content-Length": "0"}
+        handler.rfile = BytesIO(b"")
+        with self.assertRaises(ValueError):
+            handler._read_json_body()
+
+    def test_read_json_body_non_dict_raises(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        body = b'"just a string"'
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = BytesIO(body)
+        with self.assertRaises(ValueError):
+            handler._read_json_body()
+
+    def test_read_json_body_invalid_json_raises(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        body = b"not json"
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = BytesIO(body)
+        with self.assertRaises(ValueError):
+            handler._read_json_body()
+
+    def test_check_client_alive_via_socket_returns_true(self) -> None:
+        handler = _make_handler_stub(BytesIO())
+        sock = type("FakeSocket", (), {"sendall": lambda s, d, flags=0: None})()
+        if hasattr(type(sock), "setsockopt"):
+            pass
+        handler.request = sock
+        self.assertTrue(handler._check_client_alive())
+
 
 # ---------------------------------------------------------------------------
 # HTTP-level boundary tests: real proxy + tiny upstream
