@@ -117,6 +117,8 @@ class TuiApp(App[None]):
         self._prev_time = time.monotonic()
         self.set_interval(1.0, self._refresh)
         self.query_one("#logs", RichLog).can_focus = False
+        self.query_one("#left-col").can_focus = False
+        self.query_one("#right-panel").can_focus = False
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
