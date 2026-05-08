@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import ssl
 import time
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import urllib3
@@ -26,6 +28,10 @@ from ..helpers import (
 )
 from ..logging import LOG, TerminalSpinner
 from ..transform import prepare_upstream_request
+
+if TYPE_CHECKING:
+    from ..trace import TraceRequest
+    from ..transform._prepare import PreparedRequest
 
 
 class HandlerRoutes:
@@ -69,7 +75,7 @@ class HandlerRoutes:
             self.server._log_heartbeat()
         started = time.monotonic()
         request_path = urlparse(self.path).path
-        trace = self._start_trace(request_path)
+
         LOG.debug(
             "handler.request: POST %s from %s, content-length=%s",
             request_path,
@@ -84,7 +90,9 @@ class HandlerRoutes:
                 self.headers.get("Content-Length", "0"),
                 self.headers.get("User-Agent", ""),
             )
+
         if self.config.ollama and request_path == "/api/show":
+            trace = self._start_trace(request_path)
             self._handle_api_show()
             self._finish_trace(trace, "completed")
             return
@@ -94,9 +102,76 @@ class HandlerRoutes:
                     "incoming embeddings request from %s",
                     self.client_address[0],
                 )
+            trace = self._start_trace(request_path)
             self._handle_embeddings_request()
             self._finish_trace(trace, "completed")
             return
+
+        payload, trace, error_status_code = self._validate_chat_request(request_path)
+        if error_status_code is not None:
+            return
+
+        cursor_auth = self._cursor_authorization()
+
+        prepared = self._prepare_and_apply_upstream(
+            payload, cursor_auth, trace, request_path
+        )
+        if prepared is None:
+            return
+
+        if self.config.debug:
+            log_json("upstream request body", prepared.payload)
+
+        upstream_body = json.dumps(
+            prepared.payload, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        upstream_url = f"{self.config.upstream_base_url}/chat/completions"
+        upstream_headers = self._upstream_headers(
+            stream=bool(prepared.payload.get("stream")),
+            authorization=cursor_auth,
+        )
+        if trace is not None:
+            trace.record_upstream_request(
+                url=upstream_url,
+                headers=upstream_headers,
+                body_bytes=upstream_body,
+            )
+        stream = bool(prepared.payload.get("stream"))
+
+        if self.config.debug and not self.config.compact:
+            log_send_summary(prepared)
+
+        spinner = TerminalSpinner(
+            enabled=stream and not self.config.debug and not self.config.compact,
+            text="└ {frame}",
+        ).start()
+
+        if not self._check_client_alive():
+            LOG.info("client disconnected before upstream request")
+            spinner.stop()
+            self._finish_trace(trace, "aborted")
+            return
+
+        LOG.debug(
+            "handler.upstream: forwarding to %s, stream=%s",
+            upstream_url,
+            stream,
+        )
+
+        response = self._send_upstream_with_retry(
+            upstream_url, upstream_body, upstream_headers,
+            stream, trace, started, spinner,
+        )
+        if response is None:
+            return
+
+        self._dispatch_response(response, prepared, stream, trace, started, spinner)
+
+    def _validate_chat_request(
+        self, request_path: str
+    ) -> tuple[dict | None, "TraceRequest | None", str | None]:
+        trace = self._start_trace(request_path)
+
         if request_path not in {
             "/chat/completions",
             "/v1/chat/completions",
@@ -115,7 +190,8 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=404)
-            return
+            return None, trace, "404"
+
         cursor_authorization = self._cursor_authorization()
         if cursor_authorization is None:
             LOG.warning(
@@ -133,7 +209,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=401)
-            return
+            return None, trace, "401"
 
         try:
             payload = self._read_json_body()
@@ -147,7 +223,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=413, reason=str(exc))
-            return
+            return None, trace, "413"
         except ValueError as exc:
             LOG.warning(
                 "rejected request path=%s status=400 reason=%s", request_path, exc
@@ -158,7 +234,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=400, reason=str(exc))
-            return
+            return None, trace, "400"
 
         if request_path in {"/completions", "/v1/completions"}:
             if "prompt" in payload and "messages" not in payload:
@@ -173,7 +249,9 @@ class HandlerRoutes:
                 payload.pop(legacy_key, None)
 
         if getattr(self.server, "paused", False):
-            LOG.warning("rejecting request from %s: server paused", self.client_address[0])
+            LOG.warning(
+                "rejecting request from %s: server paused", self.client_address[0]
+            )
             self._send_json(
                 503,
                 {
@@ -187,7 +265,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=503)
-            return
+            return None, trace, "503"
 
         if trace is not None:
             trace.record_cursor_body(payload)
@@ -195,11 +273,6 @@ class HandlerRoutes:
         if self.config.debug:
             log_json("cursor request body", payload)
 
-        # --- Responses API → Chat Completions conversion ---
-        # Cursor Agent mode sends Responses API-shaped payloads to the
-        # /chat/completions endpoint.  Detect and convert them inline so the
-        # rest of the pipeline (prepare_upstream_request, etc.) sees a standard
-        # Chat Completions dict.
         if request_path in {"/chat/completions", "/v1/chat/completions"}:
             try:
                 from ..responses_converter import (
@@ -214,18 +287,27 @@ class HandlerRoutes:
                     if trace is not None:
                         trace.record_cursor_body(payload)
             except ImportError:
-                pass  # converter module not available; proceed without conversion
+                pass
 
         if not self._check_client_alive():
             LOG.info("client disconnected before message normalization")
             self._finish_trace(trace, "aborted")
-            return
+            return None, trace, "client_disconnected"
 
+        return payload, trace, None
+
+    def _prepare_and_apply_upstream(
+        self,
+        payload: dict,
+        cursor_auth: str,
+        trace: "TraceRequest | None",
+        request_path: str,
+    ) -> "PreparedRequest | None":
         prepared = prepare_upstream_request(
             payload,
             self.config,
             self.reasoning_store,
-            authorization=cursor_authorization,
+            authorization=cursor_auth,
         )
         LOG.debug("handler.request: auth ok, model=%s", prepared.upstream_model)
         if trace is not None:
@@ -241,6 +323,7 @@ class HandlerRoutes:
         else:
             log_cursor_request(payload, self.config)
             log_context_summary(prepared)
+
         if (
             prepared.missing_reasoning_messages
             and self.config.missing_reasoning_strategy == "reject"
@@ -277,7 +360,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "rejected", http_status=409)
-            return
+            return None
 
         if self.config.debug:
             LOG.info(
@@ -292,42 +375,18 @@ class HandlerRoutes:
                 summarize_chat_payload(prepared.payload),
             )
 
-        if self.config.debug:
-            log_json("upstream request body", prepared.payload)
+        return prepared
 
-        upstream_body = json.dumps(
-            prepared.payload, ensure_ascii=False, separators=(",", ":")
-        ).encode("utf-8")
-        upstream_url = f"{self.config.upstream_base_url}/chat/completions"
-        upstream_headers = self._upstream_headers(
-            stream=bool(prepared.payload.get("stream")),
-            authorization=cursor_authorization,
-        )
-        if trace is not None:
-            trace.record_upstream_request(
-                url=upstream_url,
-                headers=upstream_headers,
-                body_bytes=upstream_body,
-            )
-        stream = bool(prepared.payload.get("stream"))
-
-        if self.config.debug and not self.config.compact:
-            log_send_summary(prepared)
-        spinner = TerminalSpinner(
-            enabled=stream and not self.config.debug and not self.config.compact,
-            text="└ {frame}",
-        ).start()
-
-        if not self._check_client_alive():
-            LOG.info("client disconnected before upstream request")
-            self._finish_trace(trace, "aborted")
-            return
-
-        LOG.debug(
-            "handler.upstream: forwarding to %s, stream=%s",
-            upstream_url,
-            stream,
-        )
+    def _send_upstream_with_retry(
+        self,
+        upstream_url: str,
+        upstream_body: bytes,
+        upstream_headers: dict,
+        stream: bool,
+        trace: "TraceRequest | None",
+        started: float,
+        spinner: "TerminalSpinner",
+    ) -> "object | None":
         try:
             if self.config.debug:
                 LOG.info("forwarding to %s", upstream_url)
@@ -350,7 +409,7 @@ class HandlerRoutes:
                         preload_content=not stream,
                         timeout=timeout,
                     )
-                    break
+                    return response
                 except (
                     http.client.BadStatusLine,
                     ConnectionError,
@@ -363,10 +422,11 @@ class HandlerRoutes:
                             LOG.info("client disconnected before upstream retry")
                             spinner.stop()
                             self._finish_trace(trace, "aborted")
-                            return
+                            return None
                         sleep_sec = 1 * (2**attempt)
                         LOG.warning(
-                            "upstream request failed (%s), retrying in %ss (attempt %d/%d)",
+                            "upstream request failed (%s), retrying in %ss "
+                            "(attempt %d/%d)",
                             exc,
                             sleep_sec,
                             attempt + 1,
@@ -380,10 +440,10 @@ class HandlerRoutes:
                         )
                         time.sleep(sleep_sec)
                         continue
-                    # After exhausting retries, send a proper error response
                     spinner.stop()
                     LOG.warning(
-                        "upstream request failed after %d retries elapsed_ms=%s reason=%s",
+                        "upstream request failed after %d retries elapsed_ms=%s "
+                        "reason=%s",
                         max_retries,
                         elapsed_ms(started),
                         exc,
@@ -398,7 +458,7 @@ class HandlerRoutes:
                         trace=trace,
                     )
                     self._finish_trace(trace, "upstream_error", http_status=500)
-                    return
+                    return None
         except urllib3.exceptions.MaxRetryError as exc:
             spinner.stop()
             LOG.warning(
@@ -416,7 +476,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "upstream_error", http_status=500)
-            return
+            return None
         except urllib3.exceptions.TimeoutError:
             spinner.stop()
             LOG.warning(
@@ -433,7 +493,7 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "upstream_error", http_status=504)
-            return
+            return None
         except urllib3.exceptions.HTTPError as exc:
             spinner.stop()
             LOG.warning(
@@ -451,11 +511,20 @@ class HandlerRoutes:
                 trace=trace,
             )
             self._finish_trace(trace, "upstream_error", http_status=500)
-            return
+            return None
         except Exception:
             spinner.stop()
-            raise  # Stop spinner before re-raising unexpected errors
+            raise
 
+    def _dispatch_response(
+        self,
+        response: "object",
+        prepared: "PreparedRequest",
+        stream: bool,
+        trace: "TraceRequest | None",
+        started: float,
+        spinner: "TerminalSpinner",
+    ) -> None:
         try:
             upstream_status = response.status
             if self.config.debug:
@@ -528,5 +597,4 @@ class HandlerRoutes:
             )
         finally:
             spinner.stop()
-            if "response" in locals():
-                response.release_conn()
+            response.release_conn()
