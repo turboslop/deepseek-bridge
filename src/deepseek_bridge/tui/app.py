@@ -123,6 +123,12 @@ class TuiApp(App[None]):
 
         self.flush_pre_mount_buffer()
 
+        # Auto-copy the Cursor API URL on startup
+        try:
+            self.action_copy_url()
+        except Exception:
+            pass
+
     def on_unmount(self) -> None:
         """Clean up TuiLogHandler when TUI shuts down and restore stderr logging."""
         import logging
