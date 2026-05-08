@@ -190,7 +190,7 @@ class TraceIntegrationTests(unittest.TestCase):
         proxy.config = ProxyConfig(
             upstream_base_url=self.upstream.url,
             upstream_model="deepseek-v4-pro",
-            tunnel="off",
+            tunnel="none",
         )
         proxy.reasoning_store = self.store
         proxy.trace_writer = self.writer

@@ -82,7 +82,7 @@ deepseek-bridge
 deepseek-bridge --headless
 
 # Run without tunnel (localhost only)
-deepseek-bridge --tunnel off --port 9000
+deepseek-bridge --tunnel none --port 9000
 
 # Debug output with trace dumps
 deepseek-bridge --debug --trace-dir ./dumps
@@ -132,7 +132,7 @@ In Cursor, add a custom model with these settings:
 - **API Key**: Your DeepSeek API key
 - **Base URL**: Your tunnel HTTPS URL with `/v1` path (e.g., `https://abc123.lhr.life/v1`)
 
-> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [localhost.run](https://localhost.run) by default (a zero-dependency SSH tunnel — no installation needed). Use `--tunnel off` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
+> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [localhost.run](https://localhost.run) by default (a zero-dependency SSH tunnel — no installation needed). Use `--tunnel none` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
 
 ### GitHub Copilot
 
@@ -223,7 +223,7 @@ uv run coverage report
 | `--collapsible-reasoning` | on | Use collapsible Markdown for reasoning |
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `9000` | Bind port |
-| `--tunnel` | `localhostrun` | Tunnel service (off, localhostrun, ngrok) |
+| `--tunnel` | `localhostrun` | Tunnel service (none, localhostrun, ngrok) |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |

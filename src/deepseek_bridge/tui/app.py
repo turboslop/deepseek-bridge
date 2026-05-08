@@ -24,7 +24,7 @@ FIELDS = [
         ["low", "medium", "high", "max", "xhigh"],
     ),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("tunnel", "tunnel", "Tunnel", ["off", "localhostrun", "ngrok"]),
+    ("tunnel", "tunnel", "Tunnel", ["none", "localhostrun", "ngrok"]),
     ("cors", "cors", "CORS", ["true", "false"]),
     ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("compact", "compact", "Compact", ["true", "false"]),
@@ -247,7 +247,8 @@ class TuiApp(App[None]):
             public = getattr(server, "public_url", None)
             urls = f"\n  local   {local}"
             if public:
-                urls += f"\n  ngrok   {public.rstrip('/')}/v1"
+                tunnel_label = {"ngrok": "ngrok", "localhostrun": "loc.run"}.get(config.tunnel, "public")
+                urls += f"\n  {tunnel_label:<7} {public.rstrip('/')}/v1"
             urls += f"\n  ollama  {ollama}"
             self.query_one("#urls", Static).update(urls)
 

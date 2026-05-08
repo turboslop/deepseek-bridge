@@ -608,7 +608,7 @@ class HttpBoundaryTests(unittest.TestCase):
         proxy.config = ProxyConfig(
             upstream_base_url=self.upstream.url,
             upstream_model="deepseek-v4-pro",
-            tunnel="off",
+            tunnel="none",
         )
         proxy.reasoning_store = self.store
         proxy.upstream_pool = UpstreamPool()

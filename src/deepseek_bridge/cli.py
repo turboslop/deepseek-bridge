@@ -79,7 +79,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     group_net.add_argument(
         "--tunnel",
-        choices=["off", "localhostrun", "ngrok"],
+        choices=["none", "localhostrun", "ngrok"],
         default="localhostrun",
         help="Tunnel service for public URL exposure (default: localhostrun)",
     )
@@ -329,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
 
     tunnel: TunnelService | None = None
     public_url: str | None = None
-    if config.tunnel != "off":
+    if config.tunnel != "none":
         target_url = local_tunnel_target(config.host, config.port)
         tunnel = create_tunnel(config.tunnel, target_url)
         try:
@@ -375,8 +375,8 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("  API Base:  %s", api_base_url)
     if public_url is not None:
         LOG.info("  Tunnel:    %s", public_url)
-    elif config.tunnel == "off":
-        LOG.info("  Tunnel:    off")
+    elif config.tunnel == "none":
+        LOG.info("  Tunnel:    none")
     LOG.info("  Ollama:    %s", "enabled" if config.ollama else "disabled")
     LOG.info("")
     LOG.info("Storage")
