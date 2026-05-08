@@ -102,7 +102,7 @@ class TuiApp(App[None]):
                     yield Static("", id="stats")
                     yield Static("", id="urls")
                 yield Static("[bold]Logs[/]", id="logs-heading")
-                yield RichLog(id="logs", max_lines=1000, auto_scroll=False, highlight=False)
+                yield RichLog(id="logs", max_lines=1000, highlight=False)
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
                 yield Static("", id="keybinds")
