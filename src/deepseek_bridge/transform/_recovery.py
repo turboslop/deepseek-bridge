@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import threading
 from typing import Any
 
-from ..logging import INTERNAL_LOG, LOG
+from ..logging import INTERNAL_LOG
 
 # Recovery notice tracking — prevents the cascade loop where the
 # recovery notice changes message content → changes conversation_scope
@@ -11,19 +12,22 @@ from ..logging import INTERNAL_LOG, LOG
 # per conversation. Recovery still fires and repairs reasoning silently
 # on subsequent misses.
 _recovery_notice_seen: set[str] = set()
+_recovery_lock = threading.Lock()
 
 
 def reset_recovery_notice_tracking() -> None:
-    _recovery_notice_seen.clear()
+    with _recovery_lock:
+        _recovery_notice_seen.clear()
 
 
 def _should_show_recovery_notice(scope: str) -> bool:
-    if scope in _recovery_notice_seen:
-        return False
-    if len(_recovery_notice_seen) > 10_000:
-        _recovery_notice_seen.clear()
-    _recovery_notice_seen.add(scope)
-    return True
+    with _recovery_lock:
+        if scope in _recovery_notice_seen:
+            return False
+        if len(_recovery_notice_seen) > 10_000:
+            _recovery_notice_seen.clear()
+        _recovery_notice_seen.add(scope)
+        return True
 
 
 RECOVERY_NOTICE_TEXT = "[deepseek-bridge] Refreshed reasoning_content history."

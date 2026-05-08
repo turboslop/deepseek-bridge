@@ -9,7 +9,7 @@ from .._normalization import (
     normalize_tool_call,
     strip_cursor_thinking_blocks,
 )
-from ..logging import INTERNAL_LOG, LOG
+from ..logging import INTERNAL_LOG
 from ..reasoning_store import (
     ReasoningStore,
     conversation_scope,

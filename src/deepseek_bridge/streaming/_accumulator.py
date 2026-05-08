@@ -4,7 +4,7 @@ import html
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..logging import INTERNAL_LOG, LOG
+from ..logging import INTERNAL_LOG
 from ..reasoning_store import ReasoningStore
 
 
@@ -12,6 +12,9 @@ THINKING_BLOCK_START = "<think>\n"
 THINKING_BLOCK_END = "\n</think>\n\n"
 COLLAPSIBLE_THINKING_BLOCK_START = "<details>\n<summary>Thinking</summary>\n\n"
 COLLAPSIBLE_THINKING_BLOCK_END = "\n</details>\n\n"
+
+MAX_CONTENT_LENGTH: int = 500_000
+MAX_TOOL_CALLS: int = 100
 
 
 @dataclass
@@ -22,6 +25,8 @@ class StreamingChoice:
     has_reasoning_content: bool = False
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
+    _content_trimmed: bool = False
+    _reasoning_trimmed: bool = False
 
     def to_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {
@@ -64,13 +69,21 @@ class StreamAccumulator:
 
             content = delta.get("content")
             if isinstance(content, str):
-                choice.content += content
+                if len(choice.content) < MAX_CONTENT_LENGTH:
+                    choice.content += content
+                elif not getattr(choice, "_content_trimmed", False):
+                    INTERNAL_LOG.warning("streaming content exceeded max length, trimming")
+                    choice._content_trimmed = True
 
             delta_type = "content" if delta.get("content") else ""
             reasoning_content = delta.get("reasoning_content")
             if isinstance(reasoning_content, str):
                 choice.has_reasoning_content = True
-                choice.reasoning_content += reasoning_content
+                if len(choice.reasoning_content) < MAX_CONTENT_LENGTH:
+                    choice.reasoning_content += reasoning_content
+                elif not getattr(choice, "_reasoning_trimmed", False):
+                    INTERNAL_LOG.warning("streaming reasoning_content exceeded max length, trimming")
+                    choice._reasoning_trimmed = True
                 delta_type = "reasoning"
 
             if delta.get("tool_calls"):
@@ -163,6 +176,13 @@ class StreamAccumulator:
             index = raw_delta.get("index")
             if not isinstance(index, int):
                 index = len(choice.tool_calls)
+            if index >= MAX_TOOL_CALLS:
+                INTERNAL_LOG.warning(
+                    "tool_call index %s exceeds MAX_TOOL_CALLS=%s, ignoring",
+                    index,
+                    MAX_TOOL_CALLS,
+                )
+                continue
             while len(choice.tool_calls) <= index:
                 choice.tool_calls.append(
                     {"type": "function", "function": {"name": "", "arguments": ""}}

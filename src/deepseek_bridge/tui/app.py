@@ -361,7 +361,6 @@ class TuiApp(App[None]):
 
     def action_save_config(self) -> None:
         """Save current config to YAML file."""
-        import yaml
         from deepseek_bridge.config import default_config_path
 
         if self._editing is not None:

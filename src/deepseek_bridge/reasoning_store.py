@@ -9,27 +9,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .logging import INTERNAL_LOG, LOG
-
-
-def normalize_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
-    function = tool_call.get("function") or {}
-    if not isinstance(function, dict):
-        function = {}
-
-    arguments = function.get("arguments", "")
-    if not isinstance(arguments, str):
-        arguments = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
-
-    normalized: dict[str, Any] = {
-        "id": tool_call.get("id"),
-        "type": tool_call.get("type") or "function",
-        "function": {
-            "name": function.get("name") or "",
-            "arguments": arguments,
-        },
-    }
-    return normalized
+from ._normalization import normalize_tool_call
+from .logging import INTERNAL_LOG
 
 
 def tool_call_signature(tool_call: dict[str, Any]) -> str:

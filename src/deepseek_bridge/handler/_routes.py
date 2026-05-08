@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import ssl
 import time
-from typing import Any
 from urllib.parse import urlparse
 
 import urllib3
 import urllib3.exceptions
 
 from ..helpers import (
-    ProxyResponseResult,
     RequestBodyTooLargeError,
     _error_body,
     _generate_request_id,
@@ -26,7 +25,6 @@ from ..helpers import (
     summarize_chat_payload,
 )
 from ..logging import LOG, TerminalSpinner
-from ..trace import TraceRequest
 from ..transform import prepare_upstream_request
 
 
@@ -357,6 +355,8 @@ class HandlerRoutes:
                     http.client.BadStatusLine,
                     ConnectionError,
                     urllib3.exceptions.ProtocolError,
+                    ssl.SSLError,
+                    urllib3.exceptions.SSLError,
                 ) as exc:
                     if attempt < max_retries:
                         if not self._check_client_alive():

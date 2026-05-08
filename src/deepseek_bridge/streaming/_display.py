@@ -4,7 +4,7 @@ import html
 import time
 from typing import Any
 
-from ..logging import INTERNAL_LOG, LOG
+from ..logging import INTERNAL_LOG
 from ._accumulator import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
