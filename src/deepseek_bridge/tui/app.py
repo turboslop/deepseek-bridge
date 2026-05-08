@@ -147,8 +147,6 @@ class TuiApp(App[None]):
             handler.setFormatter(logging.Formatter("%(message)s"))
             root.addHandler(handler)
 
-        _tui_logger.info("TUI shutdown complete")
-
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""
         try:

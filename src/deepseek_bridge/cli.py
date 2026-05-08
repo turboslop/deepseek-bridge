@@ -447,8 +447,6 @@ def main(argv: list[str] | None = None) -> int:
                 pass  # Expected on Ctrl+C in TUI mode; cleanup handled by finally
             _shutdown_requested.set()
             server_thread.join(timeout=5)
-            sys.stderr.write("\r\n")
-            sys.stderr.flush()
         else:
             try:
                 _run_server(server)
@@ -456,6 +454,8 @@ def main(argv: list[str] | None = None) -> int:
                 LOG.info("received SIGINT, initiating graceful shutdown")
                 _shutdown_requested.set()
     finally:
+        sys.stderr.write("\n")
+        sys.stderr.flush()
         if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: draining active requests...")
             server.executor.shutdown(wait=False, cancel_futures=True)
