@@ -417,9 +417,11 @@ class TuiApp(App[None]):
         self.copy_to_clipboard(url)
         self.notify("Copied!", timeout=1)
 
-    def on_click(self) -> None:
-        """Copy URL on any click in the TUI."""
-        self.action_copy_url()
+    def on_click(self, event) -> None:
+        """Copy URL when clicking the URLs display."""
+        widget = getattr(event, "widget", None)
+        if widget is not None and widget.id == "urls":
+            self.action_copy_url()
 
     def _apply(self, attr: str, raw: str) -> None:
         config = self.server_config
