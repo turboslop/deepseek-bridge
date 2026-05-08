@@ -58,6 +58,7 @@ host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
 ngrok: {str(DEFAULT_NGROK).lower()}
 verbose: {str(DEFAULT_VERBOSE).lower()}
+debug: false
 cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
 max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
@@ -337,6 +338,10 @@ class ProxyConfig:
             ),
             compact=as_bool(
                 setting_value(settings, "compact"),
+                False,
+            ),
+            debug=as_bool(
+                setting_value(settings, "debug"),
                 False,
             ),
             ngrok=as_bool(
