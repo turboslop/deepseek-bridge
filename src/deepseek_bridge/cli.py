@@ -33,7 +33,7 @@ from .helpers import (
 from .logging import LOG, configure_logging
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter
-from .tunnel import HealthCheckConfig, NgrokTunnel, TunnelService, create_tunnel, local_tunnel_target
+from .tunnel import HealthCheckConfig, NgrokTunnel, TunnelService, create_tunnel, get_tunnel_choices, local_tunnel_target
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -79,7 +79,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     group_net.add_argument(
         "--tunnel",
-        choices=["none", "localhostrun", "ngrok"],
+        choices=["none"] + get_tunnel_choices(),
         default="localhostrun",
         help="Tunnel service for public URL exposure (default: localhostrun)",
     )
@@ -419,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
                 app = TuiApp(server_config=config, server=server)
                 app.run()
             except KeyboardInterrupt:
-                pass
+                pass  # Expected on Ctrl+C in TUI mode; cleanup handled by finally
             _shutdown_requested.set()
             server_thread.join(timeout=5)
         else:

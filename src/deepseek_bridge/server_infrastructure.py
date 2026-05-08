@@ -103,13 +103,14 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                     b"\r\n" + body
                 )
                 request.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            LOG.warning("failed to close rejected connection: %s", exc)
 
     def _log_pool_utilization(self) -> None:
         try:
             active: int | str = len(self.executor._threads)
-        except Exception:
+        except Exception as exc:
+            LOG.warning("failed to count active threads: %s", exc)
             active = "?"
         try:
             queue_size: int | str = (
@@ -117,7 +118,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                 if hasattr(self.executor, "_work_queue")
                 else "?"
             )
-        except Exception:
+        except Exception as exc:
+            LOG.warning("failed to check queue size: %s", exc)
             queue_size = "?"
         LOG.info(
             "thread pool: max_workers=%s active=%s queue=%s",
@@ -149,7 +151,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             parts.append(
                 f"pool={len(self.executor._threads)}/{self.executor._max_workers}"
             )
-        except Exception:
+        except Exception as exc:
+            LOG.warning("failed to read pool stats: %s", exc)
             parts.append("pool=?")
         try:
             store = self.reasoning_store
@@ -160,7 +163,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                 ).fetchone()
                 row_count = int(row[0]) if row else 0
                 parts.append(f"db={size_mb:.0f}MB/{format_count(row_count)}rows")
-        except Exception:
+        except Exception as exc:
+            LOG.warning("failed to read db stats: %s", exc)
             parts.append("db=?")
         uptime = int(time.monotonic() - self.start_time)
         parts.append(f"uptime={uptime // 60}m")

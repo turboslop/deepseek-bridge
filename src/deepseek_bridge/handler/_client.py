@@ -23,7 +23,7 @@ class HandlerClient:
                 try:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_NOSIGPIPE, 1)
                 except OSError:
-                    pass
+                    pass  # SO_NOSIGPIPE not available on this platform; best-effort
             try:
                 flags = getattr(socket, "MSG_NOSIGNAL", 0)
                 sock.sendall(b"", flags)

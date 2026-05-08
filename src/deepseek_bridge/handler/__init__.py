@@ -51,4 +51,4 @@ class DeepSeekProxyHandler(
         return self.server.upstream_pool
 
     def log_message(self, fmt, *args) -> None:
-        pass
+        pass  # Intentionally suppress default HTTP server log output

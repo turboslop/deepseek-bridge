@@ -88,7 +88,7 @@ class HandlerEndpoints:
                     )
             finally:
                 response.release_conn()
-        except Exception as exc:
+        except (urllib3.exceptions.HTTPError, OSError, ValueError) as exc:
             LOG.warning("embeddings request failed: %s", exc)
             self._send_json(
                 200,

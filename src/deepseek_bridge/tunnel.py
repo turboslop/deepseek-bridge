@@ -15,6 +15,9 @@ from urllib.parse import urlparse
 
 from .logging import LOG
 
+_tunnel_registry: dict[str, type["TunnelService"]] = {}
+"""Registry of tunnel implementations, populated via __init_subclass__."""
+
 DEFAULT_NGROK_API_URL = "http://127.0.0.1:4040/api"
 
 
@@ -68,6 +71,12 @@ class TunnelService(ABC):
     """Abstract base class for tunnel services (ngrok, localhost.run, etc.)."""
 
     public_url: str | None = None
+    tunnel_name: str = ""  # Set by subclasses (e.g. "ngrok", "localhostrun")
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if cls.tunnel_name:
+            _tunnel_registry[cls.tunnel_name] = cls
 
     @abstractmethod
     def start(self) -> str:
@@ -82,6 +91,8 @@ class TunnelService(ABC):
 
 @dataclass
 class NgrokTunnel(TunnelService):
+    tunnel_name = "ngrok"
+
     target_url: str
     command: str = "ngrok"
     api_url: str = DEFAULT_NGROK_API_URL
@@ -111,7 +122,8 @@ class NgrokTunnel(TunnelService):
             public_url = self.wait_for_public_url()
             self.public_url = public_url
             return public_url
-        except Exception:
+        except Exception as exc:
+            LOG.warning("ngrok tunnel start failed: %s", exc)
             self.stop()
             raise
 
@@ -217,6 +229,8 @@ LOCALHOSTRUN_URL_PATTERN = re.compile(
 class LocalhostRunTunnel(TunnelService):
     """Tunnel via SSH reverse port forwarding to localhost.run."""
 
+    tunnel_name = "localhostrun"
+
     target_url: str
     timeout: float = 15.0
 
@@ -238,7 +252,8 @@ class LocalhostRunTunnel(TunnelService):
             self.public_url = public_url
             LOG.info("localhost.run tunnel established: %s", public_url)
             return public_url
-        except Exception:
+        except Exception as exc:
+            LOG.warning("localhost.run tunnel start failed: %s", exc)
             self.stop()
             raise
 
@@ -281,10 +296,14 @@ class LocalhostRunTunnel(TunnelService):
             self.process.wait(timeout=5)
 
 
+def get_tunnel_choices() -> list[str]:
+    """Return the list of registered tunnel kind names."""
+    return list(_tunnel_registry.keys())
+
+
 def create_tunnel(kind: str, target_url: str) -> TunnelService:
     """Factory: return a tunnel of the requested kind."""
-    if kind == "ngrok":
-        return NgrokTunnel(target_url)
-    if kind == "localhostrun":
-        return LocalhostRunTunnel(target_url)
-    raise ValueError(f"unknown tunnel kind: {kind}")
+    cls = _tunnel_registry.get(kind)
+    if cls is None:
+        raise ValueError(f"unknown tunnel kind: {kind}")
+    return cls(target_url)

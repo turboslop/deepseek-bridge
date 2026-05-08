@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ._normalization import normalize_tool_call
-from .logging import INTERNAL_LOG
+from .logging import INTERNAL_LOG, LOG
 
 
 def tool_call_signature(tool_call: dict[str, Any]) -> str:
@@ -215,9 +215,6 @@ class ReasoningStore:
         try:
             size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
             if size_mb > 1024:
-                # Use lazy import for LOG to avoid circular import issues
-                from .logging import LOG
-
                 LOG.warning(
                     "reasoning DB is %.0f MB; skipping automatic VACUUM. Run manually.",
                     size_mb,
@@ -225,7 +222,8 @@ class ReasoningStore:
                 return False
             self._conn.execute("VACUUM")
             return True
-        except Exception:
+        except Exception as exc:
+            LOG.warning("VACUUM failed: %s", exc)
             return False
 
     def check_bloat(self) -> str | None:
@@ -256,7 +254,8 @@ class ReasoningStore:
                         f"Consider running with --clear-reasoning-cache."
                     )
             return None
-        except Exception:
+        except Exception as exc:
+            LOG.warning("check_bloat failed: %s", exc)
             return None
 
     def close(self) -> None:

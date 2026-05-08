@@ -214,7 +214,7 @@ class HandlerRoutes:
                     if trace is not None:
                         trace.record_cursor_body(payload)
             except ImportError:
-                pass  # converter module not available (shouldn't happen)
+                pass  # converter module not available; proceed without conversion
 
         if not self._check_client_alive():
             LOG.info("client disconnected before message normalization")
@@ -454,7 +454,7 @@ class HandlerRoutes:
             return
         except Exception:
             spinner.stop()
-            raise
+            raise  # Stop spinner before re-raising unexpected errors
 
         try:
             upstream_status = response.status

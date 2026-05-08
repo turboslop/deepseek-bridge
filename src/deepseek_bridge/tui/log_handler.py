@@ -25,8 +25,8 @@ class PreMountLogHandler(logging.Handler):
             msg = record.getMessage()
             with _pre_mount_lock:
                 self.buffer.append(msg)
-        except Exception:
-            pass
+        except Exception as exc:
+            LOG.warning("pre-mount log handler emit failed: %s", exc)
 
 
 def install_pre_mount_handler() -> logging.Handler:
@@ -64,11 +64,13 @@ class TuiLogHandler(logging.Handler):
         try:
             msg = self.format(record)
             self.emit_fn(msg)
-        except Exception:
+        except Exception as exc:
             try:
                 self.emit_fn(str(record.msg))
-            except Exception:
-                pass  # Never crash on a log formatting error
+            except Exception as exc2:
+                LOG.warning(
+                    "log formatting failed (original: %s, fallback: %s)", exc, exc2
+                )
 
     def format(self, record: logging.LogRecord) -> str:
         msg = record.getMessage()

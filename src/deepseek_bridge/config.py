@@ -216,7 +216,10 @@ def _auto_cache_max_rows(disk_budget_mb: int = DEFAULT_REASONING_CACHE_DISK_MB) 
 
         available_gb = shutil.disk_usage(default_app_dir()).free / (1024**3)
         budget_mb = min(disk_budget_mb, available_gb * 1024 * 0.05)
-    except Exception:
+    except Exception as exc:
+        from .logging import LOG
+
+        LOG.warning("failed to check disk usage, using default budget: %s", exc)
         budget_mb = disk_budget_mb
     est_row_bytes = 1500  # avg ~1.5KB per row
     return max(int((budget_mb * 1024 * 1024) / est_row_bytes), 10000)

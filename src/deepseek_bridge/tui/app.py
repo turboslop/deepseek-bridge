@@ -14,6 +14,10 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import RichLog, Static
 
+from ..tunnel import get_tunnel_choices as _get_tunnel_choices
+from ..logging import LOG
+
+_TUNNEL_CHOICES = ["none"] + _get_tunnel_choices()
 
 FIELDS = [
     ("thinking", "thinking", "Thinking", ["enabled", "disabled"]),
@@ -24,7 +28,7 @@ FIELDS = [
         ["low", "medium", "high", "max", "xhigh"],
     ),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("tunnel", "tunnel", "Tunnel", ["none", "localhostrun", "ngrok"]),
+    ("tunnel", "tunnel", "Tunnel", _TUNNEL_CHOICES),
     ("cors", "cors", "CORS", ["true", "false"]),
     ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("compact", "compact", "Compact", ["true", "false"]),
@@ -157,15 +161,15 @@ class TuiApp(App[None]):
                 while _pre_mount_buffer:
                     msg = _pre_mount_buffer.popleft()
                     log_widget.write(msg)
-        except Exception:
-            pass  # Widget not ready yet — buffer remains
+        except Exception as exc:
+            LOG.warning("failed to flush pre-mount buffer: %s", exc)
 
     def _write_to_log(self, msg: str) -> None:
         """Thread-safe write to the RichLog widget."""
         try:
             self.call_from_thread(self._write_to_log_now, msg)
-        except Exception:
-            pass  # TUI is shutting down
+        except Exception as exc:
+            LOG.warning("failed to dispatch log to main thread: %s", exc)
 
     def _write_to_log_now(self, msg: str) -> None:
         """Actually write to RichLog (must be called from main thread)."""
@@ -175,8 +179,8 @@ class TuiApp(App[None]):
             log_widget.write(msg)
             if was_at_bottom:
                 log_widget.scroll_end(animate=False, immediate=True)
-        except Exception:
-            pass  # Widget not available
+        except Exception as exc:
+            LOG.warning("failed to write to RichLog widget: %s", exc)
 
     def _refresh(self) -> None:
         server = self.server
@@ -200,16 +204,16 @@ class TuiApp(App[None]):
         if exe:
             try:
                 active = len(exe._threads)
-            except Exception:
-                pass
+            except Exception as exc:
+                LOG.warning("failed to read active thread count: %s", exc)
             try:
                 max_workers = exe._max_workers
-            except Exception:
-                pass
+            except Exception as exc:
+                LOG.warning("failed to read max workers: %s", exc)
             try:
                 queue = exe._work_queue.qsize()
-            except Exception:
-                pass
+            except Exception as exc:
+                LOG.warning("failed to read queue size: %s", exc)
 
         store = getattr(server, "reasoning_store", None)
         db_size = "N/A"
@@ -219,15 +223,15 @@ class TuiApp(App[None]):
             if isinstance(db_path, Path):
                 try:
                     db_size = f"{db_path.stat().st_size / (1024 * 1024):.1f}MB"
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOG.warning("failed to read db size: %s", exc)
                 try:
                     row = store._conn.execute(
                         "SELECT COUNT(*) FROM reasoning_cache"
                     ).fetchone()
                     db_rows = str(row[0]) if row else "0"
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOG.warning("failed to read db row count: %s", exc)
 
         stats = (
             f"  [bold]DeepSeek Bridge[/]  [dim]uptime {uptime_s}[/]\n"
@@ -434,8 +438,8 @@ class TuiApp(App[None]):
                 _logging.getLogger().setLevel(
                     _logging.DEBUG if self.server_config.debug else _logging.INFO
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            LOG.warning("failed to apply config update (%s=%s): %s", attr, raw, exc)
 
     def on_key(self, event) -> None:
         if self._editing is None:
