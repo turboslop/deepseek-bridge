@@ -447,8 +447,8 @@ class TuiApp(App[None]):
                 _logging.getLogger().setLevel(
                     _logging.DEBUG if self.server_config.debug else _logging.INFO
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _tui_logger.warning("config apply failed: %s", exc)
 
     def on_key(self, event) -> None:
         if self._editing is None:

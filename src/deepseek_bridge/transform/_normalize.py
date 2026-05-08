@@ -55,7 +55,7 @@ def normalize_message(
             normalized.pop("reasoning_content", None)
         elif repair_reasoning:
             reasoning = normalized.get("reasoning_content")
-            if not isinstance(reasoning, str):
+            if not isinstance(reasoning, str) or not reasoning:
                 normalized.pop("reasoning_content", None)
                 needs_reasoning = assistant_needs_reasoning_for_tool_context(
                     normalized, prior_messages

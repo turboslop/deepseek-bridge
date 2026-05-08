@@ -221,7 +221,7 @@ class NgrokTunnel(TunnelService):
 
 
 LOCALHOSTRUN_URL_PATTERN = re.compile(
-    r"https?://[a-zA-Z0-9]{8,}\.(?:lhr\.life|localhost\.run|loca\.lt|localtunnel\.me)\b"
+    r"https?://[a-zA-Z0-9-]{8,}\.(?:lhr\.life|localhost\.run)\b"
 )
 
 LOCALHOSTRUN_TUNNEL_LINE = re.compile(r"tunneled with tls termination")

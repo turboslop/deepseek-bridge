@@ -109,7 +109,7 @@ class LocalhostRunTunnelStartTests(unittest.TestCase):
     @patch("deepseek_bridge.tunnel.subprocess.Popen")
     def test_start_ssh_command(self, mock_popen: MagicMock) -> None:
         mock_proc = MagicMock()
-        mock_proc.stdout = ["Connect to https://abcd1234.loca.lt\nabcd1234.loca.lt tunneled with tls termination, https://abcd1234.loca.lt\n"]
+        mock_proc.stdout = ["Connect to https://abcd1234.lhr.life\nabcd1234.lhr.life tunneled with tls termination, https://abcd1234.lhr.life\n"]
         mock_popen.return_value = mock_proc
 
         tunnel = LocalhostRunTunnel(target_url="http://127.0.0.1:8080")
