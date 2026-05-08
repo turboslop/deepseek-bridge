@@ -70,13 +70,8 @@ class TuiApp(App[None]):
     """
 
     BINDINGS = [
-        Binding("up", "cfg_up", "Up", show=False, priority=True),
-        Binding("down", "cfg_down", "Down", show=False, priority=True),
-        Binding("left", "cfg_left", "Cycle left", show=False, priority=True),
-        Binding("right", "cfg_right", "Cycle right", show=False, priority=True),
-        Binding("enter", "cfg_edit", "Edit", show=False),
         Binding("ctrl+s", "save_config", "Save"),
-        Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("p", "toggle_pause", "Pause"),
         Binding("c", "copy_url", "Copy URL"),
     ]
@@ -467,24 +462,53 @@ class TuiApp(App[None]):
 
     def on_key(self, event) -> None:
         if self._editing is None:
+            if event.key == "up":
+                self.action_cfg_up()
+                event.stop()
+                event.prevent_default()
+            elif event.key == "down":
+                self.action_cfg_down()
+                event.stop()
+                event.prevent_default()
+            elif event.key == "left":
+                self.action_cfg_left()
+                event.stop()
+                event.prevent_default()
+            elif event.key == "right":
+                self.action_cfg_right()
+                event.stop()
+                event.prevent_default()
+            elif event.key == "enter":
+                self.action_cfg_edit()
+                event.stop()
+                event.prevent_default()
+            elif event.key == "ctrl+q":
+                self.action_quit()
+                event.stop()
+                event.prevent_default()
             return
-        if event.name == "escape":
+
+        if event.key == "escape":
             self._editing = None
             self._edit_buf = ""
             self._refresh()
+            event.stop()
             return
-        if event.name == "enter":
+        if event.key == "enter":
             _wid, attr, _label, _choices = FIELDS[self._editing]
             self._apply(attr, self._edit_buf)
             _tui_logger.info("cfg: %s=%s", _wid, self._edit_buf)
             self._editing = None
             self._edit_buf = ""
             self._refresh()
+            event.stop()
             return
-        if event.name == "backspace":
+        if event.key == "backspace":
             self._edit_buf = self._edit_buf[:-1]
+            event.stop()
         elif hasattr(event, "key") and event.is_printable:
             self._edit_buf += event.key
+            event.stop()
         else:
             return
         self._refresh()
