@@ -454,8 +454,7 @@ def main(argv: list[str] | None = None) -> int:
                 LOG.info("received SIGINT, initiating graceful shutdown")
                 _shutdown_requested.set()
     finally:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
+        print("\r\n", end="", flush=True)
         if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: draining active requests...")
             server.executor.shutdown(wait=False, cancel_futures=True)
