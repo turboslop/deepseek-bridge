@@ -119,7 +119,8 @@ class TuiApp(App[None]):
         self.query_one("#logs", RichLog).can_focus = False
         self.query_one("#left-col").can_focus = False
         self.query_one("#right-panel").can_focus = False
-        self.set_focus(None)  # Ensure no widget steals first keypress
+        self.set_focus(None)
+        _tui_logger.debug("focus: set_focus(None), can_focus disabled on logs/left/right")
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
@@ -307,33 +308,38 @@ class TuiApp(App[None]):
 
         if self._editing is not None:
             self.query_one("#keybinds", Static).update(
-                "\n[dim]enter confirm    esc cancel[/]"
+                "\n[dim]enter  confirm    esc  cancel[/]"
             )
         else:
             self.query_one("#keybinds", Static).update(
-                "\n[dim]arrows nav    enter edit    ctrl+s save    c copy url    ctrl+q quit    p pause[/]"
+                "\n[dim]arrows  navigate    enter  edit    ctrl+s  save[/]"
+                "\n[dim]c  copy url    ctrl+q  quit    p  pause[/]"
             )
 
     # --- Key bindings ---
 
     def action_cfg_up(self) -> None:
+        _tui_logger.debug("action: up")
         if self._editing is not None:
             return
         self._cfg_cursor = (self._cfg_cursor - 1) % len(FIELDS)
         self._refresh()
 
     def action_cfg_down(self) -> None:
+        _tui_logger.debug("action: down")
         if self._editing is not None:
             return
         self._cfg_cursor = (self._cfg_cursor + 1) % len(FIELDS)
         self._refresh()
 
     def action_cfg_left(self) -> None:
+        _tui_logger.debug("action: left")
         if self._editing is not None:
             return
         self._cycle(-1)
 
     def action_cfg_right(self) -> None:
+        _tui_logger.debug("action: right")
         if self._editing is not None:
             return
         self._cycle(1)
@@ -360,6 +366,7 @@ class TuiApp(App[None]):
         self._refresh()
 
     def action_cfg_edit(self) -> None:
+        _tui_logger.debug("action: enter")
         _wid, attr, _label, choices = FIELDS[self._cfg_cursor]
         if choices:
             return
@@ -469,6 +476,7 @@ class TuiApp(App[None]):
     def on_key(self, event) -> None:
         if self._editing is None:
             return
+        _tui_logger.debug("on_key: editing, key=%s name=%s", event.key, event.name)
         if event.name == "escape":
             self._editing = None
             self._edit_buf = ""
