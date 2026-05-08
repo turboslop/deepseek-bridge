@@ -301,6 +301,57 @@ class LocalhostRunTunnel(TunnelService):
             self.process.wait(timeout=5)
 
 
+@dataclass
+class CloudflaredTunnel(TunnelService):
+    """Named Cloudflare Tunnel (persistent, HTTPS, SSE-compatible).
+
+    Requires one-time setup:
+      cloudflared tunnel login
+      cloudflared tunnel create <name>
+      cloudflared tunnel route dns <name> <subdomain>.<domain>
+
+    The tunnel URL must be provided via a config field (e.g., https://app.example.com).
+    """
+
+    tunnel_name: str = "cloudflared"
+    target_url: str = ""
+    cfd_url: str = ""  # Public URL configured in Cloudflare dashboard
+
+    process: subprocess.Popen[bytes] | None = None
+    public_url: str | None = field(default=None, init=False)
+
+    def start(self) -> str:
+        if not self.cfd_url:
+            raise RuntimeError(
+                "Cloudflare tunnel URL not configured. "
+                "Set a cf_url in config or pass --cf-url."
+            )
+        if shutil.which("cloudflared") is None:
+            raise RuntimeError(
+                "cloudflared is not installed. "
+                "Install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+            )
+        self.process = subprocess.Popen(
+            ["cloudflared", "tunnel", "run", self.tunnel_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.public_url = self.cfd_url
+        LOG.info("cloudflare tunnel: %s → %s", self.cfd_url, self.target_url)
+        return self.cfd_url
+
+    def stop(self) -> None:
+        if self.process is None or self.process.poll() is not None:
+            return
+        LOG.info("stopping cloudflare tunnel")
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=5)
+
+
 def get_tunnel_choices() -> list[str]:
     """Return the list of registered tunnel kind names."""
     return list(_tunnel_registry.keys())

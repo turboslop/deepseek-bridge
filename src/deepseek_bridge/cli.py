@@ -33,7 +33,7 @@ from .helpers import (
 from .logging import LOG, configure_logging
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter
-from .tunnel import HealthCheckConfig, NgrokTunnel, TunnelService, create_tunnel, get_tunnel_choices, local_tunnel_target
+from .tunnel import HealthCheckConfig, NgrokTunnel, CloudflaredTunnel, TunnelService, create_tunnel, get_tunnel_choices, local_tunnel_target
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -356,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
     if config.tunnel != "none":
         target_url = local_tunnel_target(config.host, config.port)
         tunnel = create_tunnel(config.tunnel, target_url)
+        if isinstance(tunnel, CloudflaredTunnel):
+            tunnel.cfd_url = config.cf_url
         try:
             public_url = tunnel.start()
             _verify_tunnel_url(public_url)

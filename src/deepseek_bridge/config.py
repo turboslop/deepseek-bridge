@@ -250,6 +250,7 @@ class ProxyConfig:
     ollama: bool = True
     debug: bool = False
     tunnel: str = "localhostrun"
+    cf_url: str = ""  # Cloudflare tunnel public URL (e.g., https://app.example.com)
     compact: bool = False
     trace_dir: Path | None = None
     log_dir: Path | None = field(default_factory=default_log_dir)
@@ -339,6 +340,7 @@ class ProxyConfig:
                 False,
             ),
             tunnel=as_str(setting_value(settings, "tunnel"), "localhostrun"),
+            cf_url=as_str(setting_value(settings, "cf_url"), ""),
             max_pool_connections=_auto_pool_connections(
                 as_int(
                     setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
