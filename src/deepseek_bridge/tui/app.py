@@ -67,7 +67,6 @@ class TuiApp(App[None]):
     #logs-heading { height: auto; }
     #left-col { width: 2fr; padding: 1 1 1 2; }
     #right-panel { width: 1fr; padding: 1 2; }
-    RichLog { can-focus: false; }
     """
 
     BINDINGS = [
@@ -117,6 +116,7 @@ class TuiApp(App[None]):
         sys.stdout.write("\x1b]0;DeepSeek Bridge\x07")
         self._prev_time = time.monotonic()
         self.set_interval(1.0, self._refresh)
+        self.query_one("#logs", RichLog).can_focus = False
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
