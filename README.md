@@ -24,7 +24,7 @@ DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mod
 - Connection pooling via `urllib3` with keep-alive and minimal retries.
 - Bounded thread pool prevents thread exhaustion on long-running streaming connections.
 - Configurable SSE read timeout (default 180 seconds) prevents hung threads on silent upstreams.
-- Ngrok tunnel health check with automatic reconnection.
+- Tunnel support (localhost.run by default, ngrok optional) with health check and automatic reconnection.
 - Graceful shutdown on SIGTERM — active requests drain, reasoning cache is flushed.
 
 ### API Compatibility
@@ -48,7 +48,7 @@ DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mod
 
 Starting with v0.2.0, DeepSeek Bridge opens a Terminal UI dashboard by default. The dashboard provides live monitoring and configuration:
 
-- **Dashboard tab** — Real-time request metrics, uptime, ngrok status, and pool utilization.
+- **Dashboard tab** — Real-time request metrics, uptime, tunnel status, and pool utilization.
 - **Config tab** — Edit proxy settings (model, network, storage) without restarting.
 - **Logs tab** — Streaming log viewer with auto-scroll.
 
@@ -81,11 +81,11 @@ deepseek-bridge
 # Headless mode — no TUI, classic CLI output
 deepseek-bridge --headless
 
-# Local testing without ngrok
-deepseek-bridge --no-ngrok --port 9000
+# Run without tunnel (localhost only)
+deepseek-bridge --tunnel off --port 9000
 
-# Verbose output with trace dumps
-deepseek-bridge --verbose --trace-dir ./dumps
+# Debug output with trace dumps
+deepseek-bridge --debug --trace-dir ./dumps
 
 # Use a custom config file
 deepseek-bridge --config ./my-config.yaml
@@ -115,8 +115,8 @@ collapsible_reasoning: true
 
 host: 127.0.0.1
 port: 9000
-ngrok: true
-verbose: false
+tunnel: localhostrun
+debug: false
 cors: true
 ollama: true
 stream_read_timeout: 180
@@ -130,11 +130,9 @@ request_timeout: 300
 In Cursor, add a custom model with these settings:
 - **Model**: `deepseek-v4-pro` (or `deepseek-v4-flash`)
 - **API Key**: Your DeepSeek API key
-- **Base URL**: Your ngrok HTTPS URL with `/v1` path (e.g., `https://example.ngrok-free.dev/v1`)
+- **Base URL**: Your tunnel HTTPS URL with `/v1` path (e.g., `https://abc123.lhr.life/v1`)
 
-
-
-> **Note on ngrok**: Cursor blocks non-public URLs such as `localhost`. Use [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/setup) to expose the proxy. If your client supports localhost endpoints, disable ngrok with `--no-ngrok`.
+> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [localhost.run](https://localhost.run) by default (a zero-dependency SSH tunnel — no installation needed). Use `--tunnel off` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
 
 ### GitHub Copilot
 
@@ -172,7 +170,7 @@ For the new `customOAIModels` path (VS Code Insiders 1.104+):
 
 ### Other OpenAI-Compatible Clients
 
-Any client that speaks the OpenAI `/v1/chat/completions` API can use DeepSeek Bridge. Set the client's base URL to `http://localhost:9000/v1` (or your ngrok URL).
+Any client that speaks the OpenAI `/v1/chat/completions` API can use DeepSeek Bridge. Set the client's base URL to `http://localhost:9000/v1` (or your tunnel URL).
 
 ## How It Works
 
@@ -225,17 +223,16 @@ uv run coverage report
 | `--collapsible-reasoning` | on | Use collapsible Markdown for reasoning |
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `9000` | Bind port |
-| `--ngrok` | on | Start ngrok tunnel |
+| `--tunnel` | `localhostrun` | Tunnel service (off, localhostrun, ngrok) |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |
 | `--max-thread-pool` | `20` | Max concurrent request threads |
 | `--max-pool-connections` | `10` | Max upstream connections |
-| `--ngrok-health-check-interval` | `30` | Tunnel health check interval in seconds |
 | `--ollama` / `--no-ollama` | on | Enable/disable Ollama endpoints |
 | `--log-dir` | none | Directory for persistent log files |
 | `--trace-dir` | none | Directory for request trace dumps |
-| `--verbose` | off | Detailed request logging |
+| `--debug` | off | Enable DEBUG-level log output |
 | `--compact` | off | One-line-per-request output |
 | `--config` | ~/.deepseek-bridge/config.yaml | Config file path |
 | `--no-log` | off | Disable all log file output |

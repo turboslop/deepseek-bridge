@@ -80,8 +80,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_net.add_argument(
         "--tunnel",
         choices=["off", "localhostrun", "ngrok"],
-        default="off",
-        help="Tunnel service for public URL exposure (default: off)",
+        default="localhostrun",
+        help="Tunnel service for public URL exposure (default: localhostrun)",
     )
     group_net.add_argument(
         "--base-url",
@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_effort"] = args.reasoning_effort
     if args.reasoning_content_path is not None:
         updates["reasoning_content_path"] = args.reasoning_content_path
-    if args.tunnel != "off":
+    if args.tunnel is not None:
         updates["tunnel"] = args.tunnel
     if args.debug:
         updates["debug"] = True

@@ -53,7 +53,7 @@ collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
-tunnel: off
+tunnel: localhostrun
 debug: false
 cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
@@ -245,7 +245,7 @@ class ProxyConfig:
     cors: bool = DEFAULT_CORS
     ollama: bool = True
     debug: bool = False
-    tunnel: str = "off"
+    tunnel: str = "localhostrun"
     compact: bool = False
     trace_dir: Path | None = None
     log_dir: Path | None = field(default_factory=default_log_dir)
@@ -334,7 +334,7 @@ class ProxyConfig:
                 setting_value(settings, "debug"),
                 False,
             ),
-            tunnel=as_str(setting_value(settings, "tunnel"), "off"),
+            tunnel=as_str(setting_value(settings, "tunnel"), "localhostrun"),
             max_pool_connections=_auto_pool_connections(
                 as_int(
                     setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL

@@ -39,7 +39,7 @@ class ConfigTests(unittest.TestCase):
                 ProxyConfig().reasoning_content_path,
                 home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
-            self.assertEqual(ProxyConfig().tunnel, "off")
+            self.assertEqual(ProxyConfig().tunnel, "localhostrun")
             self.assertEqual(
                 ProxyConfig().collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -67,7 +67,7 @@ class ConfigTests(unittest.TestCase):
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
                 config_text,
             )
-            self.assertIn("tunnel: off", config_text)
+            self.assertIn("tunnel: localhostrun", config_text)
             self.assertIn(
                 "collapsible_reasoning: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
