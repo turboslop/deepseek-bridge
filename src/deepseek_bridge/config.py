@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import os
 
 import yaml
 
@@ -241,7 +240,9 @@ class ProxyConfig:
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
     max_thread_pool: int = DEFAULT_MAX_THREAD_POOL
-    max_queue_size: int = field(default_factory=lambda: _auto_queue_size(DEFAULT_MAX_THREAD_POOL))
+    max_queue_size: int = field(
+        default_factory=lambda: _auto_queue_size(DEFAULT_MAX_THREAD_POOL)
+    )
     cors: bool = DEFAULT_CORS
     ollama: bool = True
     debug: bool = False
@@ -350,7 +351,9 @@ class ProxyConfig:
                 DEFAULT_MAX_THREAD_POOL,
             ),
             max_queue_size=_auto_queue_size(
-                as_int(setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL)
+                as_int(
+                    setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
+                )
             ),
             log_dir=(
                 Path(v)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .._normalization import (
     EFFORT_ALIASES,
     extract_text_content,
@@ -13,7 +15,11 @@ from ._cache import (
     upstream_model_for,
 )
 from ._normalize import normalize_message, normalize_messages
-from ._prepare import SUPPORTED_REQUEST_FIELDS, PreparedRequest, prepare_upstream_request
+from ._prepare import (
+    SUPPORTED_REQUEST_FIELDS,
+    PreparedRequest,
+    prepare_upstream_request,
+)
 from ._recovery import (
     RECOVERY_NOTICE_CONTENT,
     RECOVERY_NOTICE_TEXT,
@@ -25,7 +31,11 @@ from ._recovery import (
     reset_recovery_notice_tracking,
     strip_recovery_notice_for_upstream,
 )
-from ._response import prefix_response_content, record_response_reasoning, rewrite_response_body
+from ._response import (
+    prefix_response_content,
+    record_response_reasoning,
+    rewrite_response_body,
+)
 
 __all__ = [
     "EFFORT_ALIASES",

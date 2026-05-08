@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..helpers import fold_reasoning_into_content
 from ..reasoning_store import ReasoningStore, conversation_scope
-from ..streaming import fold_reasoning_into_content
 
 
 def record_response_reasoning(

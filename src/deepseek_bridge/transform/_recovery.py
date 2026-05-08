@@ -3,6 +3,11 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from ..helpers import (
+    RECOVERY_NOTICE_CONTENT,
+    RECOVERY_NOTICE_TEXT,
+    RECOVERY_SYSTEM_CONTENT,
+)
 from ..logging import INTERNAL_LOG
 
 # Recovery notice tracking — prevents the cascade loop where the
@@ -28,16 +33,6 @@ def _should_show_recovery_notice(scope: str) -> bool:
             _recovery_notice_seen.clear()
         _recovery_notice_seen.add(scope)
         return True
-
-
-RECOVERY_NOTICE_TEXT = "[deepseek-bridge] Refreshed reasoning_content history."
-RECOVERY_NOTICE_CONTENT = f"{RECOVERY_NOTICE_TEXT}\n\n"
-RECOVERY_SYSTEM_CONTENT = (
-    "deepseek-bridge recovered this request because older DeepSeek "
-    "thinking-mode tool-call reasoning_content was unavailable. Older "
-    "unrecoverable tool-call history was omitted; continue using only the "
-    "remaining recovered context."
-)
 
 
 def has_recovery_notice(message: dict[str, Any]) -> bool:
@@ -110,9 +105,7 @@ def active_messages_from_recovery_boundary(
         *recovered_tail,
     ]
     kept_context_messages = 1 if context_user_index != -1 else 0
-    retired_messages = (
-        recovery_boundary_index - len(leading) - kept_context_messages
-    )
+    retired_messages = recovery_boundary_index - len(leading) - kept_context_messages
     retired_messages = max(retired_messages, 0)
     step = {
         "strategy": "continued_recovery_boundary",

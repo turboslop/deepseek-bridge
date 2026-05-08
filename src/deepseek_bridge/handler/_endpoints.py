@@ -6,7 +6,7 @@ import time
 
 import urllib3
 
-from deepseek_bridge import __version__
+from .. import __version__
 
 from ..helpers import (
     MODEL_CREATED_TIMESTAMPS,

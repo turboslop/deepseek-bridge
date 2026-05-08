@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler
 
-from deepseek_bridge import __version__
+from .. import __version__
+
+from ..config import ProxyConfig
+from ..reasoning_store import ReasoningStore
+from ..trace import TraceWriter
+from ..server_infrastructure import UpstreamPool
 
 from ._routes import HandlerRoutes
 from ._upstream import HandlerUpstream
@@ -26,20 +31,24 @@ class DeepSeekProxyHandler(
     server_version = f"DeepSeekBridge/{__version__}"
 
     @property
-    def config(self):
+    def config(self) -> ProxyConfig:
+        """Proxy configuration from the parent server instance."""
         return self.server.config
 
     @property
-    def reasoning_store(self):
+    def reasoning_store(self) -> ReasoningStore:
+        """SQLite-backed reasoning-content cache from the parent server."""
         return self.server.reasoning_store
 
     @property
-    def trace_writer(self):
+    def trace_writer(self) -> TraceWriter | None:
+        """Trace writer for request/response logging, or None if disabled."""
         return getattr(self.server, "trace_writer", None)
 
     @property
-    def upstream_pool(self):
+    def upstream_pool(self) -> UpstreamPool:
+        """urllib3 connection pool for upstream requests."""
         return self.server.upstream_pool
 
-    def log_message(self, fmt, *args):
+    def log_message(self, fmt, *args) -> None:
         pass

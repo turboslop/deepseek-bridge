@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import html
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..logging import INTERNAL_LOG
 from ..reasoning_store import ReasoningStore
-
-
-THINKING_BLOCK_START = "<think>\n"
-THINKING_BLOCK_END = "\n</think>\n\n"
-COLLAPSIBLE_THINKING_BLOCK_START = "<details>\n<summary>Thinking</summary>\n\n"
-COLLAPSIBLE_THINKING_BLOCK_END = "\n</details>\n\n"
 
 MAX_CONTENT_LENGTH: int = 500_000
 MAX_TOOL_CALLS: int = 100
@@ -72,7 +65,9 @@ class StreamAccumulator:
                 if len(choice.content) < MAX_CONTENT_LENGTH:
                     choice.content += content
                 elif not getattr(choice, "_content_trimmed", False):
-                    INTERNAL_LOG.warning("streaming content exceeded max length, trimming")
+                    INTERNAL_LOG.warning(
+                        "streaming content exceeded max length, trimming"
+                    )
                     choice._content_trimmed = True
 
             delta_type = "content" if delta.get("content") else ""
@@ -82,7 +77,9 @@ class StreamAccumulator:
                 if len(choice.reasoning_content) < MAX_CONTENT_LENGTH:
                     choice.reasoning_content += reasoning_content
                 elif not getattr(choice, "_reasoning_trimmed", False):
-                    INTERNAL_LOG.warning("streaming reasoning_content exceeded max length, trimming")
+                    INTERNAL_LOG.warning(
+                        "streaming reasoning_content exceeded max length, trimming"
+                    )
                     choice._reasoning_trimmed = True
                 delta_type = "reasoning"
 
@@ -253,32 +250,3 @@ class StreamAccumulator:
                 "streaming.accumulator: all tool_call IDs identified, caching reasoning"
             )
         return identified
-
-
-def fold_reasoning_into_content(
-    response_payload: dict[str, Any],
-    collapsible: bool,
-) -> None:
-    block_start = (
-        COLLAPSIBLE_THINKING_BLOCK_START if collapsible else THINKING_BLOCK_START
-    )
-    block_end = COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
-    choices = response_payload.get("choices")
-    if not isinstance(choices, list):
-        return
-    for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            continue
-        reasoning = message.get("reasoning_content")
-        if not isinstance(reasoning, str) or not reasoning:
-            continue
-        content = message.get("content")
-        message["content"] = (
-            block_start
-            + html.escape(reasoning)
-            + block_end
-            + (content if isinstance(content, str) else "")
-        )

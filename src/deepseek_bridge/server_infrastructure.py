@@ -25,7 +25,7 @@ from .trace import TraceWriter
 
 
 class UpstreamPool:
-    def __init__(self, max_connections: int = 10):
+    def __init__(self, max_connections: int = 10) -> None:
         self._pool = urllib3.PoolManager(
             maxsize=max_connections,
             block=True,
@@ -45,7 +45,7 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     """ThreadingHTTPServer variant that uses a fixed-size ThreadPoolExecutor."""
 
-    def __init__(self, *args, max_workers: int = 20, **kwargs):
+    def __init__(self, *args, max_workers: int = 20, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -62,7 +62,9 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     def process_request(self, request, client_address) -> None:
         if hasattr(request, "settimeout"):
             request.settimeout(
-                self.socket.gettimeout() if hasattr(self, "socket") else int(getattr(getattr(self, "config", None), "request_timeout", 300))
+                self.socket.gettimeout()
+                if hasattr(self, "socket")
+                else int(getattr(getattr(self, "config", None), "request_timeout", 300))
             )
         queue_size = self.executor._work_queue.qsize()
         config = getattr(self, "config", None)
@@ -70,34 +72,35 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         if queue_size > effective_max_queue:
             LOG.warning(
                 "rejecting request from %s: queue full (%s queued)",
-                client_address, queue_size,
+                client_address,
+                queue_size,
             )
             self._reject_connection(request)
             return
         with contextlib.suppress(RuntimeError):
-            self.executor.submit(
-                self.process_request_thread, request, client_address
-            )
+            self.executor.submit(self.process_request_thread, request, client_address)
 
     @staticmethod
     def _reject_connection(request: Any) -> None:
         import socket
+
         try:
             if isinstance(request, socket.socket):
-                body = json.dumps({
-                    "error": {
-                        "message": "Server overloaded — too many queued requests",
-                        "type": "server_error",
-                        "code": "service_unavailable",
+                body = json.dumps(
+                    {
+                        "error": {
+                            "message": "Server overloaded — too many queued requests",
+                            "type": "server_error",
+                            "code": "service_unavailable",
+                        }
                     }
-                }).encode("utf-8")
+                ).encode("utf-8")
                 request.sendall(
                     b"HTTP/1.1 503 Service Unavailable\r\n"
                     b"Content-Type: application/json\r\n"
                     b"Content-Length: " + str(len(body)).encode("utf-8") + b"\r\n"
                     b"Connection: close\r\n"
-                    b"\r\n"
-                    + body
+                    b"\r\n" + body
                 )
                 request.close()
         except Exception:

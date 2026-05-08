@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import html
 import http.client
 import json
 import threading
 import time
+import types
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from .config import ProxyConfig
 from .logging import LOG
-from .transform import RECOVERY_NOTICE_CONTENT
 
 # ── Constants ────────────────────────────────────────────────
 
@@ -20,6 +21,16 @@ MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
     "deepseek-v4-pro": 1735689600,
     "deepseek-v4-flash": 1735689600,
 }
+
+# Recovery notice constants (shared between helpers and transform)
+RECOVERY_NOTICE_TEXT = "[deepseek-bridge] Refreshed reasoning_content history."
+RECOVERY_NOTICE_CONTENT = f"{RECOVERY_NOTICE_TEXT}\n\n"
+RECOVERY_SYSTEM_CONTENT = (
+    "deepseek-bridge recovered this request because older DeepSeek "
+    "thinking-mode tool-call reasoning_content was unavailable. Older "
+    "unrecoverable tool-call history was omitted; continue using only the "
+    "remaining recovered context."
+)
 
 
 # ── Request ID ───────────────────────────────────────────────
@@ -34,9 +45,52 @@ def _generate_request_id() -> str:
 _shutdown_requested = threading.Event()
 
 
-def _handle_shutdown_signal(signum, frame):
+def _handle_shutdown_signal(signum: int, frame: types.FrameType | None) -> None:
     LOG.info("received signal %s, initiating graceful shutdown", signum)
     _shutdown_requested.set()
+
+
+# ── Reasoning display blocks ─────────────────────────────────
+
+THINKING_BLOCK_START = "<think>\n"
+THINKING_BLOCK_END = "\n</think>\n\n"
+COLLAPSIBLE_THINKING_BLOCK_START = "<details>\n<summary>Thinking</summary>\n\n"
+COLLAPSIBLE_THINKING_BLOCK_END = "\n</details>\n\n"
+
+
+def fold_reasoning_into_content(
+    response_payload: dict[str, Any],
+    collapsible: bool,
+) -> None:
+    """Inject reasoning_content into the visible content as HTML/Markdown blocks.
+
+    When ``collapsible`` is True, reasoning is wrapped in a ``<details>`` tag
+    that AI coding client UIs can render as a collapsible section.  Otherwise
+    a plain ``<think>`` block is emitted.
+    """
+    block_start = (
+        COLLAPSIBLE_THINKING_BLOCK_START if collapsible else THINKING_BLOCK_START
+    )
+    block_end = COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
+    choices = response_payload.get("choices")
+    if not isinstance(choices, list):
+        return
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            continue
+        reasoning = message.get("reasoning_content")
+        if not isinstance(reasoning, str) or not reasoning:
+            continue
+        content = message.get("content")
+        message["content"] = (
+            block_start
+            + html.escape(reasoning)
+            + block_end
+            + (content if isinstance(content, str) else "")
+        )
 
 
 # ── Error helpers ────────────────────────────────────────────
@@ -128,7 +182,9 @@ def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
                         fn2["description"] = desc[:max_len] + f"... [{len(desc)} chars]"
                     # Truncate long parameter descriptions too
                     params = fn2.get("parameters", {})
-                    if isinstance(params, dict) and isinstance(params.get("properties"), dict):
+                    if isinstance(params, dict) and isinstance(
+                        params.get("properties"), dict
+                    ):
                         props2 = {}
                         for pk, pv in params["properties"].items():
                             if isinstance(pv, dict):

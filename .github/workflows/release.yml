@@ -74,8 +74,8 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          uv run coverage run -m unittest discover -s tests -v
-          uv run coverage report --fail-under=70
+          uv run coverage run --branch -m unittest discover -s tests -v
+          uv run coverage report --fail-under=65 --show-missing
 
   publish:
     name: Publish to PyPI

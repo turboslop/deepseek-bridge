@@ -4,13 +4,13 @@ import html
 import time
 from typing import Any
 
-from ..logging import INTERNAL_LOG
-from ._accumulator import (
+from ..helpers import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
     THINKING_BLOCK_END,
     THINKING_BLOCK_START,
 )
+from ..logging import INTERNAL_LOG
 
 
 class CursorReasoningDisplayAdapter:
