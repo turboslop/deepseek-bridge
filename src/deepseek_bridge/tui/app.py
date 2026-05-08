@@ -76,7 +76,9 @@ class TuiApp(App[None]):
         Binding("right", "cfg_right", "Cycle right", show=False, priority=True),
         Binding("enter", "cfg_edit", "Edit", show=False),
         Binding("ctrl+s", "save_config", "Save"),
+        Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("p", "toggle_pause", "Pause"),
+        Binding("c", "copy_url", "Copy URL"),
     ]
 
     _cfg_cursor: int = 0
@@ -255,6 +257,7 @@ class TuiApp(App[None]):
             if public:
                 tunnel_label = {"ngrok": "ngrok", "localhostrun": "loc.run"}.get(config.tunnel, "tunnel")
                 urls += f"\n  {tunnel_label:<7} {public}"
+            urls += f"\n  [dim][c] copy[/]"
             self.query_one("#urls", Static).update(urls)
 
 
@@ -409,6 +412,18 @@ class TuiApp(App[None]):
         self.server.paused = not getattr(self.server, "paused", False)
         state = "paused" if self.server.paused else "resumed"
         _tui_logger.info("proxy %s", state)
+
+    def action_copy_url(self) -> None:
+        config = self.server_config
+        if config is None:
+            self.notify("No config", severity="warning", timeout=2)
+            return
+        host = config.host or "127.0.0.1"
+        port = config.port or 9000
+        public = getattr(self.server, "public_url", None)
+        url = f"{public}/v1" if public else f"http://{host}:{port}/v1"
+        self.copy_to_clipboard(url)
+        self.notify("Copied!", timeout=1)
 
     def _apply(self, attr: str, raw: str) -> None:
         config = self.server_config
