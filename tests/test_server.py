@@ -226,7 +226,7 @@ class CliAndHelperTests(unittest.TestCase):
         root = logging.getLogger()
         handlers_before = root.handlers[:]
         with TemporaryDirectory() as d:
-            result = configure_logging(verbose=False, log_dir=d)
+            result = configure_logging(log_dir=d)
             self.assertIsNotNone(
                 result, "configure_logging should return path when log_dir is set"
             )
@@ -237,7 +237,7 @@ class CliAndHelperTests(unittest.TestCase):
                     root.removeHandler(h)
 
     def test_startup_banner_no_log_path_when_log_dir_not_set(self) -> None:
-        result = configure_logging(verbose=False)
+        result = configure_logging()
         self.assertIsNone(
             result, "configure_logging should return None when no log_dir"
         )
@@ -334,7 +334,7 @@ class HandlerStubTests(unittest.TestCase):
         self.assertIn("sending upstream response body", "\n".join(captured.output))
 
     def test_streaming_response_stops_on_client_disconnect(self) -> None:
-        handler = _make_handler_stub(_BrokenPipeWfile(), verbose=True)
+        handler = _make_handler_stub(_BrokenPipeWfile(), debug=True)
         chunk = {
             "id": "stream",
             "model": "deepseek-v4-pro",
@@ -610,7 +610,7 @@ class HttpBoundaryTests(unittest.TestCase):
         proxy.config = ProxyConfig(
             upstream_base_url=self.upstream.url,
             upstream_model="deepseek-v4-pro",
-            ngrok=False,
+            tunnel="off",
         )
         proxy.reasoning_store = self.store
         proxy.upstream_pool = UpstreamPool()
@@ -711,7 +711,7 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertNotIn("sk-from-cursor", output)
 
     def test_verbose_logging_includes_bodies_but_redacts_api_key(self) -> None:
-        self.proxy.server.config = replace(self.proxy.server.config, verbose=True)
+        self.proxy.server.config = replace(self.proxy.server.config, debug=True)
         with self.assertLogs("deepseek_bridge", level="INFO") as captured:
             _post(
                 f"{self.proxy.url}/v1/chat/completions",

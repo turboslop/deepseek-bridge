@@ -10,12 +10,10 @@ from unittest.mock import patch
 from deepseek_bridge.config import (
     DEFAULT_COLLAPSIBLE_REASONING,
     DEFAULT_MISSING_REASONING_STRATEGY,
-    DEFAULT_NGROK,
     DEFAULT_PORT,
     DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
     DEFAULT_THINKING,
     DEFAULT_UPSTREAM_MODEL,
-    DEFAULT_VERBOSE,
     ProxyConfig,
     _auto_cache_max_rows,
     default_config_path,
@@ -41,7 +39,7 @@ class ConfigTests(unittest.TestCase):
                 ProxyConfig().reasoning_content_path,
                 home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
-            self.assertEqual(ProxyConfig().ngrok, DEFAULT_NGROK)
+            self.assertEqual(ProxyConfig().tunnel, "off")
             self.assertEqual(
                 ProxyConfig().collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -69,7 +67,7 @@ class ConfigTests(unittest.TestCase):
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
                 config_text,
             )
-            self.assertIn(f"ngrok: {str(DEFAULT_NGROK).lower()}", config_text)
+            self.assertIn("tunnel: off", config_text)
             self.assertIn(
                 "collapsible_reasoning: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
@@ -80,7 +78,6 @@ class ConfigTests(unittest.TestCase):
                     stat.S_IMODE(config_path.stat().st_mode), 0o600
                 )
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
-            self.assertEqual(config.ngrok, DEFAULT_NGROK)
             self.assertEqual(
                 config.collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -106,7 +103,6 @@ class ConfigTests(unittest.TestCase):
 
             self.assertFalse(config_path.exists())
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
-            self.assertEqual(config.ngrok, DEFAULT_NGROK)
             self.assertEqual(
                 config.reasoning_cache_max_age_seconds,
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
@@ -125,8 +121,7 @@ class ConfigTests(unittest.TestCase):
                         "reasoning_effort: max",
                         "port: 9100",
                         "host: 0.0.0.0",
-                        "ngrok: true",
-                        "verbose: true",
+                        "tunnel: localhostrun",
                         "request_timeout: 123.5",
                         "max_request_body_bytes: 1234",
                         "cors: true",
@@ -148,8 +143,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.reasoning_effort, "max")
         self.assertEqual(config.host, "0.0.0.0")
         self.assertEqual(config.port, 9100)
-        self.assertTrue(config.ngrok)
-        self.assertTrue(config.verbose)
+        self.assertEqual(config.tunnel, "localhostrun")
         self.assertEqual(config.request_timeout, 123.5)
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertTrue(config.cors)
@@ -168,7 +162,6 @@ class ConfigTests(unittest.TestCase):
                         "thinking: maybe",
                         "missing_reasoning_strategy: maybe",
                         "port: nope",
-                        "verbose: maybe",
                         "collasible_reasoning: maybe",
                     ]
                 ),
@@ -182,8 +175,6 @@ class ConfigTests(unittest.TestCase):
             config.missing_reasoning_strategy, DEFAULT_MISSING_REASONING_STRATEGY
         )
         self.assertEqual(config.port, DEFAULT_PORT)
-        self.assertEqual(config.ngrok, DEFAULT_NGROK)
-        self.assertEqual(config.verbose, DEFAULT_VERBOSE)
         self.assertEqual(
             config.collapsible_reasoning,
             DEFAULT_COLLAPSIBLE_REASONING,
@@ -245,26 +236,26 @@ class ConfigTests(unittest.TestCase):
     def test_process_environment_does_not_override_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
-            config_path.write_text("verbose: false\n", encoding="utf-8")
+            config_path.write_text("tunnel: ngrok\n", encoding="utf-8")
 
-        with patch.dict(
-            "os.environ",
-            {
-                "PROXY_VERBOSE": "true",
-                "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
-            },
-            clear=False,
-        ):
-            config = ProxyConfig.from_file(config_path=config_path)
-            self.assertEqual(
-                os.environ.get("PROXY_VERBOSE"), "true"
-            )
-            self.assertEqual(
-                os.environ.get("DEEPSEEK_CURSOR_PROXY_CONFIG_PATH"),
-                "/ignored.yaml",
-            )
+            with patch.dict(
+                "os.environ",
+                {
+                    "PROXY_VERBOSE": "true",
+                    "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
+                },
+                clear=False,
+            ):
+                config = ProxyConfig.from_file(config_path=config_path)
+                self.assertEqual(
+                    os.environ.get("PROXY_VERBOSE"), "true"
+                )
+                self.assertEqual(
+                    os.environ.get("DEEPSEEK_CURSOR_PROXY_CONFIG_PATH"),
+                    "/ignored.yaml",
+                )
 
-        self.assertFalse(config.verbose)
+        self.assertEqual(config.tunnel, "ngrok")
 
     def test_version_is_valid_pep440(self) -> None:
         parts = __version__.split(".")

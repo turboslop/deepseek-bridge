@@ -110,7 +110,7 @@ class HandlerResponse:
         finally:
             with contextlib.suppress(Exception):
                 response.release_conn()
-        if self.config.verbose:
+        if self.config.debug:
             log_bytes("upstream error body", body)
         headers = {
             "Content-Type": response.headers.get("Content-Type", "application/json"),

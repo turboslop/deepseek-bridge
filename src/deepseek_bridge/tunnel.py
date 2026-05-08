@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import threading
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
+from urllib.parse import urlparse
 
 from .logging import LOG
 
@@ -61,8 +64,24 @@ class HealthCheckConfig:
     recovery_retry_delay: float = 5.0
 
 
+class TunnelService(ABC):
+    """Abstract base class for tunnel services (ngrok, localhost.run, etc.)."""
+
+    public_url: str | None = None
+
+    @abstractmethod
+    def start(self) -> str:
+        """Start the tunnel. Returns the public URL."""
+        ...
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Stop the tunnel."""
+        ...
+
+
 @dataclass
-class NgrokTunnel:
+class NgrokTunnel(TunnelService):
     target_url: str
     command: str = "ngrok"
     api_url: str = DEFAULT_NGROK_API_URL
@@ -187,3 +206,85 @@ class NgrokTunnel:
                     "ngrok tunnel recovery failed after %s retries",
                     hc.recovery_max_retries,
                 )
+
+
+LOCALHOSTRUN_URL_PATTERN = re.compile(
+    r"https?://[a-zA-Z0-9]+\.(?:localhost\.run|loca\.lt|localtunnel\.me)\b"
+)
+
+
+@dataclass
+class LocalhostRunTunnel(TunnelService):
+    """Tunnel via SSH reverse port forwarding to localhost.run."""
+
+    target_url: str
+    timeout: float = 15.0
+
+    process: subprocess.Popen[str] | None = field(default=None, init=False)
+    public_url: str | None = field(default=None, init=False)
+
+    def start(self) -> str:
+        host, port = self._parse_target()
+        cmd = ["ssh", "-R", f"80:{host}:{port}", "nokey@localhost.run"]
+        LOG.info("starting localhost.run tunnel: %s", " ".join(cmd))
+        self.process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            public_url = self._wait_for_url()
+            self.public_url = public_url
+            LOG.info("localhost.run tunnel established: %s", public_url)
+            return public_url
+        except Exception:
+            self.stop()
+            raise
+
+    def _parse_target(self) -> tuple[str, int]:
+        parsed = urlparse(self.target_url)
+        host = parsed.hostname or "127.0.0.1"
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1"
+        port = parsed.port or 80
+        return host, port
+
+    def _wait_for_url(self) -> str:
+        assert self.process is not None
+        assert self.process.stdout is not None
+        deadline = time.monotonic() + self.timeout
+        for line in self.process.stdout:
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    "Timed out waiting for localhost.run tunnel URL"
+                )
+            match = LOCALHOSTRUN_URL_PATTERN.search(line)
+            if match:
+                url = match.group(0)
+                if url.startswith("http://"):
+                    url = "https://" + url[len("http://"):]
+                return url
+        raise RuntimeError(
+            "SSH process exited before reporting a tunnel URL"
+        )
+
+    def stop(self) -> None:
+        if self.process is None or self.process.poll() is not None:
+            return
+        LOG.info("stopping localhost.run tunnel")
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=5)
+
+
+def create_tunnel(kind: str, target_url: str) -> TunnelService:
+    """Factory: return a tunnel of the requested kind."""
+    if kind == "ngrok":
+        return NgrokTunnel(target_url)
+    if kind == "localhostrun":
+        return LocalhostRunTunnel(target_url)
+    raise ValueError(f"unknown tunnel kind: {kind}")

@@ -69,7 +69,7 @@ class HandlerUpstream:
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             LOG.warning("failed to rewrite upstream JSON response: %s", exc)
 
-        if self.config.verbose:
+        if self.config.debug:
             log_bytes("cursor response body", body)
 
         headers = {

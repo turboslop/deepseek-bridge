@@ -95,7 +95,7 @@ def _start_proxy(upstream_url: str) -> tuple[DeepSeekProxyServer, ReasoningStore
     proxy = DeepSeekProxyServer(("127.0.0.1", 0), DeepSeekProxyHandler)
     proxy.config = ProxyConfig(
         upstream_base_url=upstream_url,
-        ngrok=False,
+        tunnel="off",
         request_timeout=10,
     )
     proxy.reasoning_store = store

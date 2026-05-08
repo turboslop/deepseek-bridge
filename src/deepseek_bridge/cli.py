@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = ProxyConfig.from_file(config_path=args.config_path)
     except ValueError as exc:
-        configure_logging(verbose=bool(args.verbose), debug=bool(args.debug))
+        configure_logging(debug=bool(args.debug))
         LOG.error("%s", exc)
         return 2
     updates: dict[str, Any] = {}
@@ -261,11 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.reasoning_content_path is not None:
         updates["reasoning_content_path"] = args.reasoning_content_path
     if args.ngrok is not None:
-        updates["ngrok"] = args.ngrok
-    if args.ngrok_health_check_interval is not None:
-        updates["ngrok_health_check_interval"] = args.ngrok_health_check_interval
+        updates["tunnel"] = "ngrok" if args.ngrok else "off"
     if args.verbose is not None:
-        updates["verbose"] = args.verbose
+        pass  # verbose is subsumed by debug; kept for backward compat
     if args.debug:
         updates["debug"] = True
     if args.compact is not None:
@@ -303,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         config = replace(config, log_dir=None)
 
     log_file_path = configure_logging(
-        verbose=config.verbose, debug=config.debug, log_dir=args.log_dir or config.log_dir
+        debug=config.debug, log_dir=args.log_dir or config.log_dir
     )
     if not args.headless:
         from deepseek_bridge.tui.log_handler import install_pre_mount_handler
@@ -348,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
 
     tunnel: NgrokTunnel | None = None
     public_url: str | None = None
-    if config.ngrok:
+    if config.tunnel != "off":
         target_url = local_tunnel_target(config.host, config.port)
         tunnel = NgrokTunnel(target_url)
         try:
@@ -358,11 +356,10 @@ def main(argv: list[str] | None = None) -> int:
             server.server_close()
             store.close()
             return 2
-        if config.ngrok_health_check_interval > 0:
-            tunnel.health_check = HealthCheckConfig(
-                check_interval=config.ngrok_health_check_interval,
-            )
-            tunnel.start_health_check()
+        tunnel.health_check = HealthCheckConfig(
+            check_interval=30,
+        )
+        tunnel.start_health_check()
     server.public_url = public_url
     local_base_url = f"http://{config.host}:{config.port}/v1"
     api_base_url = (
@@ -386,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     if config.display_reasoning:
         display_reasoning = "on (collapsible)" if config.collapsible_reasoning else "on"
     LOG.info("  Display reasoning: %s", display_reasoning)
-    if config.verbose:
+    if config.debug:
         LOG.info("  Missing reasoning strategy: %s", config.missing_reasoning_strategy)
     LOG.info("")
     LOG.info("Network")
@@ -394,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("  API Base:  %s", api_base_url)
     if public_url is not None:
         LOG.info("  Tunnel:    %s", public_url)
-    elif not config.ngrok:
+    elif config.tunnel == "off":
         LOG.info("  Tunnel:    off")
     LOG.info("  Ollama:    %s", "enabled" if config.ollama else "disabled")
     LOG.info("")
@@ -405,8 +402,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         LOG.info("  Logs:         disabled")
     LOG.info("")
-    if config.verbose:
-        LOG.warning("verbose mode: prompts and code may be written to stdout")
+    if config.debug:
+        LOG.warning("debug mode: verbose request/response logging enabled")
     if trace_writer is not None:
         LOG.info("Trace dir: %s", trace_writer.session_dir)
         LOG.warning("trace logging enabled; prompts and code will be written to disk")

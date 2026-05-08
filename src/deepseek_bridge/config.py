@@ -25,8 +25,6 @@ DEFAULT_THINKING = "enabled"
 DEFAULT_REASONING_EFFORT = "max"
 DEFAULT_DISPLAY_REASONING = True
 DEFAULT_COLLAPSIBLE_REASONING = True
-DEFAULT_NGROK = True
-DEFAULT_VERBOSE = False
 DEFAULT_DEBUG = False
 DEFAULT_REQUEST_TIMEOUT = 300.0
 DEFAULT_STREAM_READ_TIMEOUT = 180.0
@@ -37,7 +35,6 @@ DEFAULT_CORS = True
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_DISK_MB = 500
-DEFAULT_NGROK_HEALTH_CHECK_INTERVAL = 30.0
 DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 
 DEFAULT_CONFIG_HEADER = (
@@ -56,8 +53,7 @@ collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
-ngrok: {str(DEFAULT_NGROK).lower()}
-verbose: {str(DEFAULT_VERBOSE).lower()}
+tunnel: off
 debug: false
 cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
@@ -248,11 +244,9 @@ class ProxyConfig:
     max_queue_size: int = field(default_factory=lambda: _auto_queue_size(DEFAULT_MAX_THREAD_POOL))
     cors: bool = DEFAULT_CORS
     ollama: bool = True
-    verbose: bool = DEFAULT_VERBOSE
     debug: bool = False
+    tunnel: str = "off"
     compact: bool = False
-    ngrok: bool = DEFAULT_NGROK
-    ngrok_health_check_interval: float = DEFAULT_NGROK_HEALTH_CHECK_INTERVAL
     trace_dir: Path | None = None
     log_dir: Path | None = field(default_factory=default_log_dir)
 
@@ -332,10 +326,6 @@ class ProxyConfig:
                 setting_value(settings, "ollama"),
                 True,
             ),
-            verbose=as_bool(
-                setting_value(settings, "verbose"),
-                DEFAULT_VERBOSE,
-            ),
             compact=as_bool(
                 setting_value(settings, "compact"),
                 False,
@@ -344,14 +334,7 @@ class ProxyConfig:
                 setting_value(settings, "debug"),
                 False,
             ),
-            ngrok=as_bool(
-                setting_value(settings, "ngrok"),
-                DEFAULT_NGROK,
-            ),
-            ngrok_health_check_interval=as_float(
-                setting_value(settings, "ngrok_health_check_interval"),
-                DEFAULT_NGROK_HEALTH_CHECK_INTERVAL,
-            ),
+            tunnel=as_str(setting_value(settings, "tunnel"), "off"),
             max_pool_connections=_auto_pool_connections(
                 as_int(
                     setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL

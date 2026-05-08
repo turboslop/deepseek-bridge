@@ -34,7 +34,7 @@ class HandlerRoutes:
     def do_OPTIONS(self) -> None:
         self._request_id = _generate_request_id()
         request_path = urlparse(self.path).path
-        if self.config.verbose:
+        if self.config.debug:
             LOG.info(
                 "incoming OPTIONS %s from %s",
                 request_path,
@@ -45,7 +45,7 @@ class HandlerRoutes:
     def do_GET(self) -> None:
         self._request_id = _generate_request_id()
         request_path = urlparse(self.path).path
-        if self.config.verbose:
+        if self.config.debug:
             LOG.info("incoming GET %s from %s", request_path, self.client_address[0])
         if self.config.ollama and request_path == "/api/version":
             self._handle_api_version()
@@ -78,7 +78,7 @@ class HandlerRoutes:
             self.client_address[0],
             self.headers.get("Content-Length", "0"),
         )
-        if self.config.verbose:
+        if self.config.debug:
             LOG.info(
                 "incoming POST %s from %s content_length=%s user_agent=%s",
                 request_path,
@@ -91,7 +91,7 @@ class HandlerRoutes:
             self._finish_trace(trace, "completed")
             return
         if request_path in {"/embeddings", "/v1/embeddings"}:
-            if self.config.verbose:
+            if self.config.debug:
                 LOG.info(
                     "incoming embeddings request from %s",
                     self.client_address[0],
@@ -194,7 +194,7 @@ class HandlerRoutes:
         if trace is not None:
             trace.record_cursor_body(payload)
 
-        if self.config.verbose:
+        if self.config.debug:
             log_json("cursor request body", payload)
 
         # --- Responses API → Chat Completions conversion ---
@@ -211,7 +211,7 @@ class HandlerRoutes:
 
                 if detect_responses_payload(payload):
                     payload = convert_responses_to_chat(payload)
-                    if self.config.verbose:
+                    if self.config.debug:
                         LOG.info("converted Responses API format to Chat Completions")
                     if trace is not None:
                         trace.record_cursor_body(payload)
@@ -281,7 +281,7 @@ class HandlerRoutes:
             self._finish_trace(trace, "rejected", http_status=409)
             return
 
-        if self.config.verbose:
+        if self.config.debug:
             LOG.info(
                 (
                     "upstream request metadata: original_model=%s upstream_model=%s "
@@ -294,7 +294,7 @@ class HandlerRoutes:
                 summarize_chat_payload(prepared.payload),
             )
 
-        if self.config.verbose:
+        if self.config.debug:
             log_json("upstream request body", prepared.payload)
 
         upstream_body = json.dumps(
@@ -313,10 +313,10 @@ class HandlerRoutes:
             )
         stream = bool(prepared.payload.get("stream"))
 
-        if self.config.verbose and not self.config.compact:
+        if self.config.debug and not self.config.compact:
             log_send_summary(prepared)
         spinner = TerminalSpinner(
-            enabled=stream and not self.config.verbose and not self.config.compact,
+            enabled=stream and not self.config.debug and not self.config.compact,
             text="└ {frame}",
         ).start()
 
@@ -331,7 +331,7 @@ class HandlerRoutes:
             stream,
         )
         try:
-            if self.config.verbose:
+            if self.config.debug:
                 LOG.info("forwarding to %s", upstream_url)
             timeout = urllib3.Timeout(
                 connect=self.config.request_timeout,
@@ -458,7 +458,7 @@ class HandlerRoutes:
 
         try:
             upstream_status = response.status
-            if self.config.verbose:
+            if self.config.debug:
                 LOG.info(
                     "upstream response status=%s stream=%s elapsed_ms=%s",
                     upstream_status,

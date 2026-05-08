@@ -92,7 +92,7 @@ class HandlerStreaming:
             while True:
                 if not self._check_client_alive():
                     LOG.debug("handler.disconnect: client disconnected at stage=streaming")
-                    if self.config.verbose:
+                    if self.config.debug:
                         LOG.info("client disconnected, stopping upstream read")
                     response.release_conn()
                     return ProxyResponseResult(False, usage)
@@ -151,7 +151,7 @@ class HandlerStreaming:
         finally:
             if not finalized:
                 LOG.debug("handler.disconnect: client disconnected at stage=streaming_finalize")
-                if self.config.verbose:
+                if self.config.debug:
                     log_json(
                         "model streaming assistant messages", accumulator.messages()
                     )
@@ -164,7 +164,7 @@ class HandlerStreaming:
                     )
                     for ctx_scope, prior_messages in response_contexts
                 )
-                if self.config.verbose and stored:
+                if self.config.debug and stored:
                     LOG.info(
                         "stored %s streaming reasoning cache key(s) before exit",
                         stored,
@@ -190,7 +190,7 @@ class HandlerStreaming:
 
         data = stripped[len(b"data:") :].strip()
         if data == b"[DONE]":
-            if self.config.verbose:
+            if self.config.debug:
                 log_json("model streaming assistant messages", accumulator.messages())
             stored = sum(
                 accumulator.store_reasoning(
@@ -207,7 +207,7 @@ class HandlerStreaming:
                 stored,
                 scope_preview,
             )
-            if self.config.verbose and stored:
+            if self.config.debug and stored:
                 LOG.info("stored %s streaming reasoning cache key(s)", stored)
             prefix = b""
             if include_usage and usage_so_far is None:
@@ -265,7 +265,7 @@ class HandlerStreaming:
                 stored,
                 scope_preview,
             )
-            if self.config.verbose and stored:
+            if self.config.debug and stored:
                 LOG.info("stored %s streaming reasoning cache key(s)", stored)
             chunk_usage = chunk.get("usage")
             if trace is not None:
