@@ -24,7 +24,7 @@ FIELDS = [
         ["low", "medium", "high", "max", "xhigh"],
     ),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("tunnel", "tunnel", "Tunnel", ["off", "localhostrun", "ngrok"]),
+    ("tunnel", "tunnel", "Tunnel", ["none", "cloudflared", "ngrok"]),
     ("cors", "cors", "CORS", ["true", "false"]),
     ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("compact", "compact", "Compact", ["true", "false"]),
@@ -250,7 +250,7 @@ class TuiApp(App[None]):
             urls = f"  Cursor   {api_base}"
             urls += f"\n  Copilot  {ollama}"
             if public:
-                tunnel_label = {"ngrok": "ngrok", "localhostrun": "loc.run"}.get(config.tunnel, "tunnel")
+                tunnel_label = {"ngrok": "ngrok", "cloudflared": "cf"}.get(config.tunnel, "tunnel")
                 urls += f"\n  {tunnel_label:<7} {public}"
             self.query_one("#urls", Static).update(urls)
 

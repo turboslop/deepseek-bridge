@@ -80,8 +80,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_net.add_argument(
         "--tunnel",
         choices=["none"] + get_tunnel_choices(),
-        default="localhostrun",
-        help="Tunnel service for public URL exposure (default: localhostrun)",
+        default="cloudflared",
+        help="Tunnel service for public URL exposure (default: cloudflared)",
     )
     group_net.add_argument(
         "--base-url",

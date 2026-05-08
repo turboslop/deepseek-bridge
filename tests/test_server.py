@@ -133,7 +133,7 @@ class CliAndHelperTests(unittest.TestCase):
                 "--no-display-reasoning",
                 "--no-collapsible-reasoning",
                 "--cors",
-                "--tunnel", "localhostrun",
+                "--tunnel", "cloudflared",
                 "--trace-dir",
                 "/tmp/dcp-traces",
             ]
@@ -141,7 +141,7 @@ class CliAndHelperTests(unittest.TestCase):
         self.assertFalse(args.display_reasoning)
         self.assertFalse(args.collapsible_reasoning)
         self.assertTrue(args.cors)
-        self.assertEqual(args.tunnel, "localhostrun")
+        self.assertEqual(args.tunnel, "cloudflared")
         self.assertEqual(args.trace_dir, Path("/tmp/dcp-traces"))
 
     def test_console_logging_hides_info_prefix_and_level(self) -> None:

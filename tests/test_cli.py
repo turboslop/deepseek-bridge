@@ -78,11 +78,11 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.base_url, "http://api.example.com")
         self.assertTrue(args.cors)
 
-    def test_tunnel_default_is_localhostrun(self) -> None:
+    def test_tunnel_default_is_cloudflared(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
         parser = build_arg_parser()
         args = parser.parse_args([])
-        self.assertEqual(args.tunnel, "localhostrun")
+        self.assertEqual(args.tunnel, "cloudflared")
 
     def test_storage_flags(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
@@ -169,7 +169,7 @@ class CliMainTests(unittest.TestCase):
     """Verify main() behaviour without starting a real server."""
 
     def _mock_config(self) -> ProxyConfig:
-        return ProxyConfig()
+        return ProxyConfig(tunnel="none")
 
     @staticmethod
     def _server_bind_patches():
@@ -194,7 +194,7 @@ class CliMainTests(unittest.TestCase):
              srv_bind, srv_activate:
             mock_cfg_cls.from_file.return_value = self._mock_config()
             mock_tunnel = MagicMock()
-            mock_tunnel.start.return_value = "https://abc123.localhost.run"
+            mock_tunnel.start.return_value = "https://app.example.com"
             mock_create.return_value = mock_tunnel
 
             from deepseek_bridge.cli import main
@@ -204,9 +204,9 @@ class CliMainTests(unittest.TestCase):
             mock_create.assert_called_once_with(expected_kind, ANY)
             mock_tunnel.start.assert_called_once()
 
-    def test_main_tunnel_localhostrun(self) -> None:
-        """--tunnel localhostrun creates a LocalhostRunTunnel."""
-        self._assert_tunnel_kind("localhostrun", "localhostrun")
+    def test_main_tunnel_cloudflared(self) -> None:
+        """--tunnel cloudflared creates a CloudflaredTunnel."""
+        self._assert_tunnel_kind("cloudflared", "cloudflared")
 
     def test_main_tunnel_ngrok(self) -> None:
         """--tunnel ngrok creates an NgrokTunnel."""
@@ -236,12 +236,16 @@ class CliMainTests(unittest.TestCase):
         srv_bind, srv_activate = self._server_bind_patches()
         with patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt) as mock_run, \
+             patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
              patch("deepseek_bridge.cli.ReasoningStore"), \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging"), \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
              srv_bind, srv_activate:
             mock_cfg_cls.from_file.return_value = self._mock_config()
+            mock_tunnel = MagicMock()
+            mock_tunnel.start.return_value = "https://app.example.com"
+            mock_create.return_value = mock_tunnel
 
             from deepseek_bridge.cli import main
             result = main(["--headless"])
@@ -254,12 +258,16 @@ class CliMainTests(unittest.TestCase):
         srv_bind, srv_activate = self._server_bind_patches()
         with patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt), \
+             patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
              patch("deepseek_bridge.cli.ReasoningStore"), \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging") as mock_log, \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
              srv_bind, srv_activate:
             mock_cfg_cls.from_file.return_value = self._mock_config()
+            mock_tunnel = MagicMock()
+            mock_tunnel.start.return_value = "https://app.example.com"
+            mock_create.return_value = mock_tunnel
 
             from deepseek_bridge.cli import main
             result = main(["--headless", "--debug"])

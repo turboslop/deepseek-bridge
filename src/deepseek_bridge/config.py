@@ -52,7 +52,7 @@ collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
-tunnel: localhostrun
+tunnel: cloudflared
 debug: false
 cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
@@ -249,7 +249,7 @@ class ProxyConfig:
     cors: bool = DEFAULT_CORS
     ollama: bool = True
     debug: bool = False
-    tunnel: str = "localhostrun"
+    tunnel: str = "cloudflared"
     cf_url: str = ""  # Cloudflare tunnel public URL (e.g., https://app.example.com)
     compact: bool = False
     trace_dir: Path | None = None
@@ -339,7 +339,7 @@ class ProxyConfig:
                 setting_value(settings, "debug"),
                 False,
             ),
-            tunnel=as_str(setting_value(settings, "tunnel"), "localhostrun"),
+            tunnel=as_str(setting_value(settings, "tunnel"), "cloudflared"),
             cf_url=as_str(setting_value(settings, "cf_url"), ""),
             max_pool_connections=_auto_pool_connections(
                 as_int(

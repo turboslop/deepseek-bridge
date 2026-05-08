@@ -39,7 +39,7 @@ class ConfigTests(unittest.TestCase):
                 ProxyConfig().reasoning_content_path,
                 home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
-            self.assertEqual(ProxyConfig().tunnel, "localhostrun")
+            self.assertEqual(ProxyConfig().tunnel, "cloudflared")
             self.assertEqual(
                 ProxyConfig().collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -67,7 +67,7 @@ class ConfigTests(unittest.TestCase):
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
                 config_text,
             )
-            self.assertIn("tunnel: localhostrun", config_text)
+            self.assertIn("tunnel: cloudflared", config_text)
             self.assertIn(
                 "collapsible_reasoning: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
@@ -121,7 +121,7 @@ class ConfigTests(unittest.TestCase):
                         "reasoning_effort: max",
                         "port: 9100",
                         "host: 0.0.0.0",
-                        "tunnel: localhostrun",
+                        "tunnel: cloudflared",
                         "request_timeout: 123.5",
                         "max_request_body_bytes: 1234",
                         "cors: true",
@@ -143,7 +143,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.reasoning_effort, "max")
         self.assertEqual(config.host, "0.0.0.0")
         self.assertEqual(config.port, 9100)
-        self.assertEqual(config.tunnel, "localhostrun")
+        self.assertEqual(config.tunnel, "cloudflared")
         self.assertEqual(config.request_timeout, 123.5)
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertTrue(config.cors)

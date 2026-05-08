@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from deepseek_bridge.tunnel import (
-    LocalhostRunTunnel,
+    CloudflaredTunnel,
     NgrokTunnel,
     create_tunnel,
     get_tunnel_choices,
@@ -55,104 +55,44 @@ class TunnelTests(unittest.TestCase):
         )
 
 
-class LocalhostRunTunnelParseTargetTests(unittest.TestCase):
-    """_parse_target extracts host/port from target_url."""
+class CloudflaredTunnelStartTests(unittest.TestCase):
+    """start() validates cf_url and binary availability."""
 
-    def test_localhost_with_port(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
-        self.assertEqual(tunnel._parse_target(), ("localhost", 9000))
-
-    def test_loopback_with_port(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://127.0.0.1:8080")
-        self.assertEqual(tunnel._parse_target(), ("127.0.0.1", 8080))
-
-    def test_wildcard_maps_to_loopback(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://0.0.0.0:9000")
-        self.assertEqual(tunnel._parse_target(), ("127.0.0.1", 9000))
-
-    def test_ipv6_wildcard_maps_to_loopback(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://[::]:3000")
-        self.assertEqual(tunnel._parse_target(), ("127.0.0.1", 3000))
-
-    def test_no_port_defaults_to_80(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://example.com")
-        self.assertEqual(tunnel._parse_target(), ("example.com", 80))
-
-    def test_custom_host_with_port(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://example.com:1234")
-        self.assertEqual(tunnel._parse_target(), ("example.com", 1234))
-
-    def test_no_scheme_defaults(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="127.0.0.1:9000")
-        host, port = tunnel._parse_target()
-        self.assertEqual(port, 80)
-
-
-class LocalhostRunTunnelStartTests(unittest.TestCase):
-    """start() launches SSH via subprocess and parses the tunnel URL."""
-
-    @patch("deepseek_bridge.tunnel.subprocess.Popen")
-    def test_start_parses_url_from_stdout(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_proc.stdout = [
-            "Connect to http://abcd1234.localhost.run\n",
-            "abcd1234.localhost.run tunneled with tls termination, https://abcd1234.localhost.run\n",
-        ]
-        mock_popen.return_value = mock_proc
-
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
-        url = tunnel.start()
-
-        self.assertEqual(url, "https://abcd1234.localhost.run")
-        mock_popen.assert_called_once()
-
-    @patch("deepseek_bridge.tunnel.subprocess.Popen")
-    def test_start_ssh_command(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_proc.stdout = ["Connect to https://abcd1234.lhr.life\nabcd1234.lhr.life tunneled with tls termination, https://abcd1234.lhr.life\n"]
-        mock_popen.return_value = mock_proc
-
-        tunnel = LocalhostRunTunnel(target_url="http://127.0.0.1:8080")
-        tunnel.start()
-
-        call_args = mock_popen.call_args[0][0]
-        self.assertEqual(
-            call_args,
-            ["ssh", "-R", "80:127.0.0.1:8080", "nokey@localhost.run"],
-        )
-
-    @patch("deepseek_bridge.tunnel.subprocess.Popen")
-    def test_start_upgrades_http_to_https(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_proc.stdout = ["abcd1234.localhost.run tunneled with tls termination, http://abcd1234.localhost.run\n"]
-        mock_popen.return_value = mock_proc
-
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
-        url = tunnel.start()
-
-        self.assertEqual(url, "https://abcd1234.localhost.run")
-
-    @patch("deepseek_bridge.tunnel.subprocess.Popen")
-    def test_start_process_exits_before_url_raises(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_proc.stdout = []
-        mock_popen.return_value = mock_proc
-
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
+    def test_cloudflared_start_requires_url(self) -> None:
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
+        tunnel.cfd_url = ""
         with self.assertRaises(RuntimeError) as ctx:
             tunnel.start()
-        self.assertIn("exited before reporting", str(ctx.exception))
+        self.assertIn("tunnel URL not configured", str(ctx.exception))
+
+    @patch("deepseek_bridge.tunnel.subprocess.Popen")
+    @patch("deepseek_bridge.tunnel.shutil.which", return_value="/usr/bin/cloudflared")
+    def test_cloudflared_start_returns_url(
+        self, mock_which: MagicMock, mock_popen: MagicMock
+    ) -> None:
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
+        tunnel.cfd_url = "https://app.example.com"
+        url = tunnel.start()
+        self.assertEqual(url, "https://app.example.com")
+        mock_popen.assert_called_once()
+
+    @patch("deepseek_bridge.tunnel.shutil.which", return_value=None)
+    def test_cloudflared_start_requires_binary(self, mock_which: MagicMock) -> None:
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
+        tunnel.cfd_url = "https://app.example.com"
+        with self.assertRaises(RuntimeError) as ctx:
+            tunnel.start()
+        self.assertIn("cloudflared is not installed", str(ctx.exception))
 
 
-class LocalhostRunTunnelStopTests(unittest.TestCase):
-    """stop() terminates the SSH process."""
+class CloudflaredTunnelStopTests(unittest.TestCase):
+    """stop() terminates the cloudflared process."""
 
-    def test_stop_terminates_running_process(self) -> None:
-        from unittest.mock import MagicMock
+    def test_cloudflared_stop_terminates(self) -> None:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
 
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
         tunnel.process = mock_proc
         tunnel.stop()
 
@@ -163,23 +103,23 @@ class LocalhostRunTunnelStopTests(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 0
 
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
         tunnel.process = mock_proc
         tunnel.stop()
 
         mock_proc.terminate.assert_not_called()
 
     def test_stop_skips_if_no_process(self) -> None:
-        tunnel = LocalhostRunTunnel(target_url="http://localhost:9000")
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
         tunnel.stop()
 
 
 class CreateTunnelTests(unittest.TestCase):
     """create_tunnel factory returns correct implementation."""
 
-    def test_localhostrun(self) -> None:
-        tunnel = create_tunnel("localhostrun", "http://localhost:9000")
-        self.assertIsInstance(tunnel, LocalhostRunTunnel)
+    def test_cloudflared(self) -> None:
+        tunnel = create_tunnel("cloudflared", "http://localhost:9000")
+        self.assertIsInstance(tunnel, CloudflaredTunnel)
         self.assertEqual(tunnel.target_url, "http://localhost:9000")
 
     def test_ngrok(self) -> None:
@@ -198,7 +138,7 @@ class GetTunnelChoicesTests(unittest.TestCase):
 
     def test_returns_registered_kinds(self) -> None:
         choices = get_tunnel_choices()
-        self.assertIn("localhostrun", choices)
+        self.assertIn("cloudflared", choices)
         self.assertIn("ngrok", choices)
 
 

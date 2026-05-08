@@ -24,7 +24,7 @@ DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mod
 - Connection pooling via `urllib3` with keep-alive and minimal retries.
 - Bounded thread pool prevents thread exhaustion on long-running streaming connections.
 - Configurable SSE read timeout (default 180 seconds) prevents hung threads on silent upstreams.
-- Tunnel support (localhost.run by default, ngrok optional) with health check and automatic reconnection.
+- Tunnel support (cloudflared by default, ngrok optional) with health check and automatic reconnection.
 - Graceful shutdown on SIGTERM — active requests drain, reasoning cache is flushed.
 
 ### API Compatibility
@@ -115,7 +115,7 @@ collapsible_reasoning: true
 
 host: 127.0.0.1
 port: 9000
-tunnel: localhostrun
+tunnel: cloudflared
 debug: false
 cors: true
 ollama: true
@@ -130,9 +130,35 @@ request_timeout: 300
 In Cursor, add a custom model with these settings:
 - **Model**: `deepseek-v4-pro` (or `deepseek-v4-flash`)
 - **API Key**: Your DeepSeek API key
-- **Base URL**: Your tunnel HTTPS URL with `/v1` path (e.g., `https://abc123.lhr.life/v1`)
+- **Base URL**: Your tunnel HTTPS URL with `/v1` path (e.g., `https://app.example.com/v1`)
 
-> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [localhost.run](https://localhost.run) by default (a zero-dependency SSH tunnel — no installation needed). Use `--tunnel none` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
+> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) by default — a free, persistent HTTPS tunnel with no bandwidth or time limits. Use `--tunnel none` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
+
+### Cloudflare Tunnel Setup
+
+Cloudflare Named Tunnels are free, persistent, support SSE streaming, and have no bandwidth/time limits. One-time setup:
+
+```bash
+# Install cloudflared
+brew install cloudflare/cloudflare/cloudflared   # macOS
+# Or download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+
+# Login and create a tunnel
+cloudflared tunnel login
+cloudflared tunnel create deepseek-bridge
+
+# Point it at your domain
+cloudflared tunnel route dns deepseek-bridge app.example.com
+```
+
+Then add your tunnel URL to `~/.deepseek-bridge/config.yaml`:
+
+```yaml
+tunnel: cloudflared
+cf_url: https://app.example.com
+```
+
+Use `--tunnel cloudflared` on the CLI, or select `cloudflared` in the TUI dashboard.
 
 ### GitHub Copilot
 
@@ -223,7 +249,7 @@ uv run coverage report
 | `--collapsible-reasoning` | on | Use collapsible Markdown for reasoning |
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `9000` | Bind port |
-| `--tunnel` | `localhostrun` | Tunnel service (none, localhostrun, ngrok) |
+| `--tunnel` | `cloudflared` | Tunnel service (none, cloudflared, ngrok) |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |

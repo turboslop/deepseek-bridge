@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 import threading
@@ -11,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
-from urllib.parse import urlparse
 
 from .logging import LOG
 
@@ -68,10 +66,10 @@ class HealthCheckConfig:
 
 
 class TunnelService(ABC):
-    """Abstract base class for tunnel services (ngrok, localhost.run, etc.)."""
+    """Abstract base class for tunnel services (ngrok, cloudflared, etc.)."""
 
     public_url: str | None = None
-    tunnel_name: str = ""  # Set by subclasses (e.g. "ngrok", "localhostrun")
+    tunnel_name: str = ""  # Set by subclasses (e.g. "ngrok", "cloudflared")
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -220,87 +218,6 @@ class NgrokTunnel(TunnelService):
                 )
 
 
-LOCALHOSTRUN_URL_PATTERN = re.compile(
-    r"https?://[a-zA-Z0-9-]{8,}\.(?:lhr\.life|localhost\.run)\b"
-)
-
-LOCALHOSTRUN_TUNNEL_LINE = re.compile(r"tunneled with tls termination")
-
-
-@dataclass
-class LocalhostRunTunnel(TunnelService):
-    """Tunnel via SSH reverse port forwarding to localhost.run."""
-
-    tunnel_name = "localhostrun"
-
-    target_url: str
-    timeout: float = 15.0
-
-    process: subprocess.Popen[str] | None = field(default=None, init=False)
-    public_url: str | None = field(default=None, init=False)
-
-    def start(self) -> str:
-        host, port = self._parse_target()
-        cmd = ["ssh", "-R", f"80:{host}:{port}", "nokey@localhost.run"]
-        LOG.info("starting localhost.run tunnel: %s", " ".join(cmd))
-        self.process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        try:
-            public_url = self._wait_for_url()
-            self.public_url = public_url
-            LOG.info("localhost.run tunnel established: %s", public_url)
-            return public_url
-        except Exception as exc:
-            LOG.warning("localhost.run tunnel start failed: %s", exc)
-            self.stop()
-            raise
-
-    def _parse_target(self) -> tuple[str, int]:
-        parsed = urlparse(self.target_url)
-        host = parsed.hostname or "127.0.0.1"
-        if host in {"0.0.0.0", "::"}:
-            host = "127.0.0.1"
-        port = parsed.port or 80
-        return host, port
-
-    def _wait_for_url(self) -> str:
-        assert self.process is not None
-        assert self.process.stdout is not None
-        deadline = time.monotonic() + self.timeout
-        for line in self.process.stdout:
-            if time.monotonic() > deadline:
-                raise RuntimeError(
-                    "Timed out waiting for localhost.run tunnel URL"
-                )
-            # Only match lines that are actually tunnel notifications,
-            # not documentation URLs in the SSH welcome banner.
-            if LOCALHOSTRUN_TUNNEL_LINE.search(line):
-                match = LOCALHOSTRUN_URL_PATTERN.search(line)
-                if match:
-                    url = match.group(0)
-                    if url.startswith("http://"):
-                        url = "https://" + url[len("http://"):]
-                    return url
-        raise RuntimeError(
-            "SSH process exited before reporting a tunnel URL"
-        )
-
-    def stop(self) -> None:
-        if self.process is None or self.process.poll() is not None:
-            return
-        LOG.info("stopping localhost.run tunnel")
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=5)
-
-
 @dataclass
 class CloudflaredTunnel(TunnelService):
     """Named Cloudflare Tunnel (persistent, HTTPS, SSE-compatible).
@@ -362,4 +279,4 @@ def create_tunnel(kind: str, target_url: str) -> TunnelService:
     cls = _tunnel_registry.get(kind)
     if cls is None:
         raise ValueError(f"unknown tunnel kind: {kind}")
-    return cls(target_url)
+    return cls(target_url=target_url)
