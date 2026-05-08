@@ -14,10 +14,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import RichLog, Static
 
-from ..tunnel import get_tunnel_choices as _get_tunnel_choices
-from ..logging import LOG
-
-_TUNNEL_CHOICES = ["none"] + _get_tunnel_choices()
 
 FIELDS = [
     ("thinking", "thinking", "Thinking", ["enabled", "disabled"]),
@@ -28,7 +24,7 @@ FIELDS = [
         ["low", "medium", "high", "max", "xhigh"],
     ),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("tunnel", "tunnel", "Tunnel", _TUNNEL_CHOICES),
+    ("tunnel", "tunnel", "Tunnel", ["off", "localhostrun", "ngrok"]),
     ("cors", "cors", "CORS", ["true", "false"]),
     ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("compact", "compact", "Compact", ["true", "false"]),
@@ -70,13 +66,13 @@ class TuiApp(App[None]):
     """
 
     BINDINGS = [
-        Binding("up", "cfg_up", "Up", show=False, priority=True),
-        Binding("down", "cfg_down", "Down", show=False, priority=True),
-        Binding("left", "cfg_left", "Cycle left", show=False, priority=True),
-        Binding("right", "cfg_right", "Cycle right", show=False, priority=True),
-        Binding("enter", "cfg_edit", "Edit", show=False, priority=True),
+        Binding("up", "cfg_up", "Up", show=False),
+        Binding("down", "cfg_down", "Down", show=False),
+        Binding("left", "cfg_left", "Cycle left", show=False),
+        Binding("right", "cfg_right", "Cycle right", show=False),
+        Binding("enter", "cfg_edit", "Edit", show=False),
         Binding("ctrl+s", "save_config", "Save"),
-        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
+        Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("p", "toggle_pause", "Pause"),
         Binding("c", "copy_url", "Copy URL"),
     ]
@@ -116,11 +112,6 @@ class TuiApp(App[None]):
         sys.stdout.write("\x1b]0;DeepSeek Bridge\x07")
         self._prev_time = time.monotonic()
         self.set_interval(1.0, self._refresh)
-        self.query_one("#logs", RichLog).can_focus = False
-        self.query_one("#left-col").can_focus = False
-        self.query_one("#right-panel").can_focus = False
-        self.set_focus(None)
-        _tui_logger.debug("focus: set_focus(None), can_focus disabled on logs/left/right")
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
@@ -156,6 +147,8 @@ class TuiApp(App[None]):
             handler.setFormatter(logging.Formatter("%(message)s"))
             root.addHandler(handler)
 
+        _tui_logger.info("TUI shutdown complete")
+
     def flush_pre_mount_buffer(self) -> None:
         """Push any buffered pre-mount log messages to the log widget."""
         try:
@@ -166,15 +159,15 @@ class TuiApp(App[None]):
                 while _pre_mount_buffer:
                     msg = _pre_mount_buffer.popleft()
                     log_widget.write(msg)
-        except Exception as exc:
-            LOG.warning("failed to flush pre-mount buffer: %s", exc)
+        except Exception:
+            pass  # Widget not ready yet — buffer remains
 
     def _write_to_log(self, msg: str) -> None:
         """Thread-safe write to the RichLog widget."""
         try:
             self.call_from_thread(self._write_to_log_now, msg)
-        except Exception as exc:
-            LOG.warning("failed to dispatch log to main thread: %s", exc)
+        except Exception:
+            pass  # TUI is shutting down
 
     def _write_to_log_now(self, msg: str) -> None:
         """Actually write to RichLog (must be called from main thread)."""
@@ -184,8 +177,8 @@ class TuiApp(App[None]):
             log_widget.write(msg)
             if was_at_bottom:
                 log_widget.scroll_end(animate=False, immediate=True)
-        except Exception as exc:
-            LOG.warning("failed to write to RichLog widget: %s", exc)
+        except Exception:
+            pass  # Widget not available
 
     def _refresh(self) -> None:
         server = self.server
@@ -209,16 +202,16 @@ class TuiApp(App[None]):
         if exe:
             try:
                 active = len(exe._threads)
-            except Exception as exc:
-                LOG.warning("failed to read active thread count: %s", exc)
+            except Exception:
+                pass
             try:
                 max_workers = exe._max_workers
-            except Exception as exc:
-                LOG.warning("failed to read max workers: %s", exc)
+            except Exception:
+                pass
             try:
                 queue = exe._work_queue.qsize()
-            except Exception as exc:
-                LOG.warning("failed to read queue size: %s", exc)
+            except Exception:
+                pass
 
         store = getattr(server, "reasoning_store", None)
         db_size = "N/A"
@@ -228,15 +221,15 @@ class TuiApp(App[None]):
             if isinstance(db_path, Path):
                 try:
                     db_size = f"{db_path.stat().st_size / (1024 * 1024):.1f}MB"
-                except Exception as exc:
-                    LOG.warning("failed to read db size: %s", exc)
+                except Exception:
+                    pass
                 try:
                     row = store._conn.execute(
                         "SELECT COUNT(*) FROM reasoning_cache"
                     ).fetchone()
                     db_rows = str(row[0]) if row else "0"
-                except Exception as exc:
-                    LOG.warning("failed to read db row count: %s", exc)
+                except Exception:
+                    pass
 
         stats = (
             f"  [bold]DeepSeek Bridge[/]  [dim]uptime {uptime_s}[/]\n"
@@ -312,34 +305,30 @@ class TuiApp(App[None]):
             )
         else:
             self.query_one("#keybinds", Static).update(
-                "\n[dim]arrows  navigate    enter  edit    ctrl+s  save[/]"
-                "\n[dim]c  copy url    ctrl+q  quit    p  pause[/]"
+                "\n[dim]arrows  navigate    enter  edit[/]"
+                "\n[dim]ctrl+s  save    c  copy url    p  pause[/]"
             )
 
     # --- Key bindings ---
 
     def action_cfg_up(self) -> None:
-        _tui_logger.debug("action: up")
         if self._editing is not None:
             return
         self._cfg_cursor = (self._cfg_cursor - 1) % len(FIELDS)
         self._refresh()
 
     def action_cfg_down(self) -> None:
-        _tui_logger.debug("action: down")
         if self._editing is not None:
             return
         self._cfg_cursor = (self._cfg_cursor + 1) % len(FIELDS)
         self._refresh()
 
     def action_cfg_left(self) -> None:
-        _tui_logger.debug("action: left")
         if self._editing is not None:
             return
         self._cycle(-1)
 
     def action_cfg_right(self) -> None:
-        _tui_logger.debug("action: right")
         if self._editing is not None:
             return
         self._cycle(1)
@@ -366,7 +355,6 @@ class TuiApp(App[None]):
         self._refresh()
 
     def action_cfg_edit(self) -> None:
-        _tui_logger.debug("action: enter")
         _wid, attr, _label, choices = FIELDS[self._cfg_cursor]
         if choices:
             return
@@ -385,6 +373,7 @@ class TuiApp(App[None]):
 
     def action_save_config(self) -> None:
         """Save current config to YAML file."""
+        import yaml
         from deepseek_bridge.config import default_config_path
 
         if self._editing is not None:
@@ -470,18 +459,16 @@ class TuiApp(App[None]):
                 _logging.getLogger().setLevel(
                     _logging.DEBUG if self.server_config.debug else _logging.INFO
                 )
-        except Exception as exc:
-            LOG.warning("failed to apply config update (%s=%s): %s", attr, raw, exc)
+        except Exception:
+            pass
 
     def on_key(self, event) -> None:
         if self._editing is None:
             return
-        _tui_logger.debug("on_key: editing, key=%s name=%s", event.key, event.name)
         if event.name == "escape":
             self._editing = None
             self._edit_buf = ""
             self._refresh()
-            event.stop()
             return
         if event.name == "enter":
             _wid, attr, _label, _choices = FIELDS[self._editing]
@@ -490,14 +477,11 @@ class TuiApp(App[None]):
             self._editing = None
             self._edit_buf = ""
             self._refresh()
-            event.stop()
             return
         if event.name == "backspace":
             self._edit_buf = self._edit_buf[:-1]
-            event.stop()
         elif hasattr(event, "key") and event.is_printable:
             self._edit_buf += event.key
-            event.stop()
         else:
             return
         self._refresh()
