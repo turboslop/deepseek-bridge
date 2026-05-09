@@ -307,6 +307,7 @@ class TuiApp(App[None]):
                 pass
 
         stats_lines = [
+            "",
             f"  reqs     {req:,}",
             f"  rate     {rate:.1f}/s",
             f"  queue    {queue}",
