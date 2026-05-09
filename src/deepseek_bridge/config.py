@@ -53,6 +53,7 @@ collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
 tunnel: cloudflared
+# cf_url: https://app.example.com  # required for cloudflared tunnel
 debug: false
 cors: {str(DEFAULT_CORS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}

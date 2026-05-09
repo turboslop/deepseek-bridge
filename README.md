@@ -250,6 +250,7 @@ uv run coverage report
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `9000` | Bind port |
 | `--tunnel` | `cloudflared` | Tunnel service (none, cloudflared, ngrok) |
+| `--cf-url` | none | Cloudflare tunnel public URL |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |

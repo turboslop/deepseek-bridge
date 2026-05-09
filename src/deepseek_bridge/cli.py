@@ -84,6 +84,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Tunnel service for public URL exposure (default: cloudflared)",
     )
     group_net.add_argument(
+        "--cf-url",
+        help="Cloudflare tunnel public URL (required for cloudflared tunnel)",
+    )
+    group_net.add_argument(
         "--base-url",
         help=("DeepSeek base URL, default from config or https://api.deepseek.com"),
     )
@@ -279,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_content_path"] = args.reasoning_content_path
     if args.tunnel is not None:
         updates["tunnel"] = args.tunnel
+    if args.cf_url is not None:
+        updates["cf_url"] = args.cf_url
     if args.debug:
         updates["debug"] = True
     if args.compact is not None:
@@ -334,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     bloat_warning = store.check_bloat()
     if bloat_warning:
         LOG.warning("reasoning DB health: %s", bloat_warning)
+    store.start_periodic_maintenance()
     if args.clear_reasoning_cache:
         deleted = store.clear()
         LOG.info("cleared %s reasoning cache row(s)", deleted)
