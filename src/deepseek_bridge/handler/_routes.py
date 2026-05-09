@@ -109,6 +109,7 @@ class HandlerRoutes:
         payload, trace, error_status_code = self._validate_chat_request(request_path)
         if error_status_code is not None:
             return
+        assert payload is not None
 
         cursor_auth = self._cursor_authorization()
 
@@ -541,6 +542,7 @@ class HandlerRoutes:
         except Exception:
             spinner.stop()
             raise
+        return None  # unreachable, satisfies mypy
 
     def _dispatch_response(
         self,

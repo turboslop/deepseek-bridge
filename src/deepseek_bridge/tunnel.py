@@ -235,7 +235,7 @@ class CloudflaredTunnel(TunnelService):
     cfd_url: str = ""  # Public URL configured in Cloudflare dashboard
     cfd_tunnel_name: str = "deepseek-bridge"  # Name from 'cloudflared tunnel create'
 
-    process: subprocess.Popen[bytes] | None = None
+    process: subprocess.Popen[str] | None = None
     public_url: str | None = field(default=None, init=False)
 
     def start(self) -> str:
@@ -258,6 +258,7 @@ class CloudflaredTunnel(TunnelService):
         # Give cloudflared time to establish connection
         import time as _time
         _time.sleep(10)
+        assert self.process is not None
         if self.process.poll() is not None:
             stderr_output = self.process.stdout.read() if self.process.stdout else ""
             raise RuntimeError(
@@ -291,4 +292,4 @@ def create_tunnel(kind: str, target_url: str) -> TunnelService:
     cls = _tunnel_registry.get(kind)
     if cls is None:
         raise ValueError(f"unknown tunnel kind: {kind}")
-    return cls(target_url=target_url)
+    return cls(target_url=target_url)  # type: ignore[call-arg]
