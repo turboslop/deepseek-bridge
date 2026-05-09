@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 import time
 
-import yaml
-
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
