@@ -384,7 +384,12 @@ def main(argv: list[str] | None = None) -> int:
             tunnel.cfd_tunnel_name = getattr(config, "cfd_tunnel_name", "deepseek-bridge")
         try:
             public_url = tunnel.start()
-            _verify_tunnel_url(public_url)
+            # Run health check in background — don't block server startup
+            threading.Thread(
+                target=_verify_tunnel_url,
+                args=(public_url,),
+                daemon=True,
+            ).start()
         except RuntimeError as exc:
             LOG.error("%s", exc)
             server.server_close()
