@@ -348,6 +348,8 @@ class ReasoningStore:
 
     def get(self, key: str) -> str | None:
         with self._lock:
+            if self._closed:
+                return None
             row = self._conn.execute(
                 "SELECT reasoning FROM reasoning_cache WHERE key = ?",
                 (key,),

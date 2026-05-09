@@ -166,6 +166,22 @@ class ReasoningStoreTests(unittest.TestCase):
             s.close()
             c.close()
 
+    def test_get_after_close_returns_none(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            s = ReasoningStore(db_path)
+            s.put("k", "v", {"role": "assistant"})
+            s.close()
+            result = s.get("k")
+            self.assertIsNone(result)
+
+    def test_put_after_close_is_silent(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            s = ReasoningStore(db_path)
+            s.close()
+            s.put("k", "v", {"role": "assistant"})
+
 
 class AutoCacheMaxRowsTests(unittest.TestCase):
     def test_returns_reasonable_default(self) -> None:
