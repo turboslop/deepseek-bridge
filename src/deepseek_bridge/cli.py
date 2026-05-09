@@ -337,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         config.reasoning_content_path,
         max_age_seconds=config.reasoning_cache_max_age_seconds,
     )
-    bloat_warning = store.check_bloat()
+    bloat_warning, _ = store.check_bloat()
     if bloat_warning:
         LOG.warning("reasoning DB health: %s", bloat_warning)
     store.start_periodic_maintenance()

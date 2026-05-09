@@ -107,7 +107,7 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(p)
             for i in range(60):
                 s.put(f"row{i}", "x" * 900000, {"role": "assistant"})
-            warn = s.check_bloat()
+            warn, _ = s.check_bloat()
             self.assertIsNotNone(
                 warn, "Should detect bloat: large DB with few rows (>50MB, <2000 rows)"
             )
@@ -118,14 +118,14 @@ class ReasoningStoreTests(unittest.TestCase):
             p = os.path.join(d, "test.db")
             s = ReasoningStore(p)
             s.put("k", "small", {"role": "assistant"})
-            warn = s.check_bloat()
+            warn, _ = s.check_bloat()
             self.assertIsNone(warn, "Healthy small DB should not trigger bloat warning")
             s.close()
 
     def test_check_bloat_memory_db(self) -> None:
         s = ReasoningStore(":memory:")
         s.put("k", "v", {"role": "assistant"})
-        warn = s.check_bloat()
+        warn, _ = s.check_bloat()
         self.assertIsNone(warn, ":memory: DB should always return None")
         s.close()
 

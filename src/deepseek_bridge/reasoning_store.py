@@ -229,15 +229,15 @@ class ReasoningStore:
             LOG.warning("VACUUM failed: %s", exc)
             return False
 
-    def check_bloat(self) -> str | None:
-        """Return a warning string if the DB is bloated, or None if healthy."""
+    def check_bloat(self) -> tuple[str | None, float | None]:
+        """Return (warning, free_pct) or (None, None) if healthy."""
         if not isinstance(self.reasoning_content_path, Path):
-            return None
+            return None, None
         try:
             page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
             freelist_count = self._conn.execute("PRAGMA freelist_count").fetchone()[0]
             if page_count == 0:
-                return None
+                return None, None
             free_pct = freelist_count / page_count
             size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
             if free_pct > 0.8:
@@ -245,7 +245,7 @@ class ReasoningStore:
                     f"reasoning DB is {size_mb:.0f} MB with {free_pct:.0%} free pages "
                     f"({freelist_count}/{page_count}). Run with --clear-reasoning-cache "
                     f"or restart to reclaim space."
-                )
+                ), free_pct
             if size_mb > 50:
                 row = self._conn.execute(
                     "SELECT COUNT(*) FROM reasoning_cache"
@@ -255,11 +255,11 @@ class ReasoningStore:
                     return (
                         f"reasoning DB is {size_mb:.0f} MB but only has {row_count} rows. "
                         f"Consider running with --clear-reasoning-cache."
-                    )
-            return None
+                    ), free_pct
+            return None, free_pct
         except Exception as exc:
             LOG.warning("check_bloat failed: %s", exc)
-            return None
+            return None, None
 
     def close(self) -> None:
         with self._lock:
@@ -294,10 +294,9 @@ class ReasoningStore:
                 with self._lock:
                     if self._closed:
                         break
-                    bloat = self.check_bloat()
+                    bloat, free_pct = self.check_bloat()
                     if bloat is not None:
                         LOG.info("periodic DB check: %s", bloat)
-                        free_pct = self._bloat_free_pct()
                         if free_pct is not None and free_pct > 0.8:
                             LOG.warning(
                                 "DB severely bloated (%.0f%% free), clearing cache", free_pct * 100
@@ -307,16 +306,6 @@ class ReasoningStore:
                     self._conn.execute("PRAGMA optimize")
             except Exception as exc:
                 LOG.warning("periodic DB maintenance failed: %s", exc)
-
-    def _bloat_free_pct(self) -> float | None:
-        try:
-            page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
-            if page_count == 0:
-                return None
-            freelist = self._conn.execute("PRAGMA freelist_count").fetchone()[0]
-            return freelist / page_count
-        except Exception:
-            return None
 
     def _clear_locked(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
