@@ -636,10 +636,18 @@ class HandlerRoutes:
     def _track_usage(self, usage: dict | None, model: str) -> None:
         if not isinstance(usage, dict):
             return
-        total = usage.get("total_tokens", 0)
+        server = getattr(self, "server", None)
+        if server is None:
+            return
+        server.prompt_tokens += int(usage.get("prompt_tokens", 0) or 0)
+        server.completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+        details = usage.get("completion_tokens_details")
+        if isinstance(details, dict):
+            server.reasoning_tokens += int(details.get("reasoning_tokens", 0) or 0)
+        server.cache_hit_tokens += int(usage.get("prompt_cache_hit_tokens", 0) or 0)
+        server.cache_miss_tokens += int(usage.get("prompt_cache_miss_tokens", 0) or 0)
+        total = int(usage.get("total_tokens", 0) or 0)
         if total:
-            server = getattr(self, "server", None)
-            if server is not None:
-                if model not in server.token_usage:
-                    server.token_usage[model] = 0
-                server.token_usage[model] += int(total)
+            if model not in server.model_tokens:
+                server.model_tokens[model] = 0
+            server.model_tokens[model] += total

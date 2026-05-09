@@ -230,7 +230,7 @@ class TuiApp(App[None]):
                     pass
 
         stats = (
-            f"  [bold]Proxy[/]        uptime {uptime_s}\n"
+            f"  [bold]DeepSeek Bridge[/]  [dim]uptime {uptime_s}[/]\n"
             f"  requests   {req:,}   ({rate:.1f}/s)\n"
             f"  workers    {active}/{max_workers}   queue {queue}\n"
             f"  cache      {db_size}   {db_rows} rows"
@@ -296,26 +296,39 @@ class TuiApp(App[None]):
                 "[bold]Configuration[/]\n\n  (none)"
             )
 
-        # --- Session Stats (appended to config widget) ---
-        token_usage = getattr(server, "token_usage", {})
-        total_tokens = sum(token_usage.values())
+        # --- Session Stats ---
+        prompt = getattr(server, "prompt_tokens", 0)
+        completion = getattr(server, "completion_tokens", 0)
+        reasoning = getattr(server, "reasoning_tokens", 0)
+        cache_hit = getattr(server, "cache_hit_tokens", 0)
+        cache_miss = getattr(server, "cache_miss_tokens", 0)
+        model_tokens = getattr(server, "model_tokens", {})
+        total_tokens = prompt + completion
+
+        cache_total = cache_hit + cache_miss
+        hit_rate = f"{cache_hit / cache_total * 100:.1f}%" if cache_total else "—"
 
         stats_lines = [
             "",
             "",
             "",
             "[bold]Session[/]",
-            f"  requests   {req:,}  ({rate:.1f}/s)",
-            f"  queue      {queue}",
-            "",
         ]
         if total_tokens:
-            stats_lines.append(f"  tokens     {total_tokens:,}")
-        if token_usage:
-            for model, tokens in sorted(token_usage.items()):
+            stats_lines.extend([
+                f"  prompt      {prompt:,}",
+                f"  completion  {completion:,}",
+                f"  reasoning   {reasoning:,}",
+                f"  total       {total_tokens:,}",
+                "",
+                f"  cache hit   {hit_rate}",
+                "",
+            ])
+        if model_tokens:
+            stats_lines.append("  [dim]per model[/]")
+            for model, tokens in sorted(model_tokens.items()):
                 short = model.replace("deepseek-", "").replace("v4-", "")
                 stats_lines.append(f"    {short:<12} {tokens:,}")
-        stats_lines.append("")
 
         config_widget = self.query_one("#config", Static)
         current = config_widget.renderable
