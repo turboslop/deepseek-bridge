@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from ..helpers import (
+from ..logging import (
     RECOVERY_NOTICE_CONTENT,
     RECOVERY_NOTICE_TEXT,
     RECOVERY_SYSTEM_CONTENT,

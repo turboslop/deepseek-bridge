@@ -317,7 +317,7 @@ class ErrorFormatTests(unittest.TestCase):
     """_error_body produces the standard OpenAI-compatible error envelope."""
 
     def test_error_body_has_all_fields(self) -> None:
-        from deepseek_bridge.helpers import _error_body
+        from deepseek_bridge._types import _error_body
 
         body = _error_body("test msg", "test_type", "test_code")
         self.assertIn("error", body)
@@ -327,7 +327,7 @@ class ErrorFormatTests(unittest.TestCase):
         self.assertIsNone(body["error"]["param"])
 
     def test_error_body_param_always_null(self) -> None:
-        from deepseek_bridge.helpers import _error_body
+        from deepseek_bridge._types import _error_body
 
         body = _error_body("msg", "type", "code")
         self.assertIn("param", body["error"])

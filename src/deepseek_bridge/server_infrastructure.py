@@ -18,7 +18,7 @@ from typing import Any
 import urllib3
 
 from .config import ProxyConfig
-from .helpers import format_count
+from .logging import format_count
 from .logging import LOG
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter

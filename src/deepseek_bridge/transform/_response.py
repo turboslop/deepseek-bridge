@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..helpers import fold_reasoning_into_content
+from ..streaming._sse import fold_reasoning_into_content
 from ..reasoning_store import ReasoningStore, conversation_scope
 
 

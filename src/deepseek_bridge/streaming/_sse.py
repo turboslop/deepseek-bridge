@@ -2,34 +2,14 @@ from __future__ import annotations
 
 import html
 import json
-import threading
 import time
-import types
-import uuid
-from dataclasses import dataclass
 from typing import Any
 
-from .logging import LOG, RECOVERY_NOTICE_CONTENT
+# ── Fingerprint ───────────────────────────────────────────────
 
 SYSTEM_FINGERPRINT = "fp_deepseek_bridge"
 
-MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
-    "deepseek-v4-pro": 1735689600,
-    "deepseek-v4-flash": 1735689600,
-}
-
-
-def _generate_request_id() -> str:
-    return f"dcp-{uuid.uuid4().hex[:24]}"
-
-
-_shutdown_requested = threading.Event()
-
-
-def _handle_shutdown_signal(signum: int, frame: types.FrameType | None) -> None:
-    LOG.info("received signal %s, initiating graceful shutdown", signum)
-    _shutdown_requested.set()
-
+# ── Reasoning display blocks ──────────────────────────────────
 
 THINKING_BLOCK_START = "<think>\n"
 THINKING_BLOCK_END = "\n</think>\n\n"
@@ -66,31 +46,7 @@ def fold_reasoning_into_content(
         )
 
 
-class RequestBodyTooLargeError(ValueError):
-    pass
-
-
-def _error_body(
-    message: str,
-    error_type: str,
-    code: str | None = None,
-) -> dict[str, Any]:
-    err: dict[str, Any] = {"message": str(message)}
-    err["type"] = error_type
-    if code:
-        err["code"] = code
-    err["param"] = None
-    return {"error": err}
-
-
-@dataclass
-class ProxyResponseResult:
-    sent: bool
-    usage: dict[str, Any] | None = None
-
-
-def elapsed_ms(started: float) -> int:
-    return round((time.monotonic() - started) * 1000)
+# ── SSE helpers ───────────────────────────────────────────────
 
 
 def sse_data(payload: dict[str, Any]) -> bytes:
@@ -123,8 +79,11 @@ def inject_recovery_notice(chunk: dict[str, Any], notice: str) -> bool:
 
 def recovery_notice_chunk(
     model: str,
-    notice: str = RECOVERY_NOTICE_CONTENT,
+    notice: str = "",
 ) -> dict[str, Any]:
+    from ..logging import RECOVERY_NOTICE_CONTENT
+
+    used_notice = notice if notice else RECOVERY_NOTICE_CONTENT
     return {
         "id": "chatcmpl-deepseek-bridge-recovery",
         "object": "chat.completion.chunk",
@@ -134,7 +93,7 @@ def recovery_notice_chunk(
         "choices": [
             {
                 "index": 0,
-                "delta": {"content": notice},
+                "delta": {"content": used_notice},
                 "finish_reason": None,
             }
         ],

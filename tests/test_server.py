@@ -38,7 +38,7 @@ from deepseek_bridge.server import (
     build_arg_parser,
     read_response_body,
 )
-from deepseek_bridge.helpers import _truncate_message_content
+from deepseek_bridge.logging import _truncate_message_content
 
 # ---------------------------------------------------------------------------
 # Stubs for fast in-process tests of internal handler methods

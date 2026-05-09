@@ -4,7 +4,7 @@ import html
 import time
 from typing import Any
 
-from ..helpers import (
+from ._sse import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
     THINKING_BLOCK_END,

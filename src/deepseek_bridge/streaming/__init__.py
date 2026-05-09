@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ._accumulator import StreamAccumulator, StreamingChoice
-from ..helpers import fold_reasoning_into_content
+from ._sse import fold_reasoning_into_content
 from ._display import CursorReasoningDisplayAdapter
 
 __all__ = [

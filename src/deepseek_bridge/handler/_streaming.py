@@ -8,12 +8,11 @@ from typing import Any
 import urllib3
 import urllib3.exceptions
 
-from ..helpers import (
-    ProxyResponseResult,
+from .._types import ProxyResponseResult
+from ..logging import log_json
+from ..streaming._sse import (
     SYSTEM_FINGERPRINT,
-    _error_body,
     inject_recovery_notice,
-    log_json,
     recovery_notice_chunk,
     sse_data,
 )
@@ -24,21 +23,6 @@ from ..trace import TraceRequest
 
 
 class HandlerStreaming:
-    def _send_sse_error(
-        self,
-        status: int,
-        message: str,
-        trace: "TraceRequest | None" = None,
-    ) -> None:
-        """Send an upstream error as an SSE event when headers are already committed."""
-        import json as _json
-
-        error_payload = _error_body(message, "server_error", "upstream_failure")
-        data = _json.dumps(error_payload, ensure_ascii=False)
-        sse_event = b"data: " + data.encode("utf-8") + b"\n\n"
-        self._write_to_client(sse_event, "sending upstream error via SSE", flush=True)
-        self._write_to_client(b"data: [DONE]\n\n", "sending SSE done", flush=True)
-
     def _proxy_streaming_response(
         self,
         response: Any,

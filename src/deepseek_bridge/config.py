@@ -16,6 +16,11 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 MISSING = object()
 
+MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
+    "deepseek-v4-pro": 1735689600,
+    "deepseek-v4-flash": 1735689600,
+}
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9000
 DEFAULT_UPSTREAM_BASE_URL = "https://api.deepseek.com"

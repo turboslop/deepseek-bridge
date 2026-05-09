@@ -5,7 +5,7 @@ import json
 from http.client import IncompleteRead
 from typing import Any
 
-from ..helpers import (
+from ..logging import (
     log_bytes,
     read_response_body,
 )

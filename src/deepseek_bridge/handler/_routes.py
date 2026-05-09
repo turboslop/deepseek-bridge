@@ -10,12 +10,12 @@ from urllib.parse import urlparse
 import urllib3
 import urllib3.exceptions
 
-from ..helpers import (
-    RequestBodyTooLargeError,
-    _error_body,
-    _generate_request_id,
+from .._types import RequestBodyTooLargeError, _error_body
+from ..helpers import _generate_request_id, elapsed_ms
+from ..logging import (
+    LOG,
+    TerminalSpinner,
     context_status,
-    elapsed_ms,
     format_count,
     log_context_summary,
     log_cursor_request,
@@ -25,7 +25,6 @@ from ..helpers import (
     message_count,
     summarize_chat_payload,
 )
-from ..logging import LOG, TerminalSpinner
 from ..transform import prepare_upstream_request
 
 if TYPE_CHECKING:

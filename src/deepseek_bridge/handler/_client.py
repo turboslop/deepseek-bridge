@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..helpers import RequestBodyTooLargeError
+from .._types import RequestBodyTooLargeError
 from ..logging import LOG
 
 

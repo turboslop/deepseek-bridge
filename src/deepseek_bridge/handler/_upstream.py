@@ -4,7 +4,8 @@ import json
 from http.client import IncompleteRead
 from typing import Any
 
-from ..helpers import ProxyResponseResult, _error_body, log_bytes, read_response_body, usage_from_body
+from .._types import ProxyResponseResult, _error_body
+from ..logging import log_bytes, read_response_body, usage_from_body
 from ..logging import LOG
 from ..trace import TraceRequest
 from ..transform import rewrite_response_body

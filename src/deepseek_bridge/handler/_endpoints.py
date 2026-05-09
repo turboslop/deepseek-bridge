@@ -8,12 +8,9 @@ import urllib3
 
 from .. import __version__
 
-from ..helpers import (
-    MODEL_CREATED_TIMESTAMPS,
-    RequestBodyTooLargeError,
-    _error_body,
-    _generate_request_id,
-)
+from .._types import RequestBodyTooLargeError, _error_body
+from ..config import MODEL_CREATED_TIMESTAMPS
+from ..helpers import _generate_request_id
 from ..logging import LOG
 
 
