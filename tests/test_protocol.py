@@ -313,6 +313,8 @@ class _StrictUpstreamCase(unittest.TestCase):
     config_overrides: dict[str, Any] = {}
 
     def setUp(self) -> None:
+        from deepseek_bridge.helpers import _shutdown_requested
+        _shutdown_requested.clear()
         self.upstream = _start_strict_upstream()
         self.store = ReasoningStore(":memory:")
         self.proxy = _start_proxy(

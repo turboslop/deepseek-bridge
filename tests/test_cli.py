@@ -187,7 +187,7 @@ class CliMainTests(unittest.TestCase):
         with patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
              patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt), \
-             patch("deepseek_bridge.cli.ReasoningStore"), \
+             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls, \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging"), \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
@@ -196,6 +196,9 @@ class CliMainTests(unittest.TestCase):
             mock_tunnel = MagicMock()
             mock_tunnel.start.return_value = "https://app.example.com"
             mock_create.return_value = mock_tunnel
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
 
             from deepseek_bridge.cli import main
             result = main(["--tunnel", cli_arg, "--headless"])
@@ -218,12 +221,15 @@ class CliMainTests(unittest.TestCase):
         with patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
              patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt), \
-             patch("deepseek_bridge.cli.ReasoningStore"), \
+             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls, \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging"), \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
              srv_bind, srv_activate:
             mock_cfg_cls.from_file.return_value = self._mock_config()
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
 
             from deepseek_bridge.cli import main
             result = main(["--tunnel", "none", "--headless"])
@@ -237,7 +243,7 @@ class CliMainTests(unittest.TestCase):
         with patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt) as mock_run, \
              patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
-             patch("deepseek_bridge.cli.ReasoningStore"), \
+             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls, \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging"), \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
@@ -246,6 +252,9 @@ class CliMainTests(unittest.TestCase):
             mock_tunnel = MagicMock()
             mock_tunnel.start.return_value = "https://app.example.com"
             mock_create.return_value = mock_tunnel
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
 
             from deepseek_bridge.cli import main
             result = main(["--headless"])
@@ -259,7 +268,7 @@ class CliMainTests(unittest.TestCase):
         with patch("deepseek_bridge.cli._run_server",
                    side_effect=KeyboardInterrupt), \
              patch("deepseek_bridge.cli.create_tunnel") as mock_create, \
-             patch("deepseek_bridge.cli.ReasoningStore"), \
+             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls, \
              patch("deepseek_bridge.cli.UpstreamPool"), \
              patch("deepseek_bridge.cli.configure_logging") as mock_log, \
              patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls, \
@@ -268,6 +277,9 @@ class CliMainTests(unittest.TestCase):
             mock_tunnel = MagicMock()
             mock_tunnel.start.return_value = "https://app.example.com"
             mock_create.return_value = mock_tunnel
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
 
             from deepseek_bridge.cli import main
             result = main(["--headless", "--debug"])

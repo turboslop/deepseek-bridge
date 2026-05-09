@@ -220,36 +220,44 @@ def warn_if_insecure_upstream(url: str) -> None:
     LOG.warning("upstream base_url uses plain HTTP; bearer tokens may be exposed")
 
 
-def _verify_tunnel_url(url: str, timeout: float = 5.0) -> bool:
+def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
     import http.client
     import urllib.parse
     parsed = urllib.parse.urlparse(url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        conn = http.client.HTTPSConnection(host, port=port, timeout=timeout) \
-            if parsed.scheme == "https" else \
-            http.client.HTTPConnection(host, port=port, timeout=timeout)
-        conn.request("GET", "/v1/health")
-        resp = conn.getresponse()
-        body = resp.read().decode("utf-8", errors="replace")
-        conn.close()
-        if resp.status == 200:
-            LOG.info("tunnel health check: ok (%s)", url)
-            return True
-        if resp.status == 530:
-            LOG.warning(
-                "tunnel health check: HTTP 530 at %s — Cloudflare tunnel not connected. "
-                "Run 'cloudflared tunnel list' and 'cloudflared tunnel route dns'. "
-                "Body: %s",
-                url, body[:120],
-            )
+    for attempt in range(3):
+        try:
+            conn = http.client.HTTPSConnection(host, port=port, timeout=timeout) \
+                if parsed.scheme == "https" else \
+                http.client.HTTPConnection(host, port=port, timeout=timeout)
+            conn.request("GET", "/v1/health")
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8", errors="replace")
+            conn.close()
+            if resp.status == 200:
+                LOG.info("tunnel health check: ok (%s)", url)
+                return True
+            if resp.status == 530:
+                if attempt < 2:
+                    time.sleep(5)
+                    continue
+                LOG.warning(
+                    "tunnel health check: HTTP 530 at %s — Cloudflare tunnel not connected. "
+                    "Run 'cloudflared tunnel list' and 'cloudflared tunnel route dns'. "
+                    "Body: %s",
+                    url, body[:120],
+                )
+                return False
+            LOG.warning("tunnel health check: HTTP %s at %s — %s", resp.status, url, body[:120])
             return False
-        LOG.warning("tunnel health check: HTTP %s at %s — %s", resp.status, url, body[:120])
-        return False
-    except Exception as exc:
-        LOG.warning("tunnel health check: failed to reach %s — %s", url, exc)
-        return False
+        except Exception as exc:
+            if attempt < 2:
+                time.sleep(5)
+                continue
+            LOG.warning("tunnel health check: failed to reach %s — %s", url, exc)
+            return False
+    return False
 
 
 def _run_server(server: BoundedThreadPoolHTTPServer) -> None:
@@ -474,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: draining active requests...")
-            server.executor.shutdown(wait=True, cancel_futures=True)
+            server.executor.shutdown(wait=False, cancel_futures=True)
         if tunnel is not None:
             tunnel.stop()
         store.prune()

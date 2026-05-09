@@ -145,6 +145,14 @@ class HandlerRoutes:
             text="└ {frame}",
         ).start()
 
+        # Check for shutdown signal before forwarding
+        from ..helpers import _shutdown_requested
+        if _shutdown_requested.is_set():
+            LOG.info("shutdown in progress, aborting request")
+            spinner.stop()
+            self._finish_trace(trace, "aborted")
+            return
+
         headers_sent = False
         if stream:
             sent = self._send_response_headers(
