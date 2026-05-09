@@ -101,7 +101,6 @@ class TuiApp(App[None]):
                 yield RichLog(id="logs", max_lines=1000, highlight=False)
             with VerticalScroll(id="right-panel"):
                 yield Static("", id="config")
-                yield Static("", id="session-stats")
 
     def on_mount(self) -> None:
         import logging
@@ -297,7 +296,7 @@ class TuiApp(App[None]):
                 "[bold]Configuration[/]\n\n  (none)"
             )
 
-        # --- Session Stats ---
+        # --- Session Stats (appended to config widget) ---
         exe = getattr(server, "executor", None)
         queue = 0
         if exe:
@@ -306,15 +305,15 @@ class TuiApp(App[None]):
             except Exception:
                 pass
 
-        stats_lines = [
-            "",
-            f"  reqs     {req:,}",
-            f"  rate     {rate:.1f}/s",
-            f"  queue    {queue}",
-        ]
-        self.query_one("#session-stats", Static).update(
-            "[bold]Session[/]\n" + "\n".join(stats_lines)
+        config_widget = self.query_one("#config", Static)
+        current = config_widget.renderable
+        stats = (
+            "\n\n\n  [bold]Session[/]\n"
+            f"  reqs     {req:,}\n"
+            f"  rate     {rate:.1f}/s\n"
+            f"  queue    {queue}"
         )
+        config_widget.update(str(current) + stats)
 
     # --- Key bindings ---
 
