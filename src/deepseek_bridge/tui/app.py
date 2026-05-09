@@ -230,10 +230,10 @@ class TuiApp(App[None]):
                     pass
 
         stats = (
-            f"  [bold]DeepSeek Bridge[/]  [dim]uptime {uptime_s}[/]\n"
-            f"  requests  {req:,}   ({rate:.1f}/s)\n"
-            f"  threads   {active}/{max_workers}   queue {queue}\n"
-            f"  db        {db_size}   {db_rows} rows"
+            f"  [bold]Proxy[/]        uptime {uptime_s}\n"
+            f"  requests   {req:,}   ({rate:.1f}/s)\n"
+            f"  workers    {active}/{max_workers}   queue {queue}\n"
+            f"  cache      {db_size}   {db_rows} rows"
         )
         if getattr(self.server, "paused", False):
             stats += "\n  [reverse bold]  PAUSED  [/]"
@@ -297,23 +297,29 @@ class TuiApp(App[None]):
             )
 
         # --- Session Stats (appended to config widget) ---
-        exe = getattr(server, "executor", None)
-        queue = 0
-        if exe:
-            try:
-                queue = exe._work_queue.qsize()
-            except Exception:
-                pass
+        token_usage = getattr(server, "token_usage", {})
+        total_tokens = sum(token_usage.values())
+
+        stats_lines = [
+            "",
+            "",
+            "",
+            "[bold]Session[/]",
+            f"  requests   {req:,}  ({rate:.1f}/s)",
+            f"  queue      {queue}",
+            "",
+        ]
+        if total_tokens:
+            stats_lines.append(f"  tokens     {total_tokens:,}")
+        if token_usage:
+            for model, tokens in sorted(token_usage.items()):
+                short = model.replace("deepseek-", "").replace("v4-", "")
+                stats_lines.append(f"    {short:<12} {tokens:,}")
+        stats_lines.append("")
 
         config_widget = self.query_one("#config", Static)
         current = config_widget.renderable
-        stats = (
-            "\n\n\n  [bold]Session[/]\n"
-            f"  reqs     {req:,}\n"
-            f"  rate     {rate:.1f}/s\n"
-            f"  queue    {queue}"
-        )
-        config_widget.update(str(current) + stats)
+        config_widget.update(str(current) + "\n".join(stats_lines))
 
     # --- Key bindings ---
 

@@ -622,6 +622,7 @@ class HandlerRoutes:
                 return
             spinner.stop()
             log_stats_summary(sent_response.usage, elapsed_ms=elapsed_ms(started))
+            self._track_usage(sent_response.usage, prepared.original_model)
             self._finish_trace(
                 trace,
                 "completed",
@@ -631,3 +632,14 @@ class HandlerRoutes:
         finally:
             spinner.stop()
             response.release_conn()
+
+    def _track_usage(self, usage: dict | None, model: str) -> None:
+        if not isinstance(usage, dict):
+            return
+        total = usage.get("total_tokens", 0)
+        if total:
+            server = getattr(self, "server", None)
+            if server is not None:
+                if model not in server.token_usage:
+                    server.token_usage[model] = 0
+                server.token_usage[model] += int(total)

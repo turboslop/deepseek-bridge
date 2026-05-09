@@ -40,6 +40,9 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     upstream_pool: UpstreamPool
     request_count: int = 0
     start_time: float = 0.0
+    token_usage: dict[str, int] = {}  # total_tokens per model
+    cache_hits: int = 0
+    cache_misses: int = 0
 
 
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
