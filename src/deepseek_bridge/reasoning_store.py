@@ -189,6 +189,9 @@ class ReasoningStore:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.execute("PRAGMA cache_size = -65536")
+            self._conn.execute("PRAGMA mmap_size = 268435456")
+            self._conn.execute("PRAGMA temp_store = MEMORY")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reasoning_cache (

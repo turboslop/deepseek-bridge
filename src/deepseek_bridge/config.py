@@ -207,7 +207,7 @@ def _auto_stream_timeout(request_timeout: float, explicit: Any = None) -> float:
 def _auto_pool_connections(max_thread_pool: int, explicit: Any = None) -> int:
     if explicit is not None:
         return as_int(explicit, DEFAULT_MAX_POOL_CONNECTIONS)
-    return max(max_thread_pool // 2, 5)
+    return max(max_thread_pool, 10)
 
 
 def _auto_queue_size(max_thread_pool: int) -> int:

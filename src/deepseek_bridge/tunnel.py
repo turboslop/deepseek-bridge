@@ -250,7 +250,7 @@ class CloudflaredTunnel(TunnelService):
                 "Install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
             )
         self.process = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", "--url", self.target_url, self.cfd_tunnel_name],
+            ["cloudflared", "tunnel", "run", "--protocol", "http2", "--url", self.target_url, self.cfd_tunnel_name],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

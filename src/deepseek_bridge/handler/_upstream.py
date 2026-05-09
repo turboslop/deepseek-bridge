@@ -17,7 +17,7 @@ class HandlerUpstream:
             "Authorization": authorization,
             "Content-Type": "application/json",
             "Accept": "text/event-stream" if stream else "application/json",
-            "Accept-Encoding": "identity",
+            "Accept-Encoding": "gzip, deflate",
             "User-Agent": self.server_version,
         }
         accept_language = self.headers.get("Accept-Language")

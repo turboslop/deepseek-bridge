@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
@@ -30,6 +31,10 @@ class UpstreamPool:
             maxsize=max_connections,
             block=True,
             retries=urllib3.Retry(connect=1, read=0, redirect=0, status=0),
+            socket_options=[
+                (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),
+                (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+            ],
         )
 
 
