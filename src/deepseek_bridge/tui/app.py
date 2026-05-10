@@ -331,7 +331,7 @@ class TuiApp(App[None]):
                 stats_lines.append(f"    {short:<12} {tokens:,}")
 
         config_widget = self.query_one("#config", Static)
-        current = config_widget.renderable
+        current = config_widget.content
         config_widget.update(str(current) + "\n".join(stats_lines))
 
     # --- Key bindings ---
