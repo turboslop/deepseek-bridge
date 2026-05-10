@@ -10,6 +10,16 @@ from .. import __version__
 
 from .._types import RequestBodyTooLargeError, _error_body
 from ..config import MODEL_CREATED_TIMESTAMPS
+from ..config import (
+    OLLAMA_CONTEXT_LENGTH,
+    OLLAMA_EMBEDDING_LENGTH,
+    OLLAMA_FORMAT,
+    OLLAMA_MAX_OUTPUT_TOKENS,
+    OLLAMA_MODEL_SIZE,
+    OLLAMA_MODIFIED_AT,
+    OLLAMA_PARAMETER_SIZE,
+    OLLAMA_QUANTIZATION_LEVEL,
+)
 from ..helpers import _generate_request_id
 from ..logging import LOG
 
@@ -154,17 +164,17 @@ class HandlerEndpoints:
                 {
                     "name": model_id,
                     "model": model_id,
-                    "modified_at": "2026-01-01T00:00:00.000Z",
-                    "size": 4109865159,
+                    "modified_at": OLLAMA_MODIFIED_AT,
+                    "size": OLLAMA_MODEL_SIZE,
                     "digest": f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}",
                     "details": {
-                        "format": "gguf",
+                        "format": OLLAMA_FORMAT,
                         "family": "deepseek" if "deepseek" in model_id else "custom",
                         "families": (
                             ["deepseek"] if "deepseek" in model_id else ["custom"]
                         ),
-                        "parameter_size": "7B",
-                        "quantization_level": "Q4_K_M",
+                        "parameter_size": OLLAMA_PARAMETER_SIZE,
+                        "quantization_level": OLLAMA_QUANTIZATION_LEVEL,
                     },
                 }
             )
@@ -185,15 +195,15 @@ class HandlerEndpoints:
             "template": "{{ .Prompt }}",
             "details": {
                 "parent_model": "",
-                "format": "gguf",
+                "format": OLLAMA_FORMAT,
                 "family": architecture,
                 "families": [architecture],
-                "parameter_size": "7B",
-                "quantization_level": "Q4_K_M",
+                "parameter_size": OLLAMA_PARAMETER_SIZE,
+                "quantization_level": OLLAMA_QUANTIZATION_LEVEL,
             },
             "model_info": {
-                f"{architecture}.context_length": 128000,
-                f"{architecture}.embedding_length": 2048,
+                f"{architecture}.context_length": OLLAMA_CONTEXT_LENGTH,
+                f"{architecture}.embedding_length": OLLAMA_EMBEDDING_LENGTH,
             },
             "capabilities": {
                 "supports": {
@@ -201,10 +211,10 @@ class HandlerEndpoints:
                     "vision": False,
                 },
                 "limits": {
-                    "max_prompt_tokens": 128000,
-                    "max_output_tokens": 384000,
+                    "max_prompt_tokens": OLLAMA_CONTEXT_LENGTH,
+                    "max_output_tokens": OLLAMA_MAX_OUTPUT_TOKENS,
                 },
             },
-            "modified_at": "2026-01-01T00:00:00.000Z",
+            "modified_at": OLLAMA_MODIFIED_AT,
         }
         self._send_json(200, response)

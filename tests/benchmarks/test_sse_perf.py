@@ -162,8 +162,8 @@ def run_benchmark() -> None:
     lines = generate_synthetic_lines()
     total_data_lines = sum(
         1
-        for l in lines
-        if l.strip().startswith(b"data:") and b"[DONE]" not in l
+        for line in lines
+        if line.strip().startswith(b"data:") and b"[DONE]" not in line
     )
     total_sse_lines = len(lines)
 
@@ -221,7 +221,7 @@ def run_benchmark() -> None:
         f"  Latency   (avg):   {avg_latency_us:>7.2f} µs/chunk\n"
     )
 
-    print(f"\n── Summary ───────────────────────────────────────────\n")
+    print("\n── Summary " + "─" * 46)
     print(summary)
 
     BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
