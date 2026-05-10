@@ -463,7 +463,8 @@ class ResponsesConverterConversionTests(unittest.TestCase):
         self.assertEqual(_stringify_content(42), "42")
 
     def test_stringify_content_list(self) -> None:
-        self.assertEqual(_stringify_content(["a", "b"]), "['a', 'b']")
+        # extract_text_content joins text items with newlines
+        self.assertEqual(_stringify_content(["a", "b"]), "a\nb")
 
 
 class ConvertInputItemTests(unittest.TestCase):

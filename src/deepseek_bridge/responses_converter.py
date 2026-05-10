@@ -151,12 +151,13 @@ def _convert_input_item(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _stringify_content(content: Any) -> str:
-    """Safely convert content to a string."""
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    return str(content)
+    """Convert content to a string, handling text arrays properly."""
+    from ._normalization import extract_text_content
+
+    flattened = extract_text_content(content)
+    if flattened is not None:
+        return flattened
+    return ""
 
 
 def _convert_tools(tools: list[Any]) -> list[dict[str, Any]]:

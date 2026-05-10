@@ -169,5 +169,12 @@ def normalize_tool_choice(tool_choice: Any) -> Any:
                     "type": "function",
                     "function": {"name": str(function["name"])},
                 }
+            # Handle Responses API format: {"type": "function", "name": "my_func"}
+            name = tool_choice.get("name")
+            if isinstance(name, str) and name:
+                return {
+                    "type": "function",
+                    "function": {"name": name},
+                }
         return tool_choice
     return tool_choice
