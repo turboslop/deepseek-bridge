@@ -37,6 +37,10 @@ class UpstreamPool:
             ],
         )
 
+    def request(self, method: str, url: str, **kwargs) -> urllib3.BaseHTTPResponse:
+        """Forward an HTTP request through the upstream connection pool."""
+        return self._pool.request(method, url, **kwargs)
+
 
 class DeepSeekProxyServer(ThreadingHTTPServer):
     config: ProxyConfig
@@ -77,7 +81,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                 if hasattr(self, "socket")
                 else int(getattr(getattr(self, "config", None), "request_timeout", 300))
             )
-        queue_size = self.executor._work_queue.qsize()
+        queue_size = self.queue_size
         config = getattr(self, "config", None)
         effective_max_queue = config.max_queue_size if config is not None else 50
         if queue_size > effective_max_queue:
@@ -117,24 +121,43 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         except Exception as exc:
             LOG.warning("failed to close rejected connection: %s", exc)
 
+    @property
+    def active_threads(self) -> int:
+        """Current number of active worker threads."""
+        try:
+            return len(self.executor._threads)
+        except Exception:
+            return 0
+
+    @property
+    def max_workers(self) -> int:
+        """Configured maximum worker threads."""
+        return int(self.executor._max_workers)
+
+    @property
+    def queue_size(self) -> int:
+        """Current size of the pending request queue."""
+        try:
+            return self.executor._work_queue.qsize()
+        except Exception:
+            return 0
+
     def _log_pool_utilization(self) -> None:
         try:
-            active: int | str = len(self.executor._threads)
+            active: int | str = self.active_threads
         except Exception as exc:
             LOG.warning("failed to count active threads: %s", exc)
             active = "?"
         try:
             queue_size: int | str = (
-                self.executor._work_queue.qsize()
-                if hasattr(self.executor, "_work_queue")
-                else "?"
+                self.queue_size
             )
         except Exception as exc:
             LOG.warning("failed to check queue size: %s", exc)
             queue_size = "?"
         LOG.info(
             "thread pool: max_workers=%s active=%s queue=%s",
-            self.executor._max_workers,
+            self.max_workers,
             active,
             queue_size,
         )
@@ -144,9 +167,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             store = self.reasoning_store
             if not isinstance(store.reasoning_content_path, Path):
                 return
-            size_mb = store.reasoning_content_path.stat().st_size / (1024 * 1024)
-            row = store._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
-            row_count = int(row[0]) if row else 0
+            size_mb = store.get_db_size_mb()
+            row_count = store.get_row_count()
             LOG.info(
                 "db stats: %s size=%.1fMB rows=%s",
                 store.reasoning_content_path,
@@ -160,7 +182,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         parts = [f"heartbeat: req={format_count(self.request_count)}"]
         try:
             parts.append(
-                f"pool={len(self.executor._threads)}/{self.executor._max_workers}"
+                f"pool={self.active_threads}/{self.max_workers}"
             )
         except Exception as exc:
             LOG.warning("failed to read pool stats: %s", exc)
@@ -168,11 +190,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         try:
             store = self.reasoning_store
             if isinstance(store.reasoning_content_path, Path):
-                size_mb = store.reasoning_content_path.stat().st_size / (1024 * 1024)
-                row = store._conn.execute(
-                    "SELECT COUNT(*) FROM reasoning_cache"
-                ).fetchone()
-                row_count = int(row[0]) if row else 0
+                size_mb = store.get_db_size_mb()
+                row_count = store.get_row_count()
                 parts.append(f"db={size_mb:.0f}MB/{format_count(row_count)}rows")
         except Exception as exc:
             LOG.warning("failed to read db stats: %s", exc)

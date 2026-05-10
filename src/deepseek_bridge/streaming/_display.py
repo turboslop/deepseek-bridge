@@ -7,6 +7,7 @@ from typing import Any
 from ._sse import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
+    SYSTEM_FINGERPRINT,
     THINKING_BLOCK_END,
     THINKING_BLOCK_START,
 )
@@ -90,7 +91,7 @@ class CursorReasoningDisplayAdapter:
             "object": self._last_chunk_metadata.get("object", "chat.completion.chunk"),
             "created": self._last_chunk_metadata.get("created", int(time.time())),
             "model": model,
-            "system_fingerprint": "fp_deepseek_bridge",
+            "system_fingerprint": SYSTEM_FINGERPRINT,
             "choices": choices,
         }
         return chunk

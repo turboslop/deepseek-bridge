@@ -199,15 +199,15 @@ class TuiApp(App[None]):
         active = max_workers = queue = 0
         if exe:
             try:
-                active = len(exe._threads)
+                active = exe.active_threads
             except Exception:
                 pass
             try:
-                max_workers = exe._max_workers
+                max_workers = exe.max_workers
             except Exception:
                 pass
             try:
-                queue = exe._work_queue.qsize()
+                queue = exe.queue_size
             except Exception:
                 pass
 
@@ -218,14 +218,11 @@ class TuiApp(App[None]):
             db_path = getattr(store, "reasoning_content_path", None)
             if isinstance(db_path, Path):
                 try:
-                    db_size = f"{db_path.stat().st_size / (1024 * 1024):.1f}MB"
+                    db_size = f"{store.get_db_size_mb():.1f}MB"
                 except Exception:
                     pass
                 try:
-                    row = store._conn.execute(
-                        "SELECT COUNT(*) FROM reasoning_cache"
-                    ).fetchone()
-                    db_rows = str(row[0]) if row else "0"
+                    db_rows = str(store.get_row_count())
                 except Exception:
                     pass
 

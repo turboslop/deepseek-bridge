@@ -1,22 +1,11 @@
 from __future__ import annotations
 
-import html
-import json
 import threading
 import time
 import types
 import uuid
-from dataclasses import dataclass
-from typing import Any
 
-from .logging import LOG, RECOVERY_NOTICE_CONTENT
-
-SYSTEM_FINGERPRINT = "fp_deepseek_bridge"
-
-MODEL_CREATED_TIMESTAMPS: dict[str, int] = {
-    "deepseek-v4-pro": 1735689600,
-    "deepseek-v4-flash": 1735689600,
-}
+from .logging import LOG
 
 
 def _generate_request_id() -> str:
@@ -31,111 +20,5 @@ def _handle_shutdown_signal(signum: int, frame: types.FrameType | None) -> None:
     _shutdown_requested.set()
 
 
-THINKING_BLOCK_START = "<think>\n"
-THINKING_BLOCK_END = "\n</think>\n\n"
-COLLAPSIBLE_THINKING_BLOCK_START = "<details>\n<summary>Thinking</summary>\n\n"
-COLLAPSIBLE_THINKING_BLOCK_END = "\n</details>\n\n"
-
-
-def fold_reasoning_into_content(
-    response_payload: dict[str, Any],
-    collapsible: bool,
-) -> None:
-    block_start = (
-        COLLAPSIBLE_THINKING_BLOCK_START if collapsible else THINKING_BLOCK_START
-    )
-    block_end = COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
-    choices = response_payload.get("choices")
-    if not isinstance(choices, list):
-        return
-    for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            continue
-        reasoning = message.get("reasoning_content")
-        if not isinstance(reasoning, str) or not reasoning:
-            continue
-        content = message.get("content")
-        message["content"] = (
-            block_start
-            + html.escape(reasoning)
-            + block_end
-            + (content if isinstance(content, str) else "")
-        )
-
-
-class RequestBodyTooLargeError(ValueError):
-    pass
-
-
-def _error_body(
-    message: str,
-    error_type: str,
-    code: str | None = None,
-) -> dict[str, Any]:
-    err: dict[str, Any] = {"message": str(message)}
-    err["type"] = error_type
-    if code:
-        err["code"] = code
-    err["param"] = None
-    return {"error": err}
-
-
-@dataclass
-class ProxyResponseResult:
-    sent: bool
-    usage: dict[str, Any] | None = None
-
-
 def elapsed_ms(started: float) -> int:
     return round((time.monotonic() - started) * 1000)
-
-
-def sse_data(payload: dict[str, Any]) -> bytes:
-    return (
-        b"data: "
-        + json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        + b"\n\n"
-    )
-
-
-def inject_recovery_notice(chunk: dict[str, Any], notice: str) -> bool:
-    choices = chunk.get("choices")
-    if not isinstance(choices, list):
-        return False
-    for choice in choices:
-        if not isinstance(choice, dict):
-            continue
-        delta = choice.get("delta")
-        if not isinstance(delta, dict):
-            continue
-        if "content" not in delta and not delta.get("tool_calls"):
-            continue
-        existing_content = delta.get("content")
-        delta["content"] = notice + (
-            existing_content if isinstance(existing_content, str) else ""
-        )
-        return True
-    return False
-
-
-def recovery_notice_chunk(
-    model: str,
-    notice: str = RECOVERY_NOTICE_CONTENT,
-) -> dict[str, Any]:
-    return {
-        "id": "chatcmpl-deepseek-bridge-recovery",
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model,
-        "system_fingerprint": SYSTEM_FINGERPRINT,
-        "choices": [
-            {
-                "index": 0,
-                "delta": {"content": notice},
-                "finish_reason": None,
-            }
-        ],
-    }

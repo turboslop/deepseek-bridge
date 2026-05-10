@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..streaming._sse import fold_reasoning_into_content
+from ..streaming._sse import SYSTEM_FINGERPRINT, fold_reasoning_into_content
 from ..reasoning_store import ReasoningStore, conversation_scope
 
 
@@ -78,7 +78,7 @@ def rewrite_response_body(
         if "model" in response_payload:
             response_payload["model"] = original_model
         if "system_fingerprint" not in response_payload:
-            response_payload["system_fingerprint"] = "fp_deepseek_bridge"
+            response_payload["system_fingerprint"] = SYSTEM_FINGERPRINT
     return json.dumps(
         response_payload, ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8")

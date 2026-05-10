@@ -428,7 +428,7 @@ class HandlerRoutes:
             max_retries = 2
             for attempt in range(max_retries + 1):
                 try:
-                    response = self.upstream_pool._pool.request(
+                    response = self.upstream_pool.request(
                         "POST",
                         upstream_url,
                         body=upstream_body,

@@ -45,7 +45,7 @@ class HandlerEndpoints:
         upstream_url = f"{self.config.upstream_base_url}/embeddings"
 
         try:
-            response = self.upstream_pool._pool.request(
+            response = self.upstream_pool.request(
                 "POST",
                 upstream_url,
                 body=upstream_body,

@@ -264,6 +264,25 @@ class ReasoningStore:
             LOG.warning("check_bloat failed: %s", exc)
             return None, None
 
+    def get_row_count(self) -> int:
+        """Return the number of cached reasoning rows."""
+        try:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM reasoning_cache"
+            ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    def get_db_size_mb(self) -> float:
+        """Return the reasoning cache database file size in MB."""
+        if not isinstance(self.reasoning_content_path, Path):
+            return 0.0
+        try:
+            return self.reasoning_content_path.stat().st_size / (1024 * 1024)
+        except Exception:
+            return 0.0
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
