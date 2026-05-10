@@ -5,6 +5,7 @@ import json
 from http.client import IncompleteRead
 from typing import Any
 
+from .._types import _error_body
 from ..logging import (
     log_bytes,
     read_response_body,
@@ -135,3 +136,24 @@ class HandlerResponse:
         )
         if sent_headers:
             self._write_to_client(body, "sending upstream error body")
+
+    def _send_sse_error(
+        self,
+        status: int,
+        message: str,
+        *,
+        trace: TraceRequest | None = None,
+    ) -> bool:
+        """Send an SSE-formatted error to the client.
+
+        Used when upstream returns 4xx/5xx after streaming headers have
+        already been sent (so normal HTTP error response is impossible).
+        Sends an SSE data: line with OpenAI-compatible error format.
+        """
+        error_body = json.dumps(
+            _error_body(message, "upstream_error", "upstream_error"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        sse_line = b"data: " + error_body + b"\n\n"
+        return self._write_to_client(sse_line, "sending SSE error body", flush=True)
