@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import http.client
-import gzip
 import json
 import ssl
 import time
@@ -127,9 +126,6 @@ class HandlerRoutes:
             stream=bool(prepared.payload.get("stream")),
             authorization=cursor_auth,
         )
-        if len(upstream_body) > 10240:
-            upstream_body = gzip.compress(upstream_body, compresslevel=1)
-            upstream_headers["Content-Encoding"] = "gzip"
         if trace is not None:
             trace.record_upstream_request(
                 url=upstream_url,
