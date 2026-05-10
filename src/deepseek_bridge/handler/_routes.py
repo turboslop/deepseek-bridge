@@ -18,12 +18,14 @@ from ..logging import (
     TerminalSpinner,
     context_status,
     format_count,
+    log_bytes,
     log_context_summary,
     log_cursor_request,
     log_json,
     log_send_summary,
     log_stats_summary,
     message_count,
+    read_response_body,
     summarize_chat_payload,
 )
 from ..transform import prepare_upstream_request
@@ -572,6 +574,12 @@ class HandlerRoutes:
                     elapsed_ms(started),
                 )
                 if headers_sent:
+                    # Read upstream error body for diagnostics
+                    try:
+                        error_body = read_response_body(response)
+                        log_bytes("upstream error body (streaming)", error_body)
+                    except Exception:
+                        pass
                     self._send_sse_error(
                         upstream_status,
                         f"Upstream returned {upstream_status}",
