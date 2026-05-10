@@ -35,7 +35,7 @@ def _default_cache_namespace() -> str:
     return reasoning_cache_namespace(
         ProxyConfig(),
         "deepseek-v4-pro",
-        {"type": "enabled"},
+        {"type": "enabled", "reasoning_effort": "max"},
         "max",
     )
 
@@ -367,14 +367,14 @@ class CrossModeAndModelTests(unittest.TestCase):
         namespace_pro = reasoning_cache_namespace(
             config,
             "deepseek-v4-pro",
-            {"type": "enabled"},
+            {"type": "enabled", "reasoning_effort": "max"},
             "max",
             "Bearer key-a",
         )
         namespace_flash = reasoning_cache_namespace(
             config,
             "deepseek-v4-flash",
-            {"type": "enabled"},
+            {"type": "enabled", "reasoning_effort": "max"},
             "max",
             "Bearer key-a",
         )

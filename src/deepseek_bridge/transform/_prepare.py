@@ -31,14 +31,12 @@ SUPPORTED_REQUEST_FIELDS = {
     "model",
     "messages",
     "stream",
-    "stream_options",
     "max_tokens",
     "response_format",
     "stop",
     "tools",
     "tool_choice",
     "thinking",
-    "reasoning_effort",
     "temperature",
     "top_p",
     "logprobs",
@@ -110,12 +108,6 @@ def prepare_upstream_request(
         prepared["max_tokens"] = payload["max_completion_tokens"]
 
     prepared["model"] = upstream_model
-    if prepared.get("stream"):
-        stream_options = prepared.get("stream_options")
-        if isinstance(stream_options, dict):
-            stream_options = dict(stream_options)
-            stream_options["include_usage"] = True
-            prepared["stream_options"] = stream_options
 
     if "tools" in prepared and isinstance(prepared["tools"], list):
         prepared["tools"] = [normalize_tool(tool) for tool in prepared["tools"]]
@@ -139,7 +131,7 @@ def prepare_upstream_request(
     thinking_enabled = config.thinking == "enabled"
     thinking_disabled = config.thinking == "disabled"
     if thinking_enabled:
-        prepared["reasoning_effort"] = normalize_reasoning_effort(
+        prepared["thinking"]["reasoning_effort"] = normalize_reasoning_effort(
             config.reasoning_effort
         )
 
@@ -147,7 +139,7 @@ def prepare_upstream_request(
         config,
         upstream_model,
         prepared.get("thinking"),
-        prepared.get("reasoning_effort"),
+        prepared.get("thinking", {}).get("reasoning_effort"),
         authorization,
     )
     INTERNAL_LOG.debug(

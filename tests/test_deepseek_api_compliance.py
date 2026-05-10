@@ -82,11 +82,14 @@ class SupportedRequestFieldsTests(unittest.TestCase):
         self.assertIn("tool_choice", SUPPORTED_REQUEST_FIELDS)
 
     def test_contains_reasoning_effort(self) -> None:
-        self.assertIn("reasoning_effort", SUPPORTED_REQUEST_FIELDS)
+        # reasoning_effort is now nested inside "thinking" parameter,
+        # not a top-level field — per DeepSeek REST API spec
+        self.assertNotIn("reasoning_effort", SUPPORTED_REQUEST_FIELDS)
 
     def test_contains_stream_and_options(self) -> None:
         self.assertIn("stream", SUPPORTED_REQUEST_FIELDS)
-        self.assertIn("stream_options", SUPPORTED_REQUEST_FIELDS)
+        self.assertNotIn("stream_options", SUPPORTED_REQUEST_FIELDS,
+                         "stream_options not supported by DeepSeek API")
 
     def test_contains_standard_completions_fields(self) -> None:
         for field in ("temperature", "max_tokens", "top_p", "stop"):
