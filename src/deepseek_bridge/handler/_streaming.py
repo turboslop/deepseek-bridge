@@ -93,13 +93,19 @@ class HandlerStreaming:
         pending_recovery_notice = recovery_notice
         try:
             sse_line_num = 0
+            alive_check_counter = 0
             while True:
-                if not self._check_client_alive():
-                    LOG.debug("handler.disconnect: client disconnected at stage=streaming")
-                    if self.config.debug:
-                        LOG.info("client disconnected, stopping upstream read")
-                    response.release_conn()
-                    return ProxyResponseResult(False, usage)
+                # Check client alive every 10th chunk (reduces syscall overhead;
+                # write-side already detects client disconnect naturally)
+                if alive_check_counter % 10 == 0:
+                    if not self._check_client_alive():
+                        LOG.debug("handler.disconnect: client disconnected at stage=streaming")
+                        if self.config.debug:
+                            LOG.info("client disconnected, stopping upstream read")
+                        response.release_conn()
+                        return ProxyResponseResult(False, usage)
+                alive_check_counter += 1
+
                 try:
                     line = response.readline()
                 except (
@@ -245,6 +251,45 @@ class HandlerStreaming:
                 )
             return prefix + b"data: [DONE]\n\n", True, None, None
 
+        # Fast path: simple content-only chunks (no reasoning, no tool calls).
+        # These skip accumulator ingestion but still need display adapter
+        # processing to close any open thinking blocks and trace usage recording.
+        if b'"reasoning_content"' not in data and b'"tool_calls"' not in data:
+            try:
+                chunk = json.loads(data.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return line, False, recovery_notice, None
+            if isinstance(chunk, dict):
+                if recovery_notice and inject_recovery_notice(
+                    chunk, recovery_notice
+                ):
+                    recovery_notice = None
+                chunk_usage = chunk.get("usage")
+                if trace is not None:
+                    trace.record_usage(chunk_usage)
+                if display_adapter is not None:
+                    display_adapter.rewrite_chunk(chunk)
+                if "model" in chunk:
+                    chunk["model"] = original_model
+                if "system_fingerprint" not in chunk:
+                    chunk["system_fingerprint"] = SYSTEM_FINGERPRINT
+                ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
+                return (
+                    (
+                        b"data: "
+                        + json.dumps(
+                            chunk, ensure_ascii=False, separators=(",", ":")
+                        ).encode("utf-8")
+                        + ending
+                    ),
+                    False,
+                    recovery_notice,
+                    chunk_usage if isinstance(chunk_usage, dict) else None,
+                )
+            return line, False, recovery_notice, None
+
+        # Full path: chunks with reasoning_content or tool_calls need
+        # accumulator ingestion and display adapter processing.
         try:
             chunk = json.loads(data.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):

@@ -69,6 +69,18 @@ class _FakeStreamingResponse:
             return b""
         return self._lines.pop(0)
 
+    def read(self, size: int = -1) -> bytes:
+        """Read up to *size* bytes, returning whole lines to simulate buffered I/O."""
+        if not self._lines:
+            return b""
+        result = b""
+        remaining = size if size > 0 else float("inf")
+        while self._lines and remaining > 0:
+            line = self._lines.pop(0)
+            result += line
+            remaining -= len(line)
+        return result
+
     def release_conn(self) -> None:
         pass
 
@@ -78,6 +90,9 @@ class _FailingStreamingResponse:
     headers = {"Content-Type": "text/event-stream"}
 
     def readline(self) -> bytes:
+        raise OSError("record layer failure")
+
+    def read(self, size: int = -1) -> bytes:
         raise OSError("record layer failure")
 
     def release_conn(self) -> None:

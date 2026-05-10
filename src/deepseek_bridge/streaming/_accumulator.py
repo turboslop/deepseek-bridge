@@ -37,6 +37,7 @@ class StreamAccumulator:
     def __init__(self) -> None:
         self.choices: dict[int, StreamingChoice] = {}
         self._stored_choices: dict[tuple[int, str], str] = {}
+        self._has_new_storeable_data: bool = False
 
     def ingest_chunk(self, chunk: dict[str, Any]) -> None:
         choices = chunk.get("choices")
@@ -74,6 +75,7 @@ class StreamAccumulator:
             reasoning_content = delta.get("reasoning_content")
             if isinstance(reasoning_content, str):
                 choice.has_reasoning_content = True
+                self._has_new_storeable_data = True
                 if len(choice.reasoning_content) < MAX_CONTENT_LENGTH:
                     choice.reasoning_content += reasoning_content
                 elif not getattr(choice, "_reasoning_trimmed", False):
@@ -85,6 +87,7 @@ class StreamAccumulator:
 
             if delta.get("tool_calls"):
                 delta_type = "tool_call"
+                self._has_new_storeable_data = True
 
             INTERNAL_LOG.debug(
                 "streaming.accumulator: chunk[%s], delta_type=%s",
@@ -136,6 +139,8 @@ class StreamAccumulator:
         cache_namespace: str = "",
         prior_messages: list[dict[str, Any]] | None = None,
     ) -> int:
+        if not self._has_new_storeable_data:
+            return 0
         stored = 0
         for index, choice in self.choices.items():
             if choice.finish_reason is not None:
@@ -158,6 +163,8 @@ class StreamAccumulator:
                     cache_namespace,
                     prior_messages,
                 )
+        if stored == 0:
+            self._has_new_storeable_data = False
         return stored
 
     def messages(self) -> list[dict[str, Any]]:
