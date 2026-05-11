@@ -195,21 +195,9 @@ class TuiApp(App[None]):
         h, m = divmod(uptime // 60, 60)
         uptime_s = f"{h:02d}:{m:02d}"
 
-        exe = getattr(server, "executor", None)
-        active = max_workers = queue = 0
-        if exe:
-            try:
-                active = exe.active_threads
-            except Exception:
-                pass
-            try:
-                max_workers = exe.max_workers
-            except Exception:
-                pass
-            try:
-                queue = exe.queue_size
-            except Exception:
-                pass
+        active = getattr(server, "active_threads", 0)
+        max_workers = getattr(server, "max_workers", 0)
+        queue = getattr(server, "queue_size", 0)
 
         store = getattr(server, "reasoning_store", None)
         db_size = "N/A"

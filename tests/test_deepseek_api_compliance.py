@@ -88,8 +88,7 @@ class SupportedRequestFieldsTests(unittest.TestCase):
 
     def test_contains_stream_and_options(self) -> None:
         self.assertIn("stream", SUPPORTED_REQUEST_FIELDS)
-        self.assertNotIn("stream_options", SUPPORTED_REQUEST_FIELDS,
-                         "stream_options not supported by DeepSeek API")
+        self.assertIn("stream_options", SUPPORTED_REQUEST_FIELDS)
 
     def test_contains_standard_completions_fields(self) -> None:
         for field in ("temperature", "max_tokens", "top_p", "stop"):

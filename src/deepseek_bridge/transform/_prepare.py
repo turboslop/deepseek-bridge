@@ -31,6 +31,7 @@ SUPPORTED_REQUEST_FIELDS = {
     "model",
     "messages",
     "stream",
+    "stream_options",
     "max_tokens",
     "response_format",
     "stop",
