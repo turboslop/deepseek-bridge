@@ -269,6 +269,7 @@ class ProxyConfig:
     tunnel: str = "cloudflared"
     cf_url: str = ""  # Cloudflare tunnel public URL
     cfd_tunnel_name: str = "deepseek-bridge"
+    ngrok_url: str = ""  # Fixed ngrok endpoint URL (reserved domains)
     compact: bool = False
     trace_dir: Path | None = None
     log_dir: Path | None = field(default_factory=default_log_dir)
@@ -360,6 +361,7 @@ class ProxyConfig:
             tunnel=as_str(setting_value(settings, "tunnel"), "cloudflared"),
             cf_url=as_str(setting_value(settings, "cf_url"), ""),
             cfd_tunnel_name=as_str(setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"),
+            ngrok_url=as_str(setting_value(settings, "ngrok_url"), ""),
             max_pool_connections=_auto_pool_connections(
                 as_int(
                     setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL

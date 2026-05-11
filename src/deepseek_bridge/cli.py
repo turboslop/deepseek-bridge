@@ -88,6 +88,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Cloudflare tunnel public URL (required for cloudflared tunnel)",
     )
     group_net.add_argument(
+        "--ngrok-url",
+        help="Fixed ngrok endpoint URL for reserved domains/endpoints",
+    )
+    group_net.add_argument(
         "--base-url",
         help=("DeepSeek base URL, default from config or https://api.deepseek.com"),
     )
@@ -293,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["tunnel"] = args.tunnel
     if args.cf_url is not None:
         updates["cf_url"] = args.cf_url
+    if args.ngrok_url is not None:
+        updates["ngrok_url"] = args.ngrok_url
     if args.debug:
         updates["debug"] = True
     if args.compact is not None:
@@ -382,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(tunnel, CloudflaredTunnel):
             tunnel.cfd_url = config.cf_url
             tunnel.cfd_tunnel_name = getattr(config, "cfd_tunnel_name", "deepseek-bridge")
+        if isinstance(tunnel, NgrokTunnel) and config.ngrok_url:
+            tunnel.ngrok_url = config.ngrok_url
         try:
             public_url = tunnel.start()
             # Run health check in background — don't block server startup

@@ -24,6 +24,7 @@ FIELDS = [
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
     ("tunnel", "tunnel", "Tunnel", ["none", "cloudflared", "ngrok"]),
     ("cf_url", "cf_url", "CF URL", None),
+    ("ngrok_url", "ngrok_url", "Ngrok URL", None),
     ("cors", "cors", "CORS", ["true", "false"]),
     ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("compact", "compact", "Compact", ["true", "false"]),

@@ -92,6 +92,7 @@ class NgrokTunnel(TunnelService):
     tunnel_name = "ngrok"
 
     target_url: str
+    ngrok_url: str = ""
     command: str = "ngrok"
     api_url: str = DEFAULT_NGROK_API_URL
     startup_timeout: float = 15.0
@@ -111,8 +112,11 @@ class NgrokTunnel(TunnelService):
             )
 
         self._running = True
+        cmd = [self.command, "http", self.target_url]
+        if self.ngrok_url:
+            cmd.extend(["--url", self.ngrok_url])
         self.process = subprocess.Popen(
-            [self.command, "http", self.target_url],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
