@@ -10,7 +10,7 @@ MAX_CONTENT_LENGTH: int = 500_000
 MAX_TOOL_CALLS: int = 100
 
 
-@dataclass
+@dataclass(slots=True)
 class StreamingChoice:
     role: str = "assistant"
     content: str = ""

@@ -192,6 +192,7 @@ class ReasoningStore:
             self._conn.execute("PRAGMA cache_size = -65536")
             self._conn.execute("PRAGMA mmap_size = 268435456")
             self._conn.execute("PRAGMA temp_store = MEMORY")
+            self._conn.execute("PRAGMA wal_autocheckpoint=4000")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reasoning_cache (

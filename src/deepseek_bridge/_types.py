@@ -21,7 +21,7 @@ def _error_body(
     return {"error": err}
 
 
-@dataclass
+@dataclass(slots=True)
 class ProxyResponseResult:
     sent: bool
     usage: dict[str, Any] | None = None

@@ -107,6 +107,8 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(p)
             for i in range(60):
                 s.put(f"row{i}", "x" * 900000, {"role": "assistant"})
+            # Flush WAL so page_count / st_size reflect all committed data
+            s._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             warn, _ = s.check_bloat()
             self.assertIsNotNone(
                 warn, "Should detect bloat: large DB with few rows (>50MB, <2000 rows)"

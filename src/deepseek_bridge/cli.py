@@ -380,6 +380,14 @@ def main(argv: list[str] | None = None) -> int:
     server.upstream_pool = pool
     server.start_time = time.monotonic()
 
+    # GC tuning: reduce collection frequency during streaming to save CPU.
+    # gc.freeze() excludes all currently-allocated objects from GC scans.
+    # gc.set_threshold(50000, 10, 10) dramatically reduces Gen 2 collections.
+    import gc
+
+    gc.freeze()
+    gc.set_threshold(50000, 10, 10)
+
     tunnel: TunnelService | None = None
     public_url: str | None = None
     if config.tunnel != "none":
