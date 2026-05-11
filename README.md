@@ -116,6 +116,7 @@ collapsible_reasoning: true
 host: 127.0.0.1
 port: 9000
 tunnel: cloudflared
+# ngrok_url: https://my-tunnel.ngrok.app  # optional: fixed ngrok endpoint
 debug: false
 cors: true
 ollama: true
@@ -251,6 +252,7 @@ uv run coverage report
 | `--port` | `9000` | Bind port |
 | `--tunnel` | `cloudflared` | Tunnel service (none, cloudflared, ngrok) |
 | `--cf-url` | none | Cloudflare tunnel public URL |
+| `--ngrok-url` | none | Fixed ngrok endpoint URL |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |

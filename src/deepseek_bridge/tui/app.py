@@ -14,30 +14,24 @@ from textual.widgets import RichLog, Static
 
 
 FIELDS = [
+    ("section", "", "── Model ──", None),
     ("thinking", "thinking", "Thinking", ["enabled", "disabled"]),
-    (
-        "reasoning_effort",
-        "reasoning_effort",
-        "Effort",
-        ["low", "medium", "high", "max", "xhigh"],
-    ),
+    ("reasoning_effort", "reasoning_effort", "Effort", ["low", "medium", "high", "max", "xhigh"]),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
+    ("collapsible_reasoning", "collapsible_reasoning", "Collapsible", ["true", "false"]),
+    ("section", "", "── Network ──", None),
+    ("host", "host", "Host", None),
+    ("port", "port", "Port", None),
     ("tunnel", "tunnel", "Tunnel", ["none", "cloudflared", "ngrok"]),
     ("cf_url", "cf_url", "CF URL", None),
     ("ngrok_url", "ngrok_url", "Ngrok URL", None),
     ("cors", "cors", "CORS", ["true", "false"]),
-    ("ollama", "ollama", "Ollama", ["true", "false"]),
-    ("compact", "compact", "Compact", ["true", "false"]),
+    ("section", "", "── Behavior ──", None),
     ("debug", "debug", "Debug Logs", ["true", "false"]),
-    (
-        "collapsible_reasoning",
-        "collapsible_reasoning",
-        "Collapsible",
-        ["true", "false"],
-    ),
-    ("host", "host", "Host", None),
-    ("port", "port", "Port", None),
+    ("compact", "compact", "Compact", ["true", "false"]),
     ("request_timeout", "request_timeout", "Timeout (s)", None),
+    ("section", "", "── Other ──", None),
+    ("ollama", "ollama", "Ollama", ["true", "false"]),
     ("log_dir", "log_dir", "Log Dir", None),
 ]
 
@@ -249,6 +243,9 @@ class TuiApp(App[None]):
                 "",
             ]
             for i, (_wid, attr, label, choices) in enumerate(FIELDS):
+                if _wid == "section":
+                    lines.append(f"\n  [bold dim]{label}[/]")
+                    continue
                 raw = getattr(config, attr, "")
                 if raw is None:
                     val = ""
@@ -325,13 +322,13 @@ class TuiApp(App[None]):
     def action_cfg_up(self) -> None:
         if self._editing is not None:
             return
-        self._cfg_cursor = (self._cfg_cursor - 1) % len(FIELDS)
+        self._cfg_cursor = self._next_field(self._cfg_cursor, -1)
         self._refresh()
 
     def action_cfg_down(self) -> None:
         if self._editing is not None:
             return
-        self._cfg_cursor = (self._cfg_cursor + 1) % len(FIELDS)
+        self._cfg_cursor = self._next_field(self._cfg_cursor, 1)
         self._refresh()
 
     def action_cfg_left(self) -> None:
@@ -346,6 +343,8 @@ class TuiApp(App[None]):
 
     def _cycle(self, direction: int) -> None:
         _wid, attr, _label, choices = FIELDS[self._cfg_cursor]
+        if _wid == "section":
+            return
         if not choices:
             return
         config = self.server_config
@@ -367,6 +366,8 @@ class TuiApp(App[None]):
 
     def action_cfg_edit(self) -> None:
         _wid, attr, _label, choices = FIELDS[self._cfg_cursor]
+        if _wid == "section":
+            return
         if choices:
             return
         config = self.server_config
@@ -403,6 +404,8 @@ class TuiApp(App[None]):
         try:
             data: dict[str, Any] = {}
             for _wid, attr, _label, _choices in FIELDS:
+                if _wid == "section":
+                    continue
                 val = getattr(config, attr, None)
                 if val is None:
                     continue
@@ -472,6 +475,14 @@ class TuiApp(App[None]):
                 )
         except Exception as exc:
             _tui_logger.warning("config apply failed: %s", exc)
+
+    def _next_field(self, cursor: int, delta: int) -> int:
+        """Find the next non-section field index."""
+        for _ in range(len(FIELDS)):
+            cursor = (cursor + delta) % len(FIELDS)
+            if FIELDS[cursor][0] != "section":
+                return cursor
+        return 0
 
     def on_key(self, event) -> None:
         if self._editing is None:
