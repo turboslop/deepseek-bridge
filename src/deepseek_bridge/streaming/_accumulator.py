@@ -20,14 +20,16 @@ class StreamingChoice:
     finish_reason: str | None = None
     _content_trimmed: bool = False
     _reasoning_trimmed: bool = False
+    _content_parts: list[str] = field(default_factory=list)
+    _reasoning_parts: list[str] = field(default_factory=list)
 
     def to_message(self) -> dict[str, Any]:
         message: dict[str, Any] = {
             "role": self.role,
-            "content": self.content,
+            "content": "".join(self._content_parts),
         }
         if self.has_reasoning_content:
-            message["reasoning_content"] = self.reasoning_content
+            message["reasoning_content"] = "".join(self._reasoning_parts)
         if self.tool_calls:
             message["tool_calls"] = self.tool_calls
         return message
@@ -38,6 +40,7 @@ class StreamAccumulator:
         self.choices: dict[int, StreamingChoice] = {}
         self._stored_choices: dict[tuple[int, str], str] = {}
         self._has_new_storeable_data: bool = False
+        self._pending_store: dict[tuple[int, str], tuple[dict, str, str, list[dict] | None]] = {}
 
     def ingest_chunk(self, chunk: dict[str, Any]) -> None:
         choices = chunk.get("choices")
@@ -63,9 +66,9 @@ class StreamAccumulator:
 
             content = delta.get("content")
             if isinstance(content, str):
-                if len(choice.content) < MAX_CONTENT_LENGTH:
-                    choice.content += content
-                elif not getattr(choice, "_content_trimmed", False):
+                if sum(len(p) for p in choice._content_parts) < MAX_CONTENT_LENGTH:
+                    choice._content_parts.append(content)
+                elif not choice._content_trimmed:
                     INTERNAL_LOG.warning(
                         "streaming content exceeded max length, trimming"
                     )
@@ -76,9 +79,9 @@ class StreamAccumulator:
             if isinstance(reasoning_content, str):
                 choice.has_reasoning_content = True
                 self._has_new_storeable_data = True
-                if len(choice.reasoning_content) < MAX_CONTENT_LENGTH:
-                    choice.reasoning_content += reasoning_content
-                elif not getattr(choice, "_reasoning_trimmed", False):
+                if sum(len(p) for p in choice._reasoning_parts) < MAX_CONTENT_LENGTH:
+                    choice._reasoning_parts.append(reasoning_content)
+                elif not choice._reasoning_trimmed:
                     INTERNAL_LOG.warning(
                         "streaming reasoning_content exceeded max length, trimming"
                     )
@@ -167,6 +170,16 @@ class StreamAccumulator:
             self._has_new_storeable_data = False
         return stored
 
+    def flush_pending_store(self, store: ReasoningStore) -> int:
+        """Flush all buffered reasoning to the store in a single batch."""
+        stored = 0
+        for msg, scope, ns, prior in self._pending_store.values():
+            stored += store.store_assistant_message(msg, scope, ns, prior)
+        self._pending_store.clear()
+        if stored:
+            self._has_new_storeable_data = False
+        return stored
+
     def messages(self) -> list[dict[str, Any]]:
         return [choice.to_message() for _, choice in sorted(self.choices.items())]
 
@@ -238,15 +251,15 @@ class StreamAccumulator:
                 "streaming.accumulator: finish_reason=%s, finalizing",
                 choice.finish_reason,
             )
-        stored = store.store_assistant_message(
+        # Buffer to pending store instead of immediate write
+        self._pending_store[storage_key] = (
             choice.to_message(),
             scope,
             cache_namespace,
             prior_messages,
         )
-        if stored:
-            self._stored_choices[storage_key] = stage
-        return stored
+        self._stored_choices[storage_key] = stage
+        return 1  # choice queued
 
     def _has_identified_tool_calls(self, choice: StreamingChoice) -> bool:
         if not choice.has_reasoning_content or not choice.tool_calls:

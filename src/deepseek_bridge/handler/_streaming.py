@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import orjson
 import time
 from http.client import HTTPException
 from typing import Any
@@ -158,6 +158,14 @@ class HandlerStreaming:
                     return ProxyResponseResult(False, usage)
                 if finalized:
                     break
+        except Exception as exc:
+            LOG.error(
+                "unhandled exception in streaming loop: %s",
+                exc,
+                exc_info=True,
+            )
+            response.release_conn()
+            return ProxyResponseResult(False, usage)
         finally:
             if not finalized:
                 LOG.debug("handler.disconnect: client disconnected at stage=streaming_finalize")
@@ -165,15 +173,11 @@ class HandlerStreaming:
                     log_json(
                         "model streaming assistant messages", accumulator.messages()
                     )
-                stored = sum(
+                for ctx_scope, ctx_messages in response_contexts:
                     accumulator.store_reasoning(
-                        self.reasoning_store,
-                        ctx_scope,
-                        cache_namespace,
-                        prior_messages,
+                        self.reasoning_store, ctx_scope, cache_namespace, ctx_messages,
                     )
-                    for ctx_scope, prior_messages in response_contexts
-                )
+                stored = accumulator.flush_pending_store(self.reasoning_store)
                 if self.config.debug and stored:
                     LOG.info(
                         "stored %s streaming reasoning cache key(s) before exit",
@@ -202,15 +206,11 @@ class HandlerStreaming:
         if data == b"[DONE]":
             if self.config.debug:
                 log_json("model streaming assistant messages", accumulator.messages())
-            stored = sum(
+            for ctx_scope, ctx_messages in response_contexts:
                 accumulator.store_reasoning(
-                    self.reasoning_store,
-                    scope,
-                    cache_namespace,
-                    prior_messages,
+                    self.reasoning_store, ctx_scope, cache_namespace, ctx_messages,
                 )
-                for scope, prior_messages in response_contexts
-            )
+            stored = accumulator.flush_pending_store(self.reasoning_store)
             scope_preview = (response_contexts[0][0] if response_contexts else "")[:16]
             LOG.debug(
                 "handler.sse: stored %s reasoning key(s) for scope=%s...",
@@ -252,47 +252,32 @@ class HandlerStreaming:
             return prefix + b"data: [DONE]\n\n", True, None, None
 
         # Fast path: simple content-only chunks (no reasoning, no tool calls).
-        # These skip accumulator ingestion but still need display adapter
-        # processing to close any open thinking blocks and trace usage recording.
-        if b'"reasoning_content"' not in data and b'"tool_calls"' not in data:
-            try:
-                chunk = json.loads(data.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                return line, False, recovery_notice, None
-            if isinstance(chunk, dict):
-                if recovery_notice and inject_recovery_notice(
-                    chunk, recovery_notice
-                ):
-                    recovery_notice = None
-                chunk_usage = chunk.get("usage")
-                if trace is not None:
-                    trace.record_usage(chunk_usage)
-                if display_adapter is not None:
-                    display_adapter.rewrite_chunk(chunk)
-                if "model" in chunk:
-                    chunk["model"] = original_model
-                if "system_fingerprint" not in chunk:
-                    chunk["system_fingerprint"] = SYSTEM_FINGERPRINT
-                ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
-                return (
-                    (
-                        b"data: "
-                        + json.dumps(
-                            chunk, ensure_ascii=False, separators=(",", ":")
-                        ).encode("utf-8")
-                        + ending
-                    ),
-                    False,
-                    recovery_notice,
-                    chunk_usage if isinstance(chunk_usage, dict) else None,
-                )
-            return line, False, recovery_notice, None
+        # Uses bytes-level replacement instead of full JSON round-trip for
+        # model name substitution and system fingerprint injection, avoiding
+        # orjson load/dump overhead in the common case.
+        if (
+            display_adapter is None or not display_adapter._open_choices
+        ) and b'"reasoning_content"' not in data and b'"tool_calls"' not in data:
+            result = data.replace(
+                b'"model":"deepseek-v4-pro"',
+                f'"model":"{original_model}"'.encode(),
+            )
+            if b'"system_fingerprint"' not in result:
+                insert_point = result.rfind(b"}")
+                if insert_point > 0:
+                    result = (
+                        result[:insert_point]
+                        + f',"system_fingerprint":"{SYSTEM_FINGERPRINT}"'.encode()
+                        + result[insert_point:]
+                    )
+            ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
+            return (b"data: " + result + ending, False, recovery_notice, None)
 
         # Full path: chunks with reasoning_content or tool_calls need
         # accumulator ingestion and display adapter processing.
         try:
-            chunk = json.loads(data.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+            chunk = orjson.loads(data)
+        except orjson.JSONDecodeError:
             return line, False, recovery_notice, None
 
         if isinstance(chunk, dict):
@@ -308,6 +293,7 @@ class HandlerStreaming:
                 )
                 for scope, prior_messages in response_contexts
             )
+            stored += accumulator.flush_pending_store(self.reasoning_store)
             scope_preview = (response_contexts[0][0] if response_contexts else "")[:16]
             LOG.debug(
                 "handler.sse: stored %s reasoning key(s) for scope=%s...",
@@ -329,9 +315,7 @@ class HandlerStreaming:
             return (
                 (
                     b"data: "
-                    + json.dumps(
-                        chunk, ensure_ascii=False, separators=(",", ":")
-                    ).encode("utf-8")
+                    + orjson.dumps(chunk)
                     + ending
                 ),
                 False,

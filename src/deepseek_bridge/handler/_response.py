@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import json
+import orjson
 from http.client import IncompleteRead
 from typing import Any
 
@@ -34,9 +34,7 @@ class HandlerResponse:
         *,
         trace: TraceRequest | None = None,
     ) -> None:
-        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        body = orjson.dumps(payload)
         LOG.debug("handler.response: sending %s, content-length=%s", status, len(body))
         if trace is not None:
             trace.record_cursor_response(
@@ -105,9 +103,9 @@ class HandlerResponse:
             body = read_response_body(response)
         except (TimeoutError, OSError, IncompleteRead, ValueError) as exc2:
             LOG.warning("failed to read upstream error body: %s", exc2)
-            body = json.dumps(
+            body = orjson.dumps(
                 {"error": {"message": "Upstream error, body unreadable"}}
-            ).encode("utf-8")
+            )
         finally:
             with contextlib.suppress(Exception):
                 response.release_conn()
@@ -150,10 +148,8 @@ class HandlerResponse:
         already been sent (so normal HTTP error response is impossible).
         Sends an SSE data: line with OpenAI-compatible error format.
         """
-        error_body = json.dumps(
+        error_body = orjson.dumps(
             _error_body(message, "upstream_error", "upstream_error"),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        )
         sse_line = b"data: " + error_body + b"\n\n"
         return self._write_to_client(sse_line, "sending SSE error body", flush=True)

@@ -343,28 +343,30 @@ class ReasoningStore:
         with self._lock:
             if self._closed:
                 return
-            self._conn.execute(
-                """
-                INSERT INTO reasoning_cache(key, reasoning, message_json, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    reasoning = excluded.reasoning,
-                    message_json = excluded.message_json,
-                    created_at = excluded.created_at
-                """,
-                (key, reasoning, message_json, time.time()),
-            )
-            self._prune_locked()
-            self._conn.commit()
+            try:
+                self._conn.execute(
+                    "INSERT INTO reasoning_cache(key, reasoning, message_json, created_at) "
+                    "VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                    "reasoning = excluded.reasoning, message_json = excluded.message_json, "
+                    "created_at = excluded.created_at",
+                    (key, reasoning, message_json, time.time()),
+                )
+                self._conn.commit()
+            except Exception as exc:
+                LOG.warning("SQLite write failed for key=%s: %s", key[:32], exc)
 
     def get(self, key: str) -> str | None:
         with self._lock:
             if self._closed:
                 return None
-            row = self._conn.execute(
-                "SELECT reasoning FROM reasoning_cache WHERE key = ?",
-                (key,),
-            ).fetchone()
+            try:
+                row = self._conn.execute(
+                    "SELECT reasoning FROM reasoning_cache WHERE key = ?",
+                    (key,),
+                ).fetchone()
+            except Exception as exc:
+                LOG.warning("SQLite read failed for key=%s: %s", key[:32], exc)
+                return None
         if row is None:
             INTERNAL_LOG.debug("store.cache: key=%s..., hit=False", key[:32])
             return None

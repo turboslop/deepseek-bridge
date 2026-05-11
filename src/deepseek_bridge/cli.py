@@ -494,14 +494,16 @@ def main(argv: list[str] | None = None) -> int:
                 _shutdown_requested.set()
     finally:
         if isinstance(server, BoundedThreadPoolHTTPServer):
+            LOG.info("graceful shutdown: stopping new connections...")
+            server.server_close()
+        _shutdown_requested.set()
+        if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: draining active requests...")
-            server.executor.shutdown(wait=False, cancel_futures=True)
+            server.executor.shutdown(wait=True, cancel_futures=False)
         if tunnel is not None:
             tunnel.stop()
         store.prune()
         store.close()
-        if isinstance(server, BoundedThreadPoolHTTPServer):
-            server.server_close()
         LOG.info("graceful shutdown: complete")
     return 0
 

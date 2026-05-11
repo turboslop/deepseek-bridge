@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import ssl
+import threading
 import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -32,6 +33,8 @@ from ..transform import prepare_upstream_request
 if TYPE_CHECKING:
     from ..trace import TraceRequest
     from ..transform._prepare import PreparedRequest
+
+_track_usage_lock = threading.Lock()
 
 
 class HandlerRoutes:
@@ -656,6 +659,9 @@ class HandlerRoutes:
         server.cache_miss_tokens += int(usage.get("prompt_cache_miss_tokens", 0) or 0)
         total = int(usage.get("total_tokens", 0) or 0)
         if total:
-            if model not in server.model_tokens:
-                server.model_tokens[model] = 0
-            server.model_tokens[model] += total
+            # Atomic dict update (int += is GIL-atomic in CPython for simple cases,
+            # but dict access + assignment is not)
+            with _track_usage_lock:
+                if model not in server.model_tokens:
+                    server.model_tokens[model] = 0
+                server.model_tokens[model] += total

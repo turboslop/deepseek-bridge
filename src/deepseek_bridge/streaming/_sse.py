@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-import json
+import orjson
 import time
 from typing import Any
 
@@ -50,11 +50,7 @@ def fold_reasoning_into_content(
 
 
 def sse_data(payload: dict[str, Any]) -> bytes:
-    return (
-        b"data: "
-        + json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        + b"\n\n"
-    )
+    return b"data: " + orjson.dumps(payload) + b"\n\n"
 
 
 def inject_recovery_notice(chunk: dict[str, Any], notice: str) -> bool:

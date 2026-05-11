@@ -29,6 +29,7 @@ dependencies = [
     "PyYAML>=6.0",
     "textual>=8.2.5",
     "urllib3>=2.0",
+    "orjson>=3.10",
 ]
 
 [project.optional-dependencies]

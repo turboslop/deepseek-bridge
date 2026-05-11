@@ -72,6 +72,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         scope = conversation_scope([{"role": "user", "content": "read README"}])
         stored = accumulator.store_reasoning(store, scope)
 
+        accumulator.flush_pending_store(store)
         self.assertGreater(stored, 0)
         self.assertEqual(
             store.get(f"scope:{scope}:tool_call:call_stream"), "Need context."
@@ -110,6 +111,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         scope = conversation_scope([{"role": "user", "content": "lookup"}])
         stored = accumulator.store_finished_reasoning(store, scope)
 
+        accumulator.flush_pending_store(store)
         self.assertGreater(stored, 0)
         self.assertEqual(
             store.get(f"scope:{scope}:tool_call:call_stream"), "Need a tool."
@@ -151,6 +153,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         first_stored = accumulator.store_finished_reasoning(store, first_scope)
         second_stored = accumulator.store_finished_reasoning(store, second_scope)
 
+        accumulator.flush_pending_store(store)
         self.assertGreater(first_stored, 0)
         self.assertGreater(second_stored, 0)
         self.assertEqual(
@@ -203,6 +206,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         scope = conversation_scope([{"role": "user", "content": "lookup"}])
         stored = accumulator.store_ready_reasoning(store, scope)
 
+        accumulator.flush_pending_store(store)
         self.assertGreater(stored, 0)
         self.assertEqual(
             store.get(f"scope:{scope}:tool_call:call_stream"), "Need a tool."
@@ -264,6 +268,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         scope = conversation_scope([{"role": "user", "content": "lookup"}])
         stored = accumulator.store_finished_reasoning(store, scope)
 
+        accumulator.flush_pending_store(store)
         self.assertGreater(stored, 0)
         self.assertEqual(store.get(f"scope:{scope}:tool_call:call_empty"), "")
         self.assertEqual(accumulator.messages()[0]["reasoning_content"], "")
