@@ -539,6 +539,40 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.reasoning_content_path, ":memory:")
 
+    def test_structured_memory_sqlite_path_is_not_resolved_relative_to_config(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "storage:",
+                        "  sqlite:",
+                        '    path: ":memory:"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(config.reasoning_content_path, ":memory:")
+
+    def test_environment_memory_reasoning_path_is_not_resolved_to_cwd(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text("", encoding="utf-8")
+
+            config = ProxyConfig.from_file(
+                config_path=config_path,
+                environ={"DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH": ":memory:"},
+            )
+
+        self.assertEqual(config.reasoning_content_path, ":memory:")
+
     def test_config_path_can_come_from_environment(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "env-config.yaml"

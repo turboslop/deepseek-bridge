@@ -149,6 +149,11 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.reasoning_content_path, Path("/tmp/reasoning.db"))
         self.assertEqual(args.reasoning_cache_max_age_seconds, 3600)
 
+        memory_args = parser.parse_args(
+            ["--reasoning-content-path", ":memory:"]
+        )
+        self.assertEqual(memory_args.reasoning_content_path, Path(":memory:"))
+
     def test_performance_flags(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
 
