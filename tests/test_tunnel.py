@@ -16,8 +16,12 @@ from deepseek_bridge.tunnel import (
 
 class TunnelTests(unittest.TestCase):
     def test_local_tunnel_target_uses_loopback_for_wildcard_hosts(self) -> None:
-        self.assertEqual(local_tunnel_target("0.0.0.0", 9000), "http://127.0.0.1:9000")
-        self.assertEqual(local_tunnel_target("::", 9000), "http://127.0.0.1:9000")
+        self.assertEqual(
+            local_tunnel_target("0.0.0.0", 9000), "http://127.0.0.1:9000"
+        )
+        self.assertEqual(
+            local_tunnel_target("::", 9000), "http://127.0.0.1:9000"
+        )
 
     def test_local_tunnel_target_formats_ipv6_hosts(self) -> None:
         self.assertEqual(local_tunnel_target("::1", 9000), "http://[::1]:9000")
@@ -45,7 +49,9 @@ class TunnelTests(unittest.TestCase):
         self.assertIsNone(parse_ngrok_public_url({"tunnels": []}))
         self.assertIsNone(parse_ngrok_public_url({}))
 
-    def test_ngrok_agent_urls_use_current_api_then_legacy_fallback(self) -> None:
+    def test_ngrok_agent_urls_use_current_api_then_legacy_fallback(
+        self,
+    ) -> None:
         self.assertEqual(
             ngrok_agent_urls("http://127.0.0.1:4040/api"),
             [
@@ -66,10 +72,16 @@ class CloudflaredTunnelStartTests(unittest.TestCase):
         self.assertIn("tunnel URL not configured", str(ctx.exception))
 
     @patch("deepseek_bridge.tunnel.subprocess.Popen")
-    @patch("deepseek_bridge.tunnel.shutil.which", return_value="/usr/bin/cloudflared")
+    @patch(
+        "deepseek_bridge.tunnel.shutil.which",
+        return_value="/usr/bin/cloudflared",
+    )
     @patch("time.sleep", return_value=None)
     def test_cloudflared_start_returns_url(
-        self, mock_sleep: MagicMock, mock_which: MagicMock, mock_popen: MagicMock
+        self,
+        mock_sleep: MagicMock,
+        mock_which: MagicMock,
+        mock_popen: MagicMock,
     ) -> None:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # Process still running
@@ -81,7 +93,9 @@ class CloudflaredTunnelStartTests(unittest.TestCase):
         mock_popen.assert_called_once()
 
     @patch("deepseek_bridge.tunnel.shutil.which", return_value=None)
-    def test_cloudflared_start_requires_binary(self, mock_which: MagicMock) -> None:
+    def test_cloudflared_start_requires_binary(
+        self, mock_which: MagicMock
+    ) -> None:
         tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
         tunnel.cfd_url = "https://app.example.com"
         with self.assertRaises(RuntimeError) as ctx:

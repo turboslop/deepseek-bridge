@@ -13,7 +13,7 @@ from urllib.request import urlopen
 
 from .logging import LOG
 
-_tunnel_registry: dict[str, type["TunnelService"]] = {}
+_tunnel_registry: dict[str, type[TunnelService]] = {}
 """Registry of tunnel implementations, populated via __init_subclass__."""
 
 DEFAULT_NGROK_API_URL = "http://127.0.0.1:4040/api"
@@ -53,7 +53,7 @@ def parse_ngrok_public_url(payload: dict[str, Any]) -> str | None:
 
 def ngrok_agent_urls(api_url: str) -> list[str]:
     normalized = api_url.rstrip("/")
-    if normalized.endswith("/endpoints") or normalized.endswith("/tunnels"):
+    if normalized.endswith(("/endpoints", "/tunnels")):
         return [normalized]
     return [f"{normalized}/endpoints", f"{normalized}/tunnels"]
 
@@ -79,12 +79,12 @@ class TunnelService(ABC):
     @abstractmethod
     def start(self) -> str:
         """Start the tunnel. Returns the public URL."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def stop(self) -> None:
         """Stop the tunnel."""
-        ...
+        raise NotImplementedError
 
 
 @dataclass
@@ -107,7 +107,8 @@ class NgrokTunnel(TunnelService):
     def start(self) -> str:
         if shutil.which(self.command) is None:
             raise RuntimeError(
-                "ngrok is not installed or is not on PATH. Install it, then run "
+                "ngrok is not installed or is not on PATH. Install it, then "
+                "run "
                 "`ngrok config add-authtoken <token>` once."
             )
 
@@ -182,7 +183,7 @@ class NgrokTunnel(TunnelService):
                 public_url = parse_ngrok_public_url(payload)
                 if public_url:
                     return True
-            except (OSError, URLError, json.JSONDecodeError):
+            except OSError, URLError, json.JSONDecodeError:
                 continue
         return False
 
@@ -231,27 +232,30 @@ class CloudflaredTunnel(TunnelService):
       cloudflared tunnel create <name>
       cloudflared tunnel route dns <name> <subdomain>.<domain>
 
-    The tunnel URL must be provided via a config field (e.g., https://app.example.com).
+    The tunnel URL must be provided via config, e.g. https://app.example.com.
     """
 
     tunnel_name = "cloudflared"
     target_url: str = ""
     cfd_url: str = ""  # Public URL configured in Cloudflare dashboard
-    cfd_tunnel_name: str = "deepseek-bridge"  # Name from 'cloudflared tunnel create'
+    cfd_tunnel_name: str = (
+        "deepseek-bridge"  # Name from 'cloudflared tunnel create'
+    )
 
     process: subprocess.Popen[bytes] | None = None
     public_url: str | None = field(default=None, init=False)
 
     def start(self) -> str:
         if not self.cfd_url:
-            raise RuntimeError(
-                "Cloudflare tunnel URL not configured. "
-                "Set a cf_url in config or pass --cf-url."
+            message = (
+                "Cloudflare tunnel URL not configured. Set cf_url or pass "
+                "--cf-url."
             )
+            raise RuntimeError(message)
         if shutil.which("cloudflared") is None:
             raise RuntimeError(
                 "cloudflared is not installed. "
-                "Install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+                "Install it from the Cloudflare tunnel downloads page."
             )
         self.process = subprocess.Popen(
             [
@@ -268,14 +272,14 @@ class CloudflaredTunnel(TunnelService):
             stderr=subprocess.DEVNULL,
         )
         # Give cloudflared time to establish connection
-        import time as _time
-
-        _time.sleep(15)
+        time.sleep(15)
         assert self.process is not None
         if self.process.poll() is not None:
             raise RuntimeError(
-                f"cloudflared exited immediately (code {self.process.returncode}). "
-                f"Check: 'cloudflared tunnel login' and 'cloudflared tunnel list'."
+                "cloudflared exited immediately "
+                f"(code {self.process.returncode}). "
+                "Check: 'cloudflared tunnel login' and "
+                "'cloudflared tunnel list'."
             )
         self.public_url = self.cfd_url
         LOG.info("cloudflare tunnel: %s → %s", self.cfd_url, self.target_url)

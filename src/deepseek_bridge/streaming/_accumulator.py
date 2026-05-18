@@ -8,6 +8,7 @@ from ..reasoning_store import ReasoningStore
 
 MAX_CONTENT_LENGTH: int = 500_000
 MAX_TOOL_CALLS: int = 100
+PendingStoreValue = tuple[dict[str, Any], str, str, list[dict[str, Any]] | None]
 
 
 @dataclass(slots=True)
@@ -40,9 +41,7 @@ class StreamAccumulator:
         self.choices: dict[int, StreamingChoice] = {}
         self._stored_choices: dict[tuple[int, str], str] = {}
         self._has_new_storeable_data: bool = False
-        self._pending_store: dict[
-            tuple[int, str], tuple[dict, str, str, list[dict] | None]
-        ] = {}
+        self._pending_store: dict[tuple[int, str], PendingStoreValue] = {}
 
     def ingest_chunk(self, chunk: dict[str, Any]) -> None:
         choices = chunk.get("choices")
@@ -68,7 +67,10 @@ class StreamAccumulator:
 
             content = delta.get("content")
             if isinstance(content, str):
-                if sum(len(p) for p in choice._content_parts) < MAX_CONTENT_LENGTH:
+                if (
+                    sum(len(p) for p in choice._content_parts)
+                    < MAX_CONTENT_LENGTH
+                ):
                     choice._content_parts.append(content)
                 elif not choice._content_trimmed:
                     INTERNAL_LOG.warning(
@@ -81,11 +83,15 @@ class StreamAccumulator:
             if isinstance(reasoning_content, str):
                 choice.has_reasoning_content = True
                 self._has_new_storeable_data = True
-                if sum(len(p) for p in choice._reasoning_parts) < MAX_CONTENT_LENGTH:
+                if (
+                    sum(len(p) for p in choice._reasoning_parts)
+                    < MAX_CONTENT_LENGTH
+                ):
                     choice._reasoning_parts.append(reasoning_content)
                 elif not choice._reasoning_trimmed:
                     INTERNAL_LOG.warning(
-                        "streaming reasoning_content exceeded max length, trimming"
+                        "streaming reasoning_content exceeded max length, "
+                        "trimming"
                     )
                     choice._reasoning_trimmed = True
                 delta_type = "reasoning"
@@ -112,7 +118,13 @@ class StreamAccumulator:
         stored = 0
         for index, choice in self.choices.items():
             stored += self._store_choice(
-                index, choice, store, scope, "final", cache_namespace, prior_messages
+                index,
+                choice,
+                store,
+                scope,
+                "final",
+                cache_namespace,
+                prior_messages,
             )
         return stored
 
@@ -183,9 +195,13 @@ class StreamAccumulator:
         return stored
 
     def messages(self) -> list[dict[str, Any]]:
-        return [choice.to_message() for _, choice in sorted(self.choices.items())]
+        return [
+            choice.to_message() for _, choice in sorted(self.choices.items())
+        ]
 
-    def _merge_tool_call_deltas(self, choice: StreamingChoice, deltas: Any) -> None:
+    def _merge_tool_call_deltas(
+        self, choice: StreamingChoice, deltas: Any
+    ) -> None:
         if not isinstance(deltas, list):
             return
 
@@ -204,7 +220,10 @@ class StreamAccumulator:
                 continue
             while len(choice.tool_calls) <= index:
                 choice.tool_calls.append(
-                    {"type": "function", "function": {"name": "", "arguments": ""}}
+                    {
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
                 )
 
             tool_call = choice.tool_calls[index]
@@ -222,7 +241,9 @@ class StreamAccumulator:
             function_delta = raw_delta.get("function")
             if not isinstance(function_delta, dict):
                 continue
-            function = tool_call.setdefault("function", {"name": "", "arguments": ""})
+            function = tool_call.setdefault(
+                "function", {"name": "", "arguments": ""}
+            )
             if function_delta.get("name"):
                 function["name"] = str(function_delta["name"])
             if (
@@ -266,9 +287,12 @@ class StreamAccumulator:
     def _has_identified_tool_calls(self, choice: StreamingChoice) -> bool:
         if not choice.has_reasoning_content or not choice.tool_calls:
             return False
-        identified = all(bool(tool_call.get("id")) for tool_call in choice.tool_calls)
+        identified = all(
+            bool(tool_call.get("id")) for tool_call in choice.tool_calls
+        )
         if identified:
             INTERNAL_LOG.debug(
-                "streaming.accumulator: all tool_call IDs identified, caching reasoning"
+                "streaming.accumulator: all tool_call IDs identified, "
+                "caching reasoning"
             )
         return identified

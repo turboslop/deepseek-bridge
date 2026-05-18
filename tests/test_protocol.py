@@ -12,12 +12,12 @@ This file is the ground truth for "does the proxy speak DeepSeek correctly?"
 
 from __future__ import annotations
 
-from copy import deepcopy
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 import time
 import unittest
+from copy import deepcopy
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -88,7 +88,9 @@ def _completion(
         "object": "chat.completion",
         "created": 1,
         "model": "deepseek-v4-pro",
-        "choices": [{"index": 0, "finish_reason": finish_reason, "message": message}],
+        "choices": [
+            {"index": 0, "finish_reason": finish_reason, "message": message}
+        ],
     }
 
 
@@ -107,11 +109,16 @@ class StrictFakeDeepSeek(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
         self.__class__.requests.append(payload)
-        self.__class__.auth_headers.append(self.headers.get("Authorization", ""))
+        self.__class__.auth_headers.append(
+            self.headers.get("Authorization", "")
+        )
 
         messages = payload.get("messages") or []
         for index, message in enumerate(messages):
-            if not isinstance(message, dict) or message.get("role") != "assistant":
+            if (
+                not isinstance(message, dict)
+                or message.get("role") != "assistant"
+            ):
                 continue
             if _is_tool_turn_assistant(messages, index) and not isinstance(
                 message.get("reasoning_content"), str
@@ -183,7 +190,10 @@ class StrictFakeDeepSeek(BaseHTTPRequestHandler):
                     ],
                 ),
             )
-        if last_tool != -1 and messages[last_tool].get("tool_call_id") == CALL_ID_2:
+        if (
+            last_tool != -1
+            and messages[last_tool].get("tool_call_id") == CALL_ID_2
+        ):
             return self._send(
                 200,
                 _completion(
@@ -289,7 +299,10 @@ def _post(
         url,
         data=json.dumps(payload).encode("utf-8"),
         method="POST",
-        headers={"Authorization": authorization, "Content-Type": "application/json"},
+        headers={
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+        },
     )
     try:
         with urlopen(request, timeout=10) as response:
@@ -388,7 +401,11 @@ class CanonicalLoopTests(_StrictUpstreamCase):
                         "content": "2026-04-24",
                     },
                     _drop_reasoning(second),
-                    {"role": "tool", "tool_call_id": CALL_ID_2, "content": "sunny"},
+                    {
+                        "role": "tool",
+                        "tool_call_id": CALL_ID_2,
+                        "content": "sunny",
+                    },
                 ],
                 "tools": TOOLS,
             },
@@ -415,7 +432,11 @@ class CanonicalLoopTests(_StrictUpstreamCase):
                         "content": "2026-04-24",
                     },
                     _drop_reasoning(second),
-                    {"role": "tool", "tool_call_id": CALL_ID_2, "content": "sunny"},
+                    {
+                        "role": "tool",
+                        "tool_call_id": CALL_ID_2,
+                        "content": "sunny",
+                    },
                     _drop_reasoning(third),
                     {"role": "user", "content": "Thanks. What about Saturday?"},
                 ],
@@ -423,7 +444,9 @@ class CanonicalLoopTests(_StrictUpstreamCase):
             },
         )
         self.assertEqual(status, 200, response_2_1)
-        self.assertIn(ANSWER_2, response_2_1["choices"][0]["message"]["content"])
+        self.assertIn(
+            ANSWER_2, response_2_1["choices"][0]["message"]["content"]
+        )
         upstream_2_1 = StrictFakeDeepSeek.requests[3]["messages"]
         self.assertEqual(upstream_2_1[1]["reasoning_content"], THINKING_1_1)
         self.assertEqual(upstream_2_1[3]["reasoning_content"], THINKING_1_2)
@@ -459,7 +482,10 @@ class CanonicalLoopTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -476,7 +502,8 @@ class CanonicalLoopTests(_StrictUpstreamCase):
         self.assertEqual(status, 200)
         sent = StrictFakeDeepSeek.requests[-1]
         leaked = any(
-            m.get("role") == "assistant" and m.get("reasoning_content") == THINKING_1_1
+            m.get("role") == "assistant"
+            and m.get("reasoning_content") == THINKING_1_1
             for m in sent["messages"]
         )
         self.assertFalse(leaked)
@@ -499,7 +526,10 @@ class StrictRejectModeTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -534,7 +564,10 @@ class ThinkingDisabledTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -574,7 +607,10 @@ class RecoveryTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -622,7 +658,10 @@ class RecoveryTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -652,7 +691,10 @@ class RecoveryTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -693,7 +735,10 @@ class RecoveryTests(_StrictUpstreamCase):
                             {
                                 "id": CALL_ID_1,
                                 "type": "function",
-                                "function": {"name": "get_date", "arguments": "{}"},
+                                "function": {
+                                    "name": "get_date",
+                                    "arguments": "{}",
+                                },
                             }
                         ],
                     },
@@ -720,7 +765,7 @@ class RecoveryTests(_StrictUpstreamCase):
 def _sse_chunks(*chunks: dict[str, Any]) -> bytes:
     out = b""
     for chunk in chunks:
-        out += f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+        out += f"data: {json.dumps(chunk)}\n\n".encode()
     out += b"data: [DONE]\n\n"
     return out
 
@@ -779,7 +824,11 @@ class _StreamingThenJsonHandler(BaseHTTPRequestHandler):
                         "created": 1,
                         "model": "deepseek-v4-pro",
                         "choices": [
-                            {"index": 0, "delta": {}, "finish_reason": "tool_calls"}
+                            {
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": "tool_calls",
+                            }
                         ],
                     },
                 )
@@ -791,7 +840,9 @@ class _StreamingThenJsonHandler(BaseHTTPRequestHandler):
         # streamed reasoning_content into history.
         assistant = payload["messages"][1]
         if assistant.get("reasoning_content") != THINKING_1_1:
-            self._send(400, {"error": {"message": "missing streamed reasoning"}})
+            self._send(
+                400, {"error": {"message": "missing streamed reasoning"}}
+            )
             return
         self._send(
             200,
@@ -948,7 +999,9 @@ class _ReasoningStreamHandler(BaseHTTPRequestHandler):
                     "object": "chat.completion.chunk",
                     "created": 1,
                     "model": "deepseek-v4-pro",
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    "choices": [
+                        {"index": 0, "delta": {}, "finish_reason": "stop"}
+                    ],
                 },
             )
         )
@@ -968,7 +1021,9 @@ class StreamingDisplayTests(unittest.TestCase):
         self.upstream.close()
         self.store.close()
 
-    def test_streaming_response_mirrors_reasoning_into_details_block(self) -> None:
+    def test_streaming_response_mirrors_reasoning_into_details_block(
+        self,
+    ) -> None:
         request = Request(
             f"{self.proxy.url}/v1/chat/completions",
             data=json.dumps(
@@ -1011,7 +1066,9 @@ class _StreamingHttpErrorHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         self.rfile.read(length)
-        encoded = json.dumps({"error": {"message": "bad upstream"}}).encode("utf-8")
+        encoded = json.dumps({"error": {"message": "bad upstream"}}).encode(
+            "utf-8"
+        )
         self.send_response(502)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
@@ -1065,7 +1122,9 @@ class StreamingUpstreamErrorTests(unittest.TestCase):
 
         with urlopen(self._streaming_request(), timeout=5) as response:
             self.assertEqual(response.status, 200)
-            self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+            self.assertEqual(
+                response.headers.get_content_type(), "text/event-stream"
+            )
             body = response.read().decode("utf-8")
 
         self.assertTrue(body.startswith("data: "), body)
@@ -1087,7 +1146,9 @@ class StreamingUpstreamErrorTests(unittest.TestCase):
 
         with urlopen(self._streaming_request(), timeout=5) as response:
             self.assertEqual(response.status, 200)
-            self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+            self.assertEqual(
+                response.headers.get_content_type(), "text/event-stream"
+            )
             body = response.read().decode("utf-8")
 
         self.assertTrue(body.startswith("data: "), body)
@@ -1121,7 +1182,10 @@ class NonStreamingDisplayTests(_StrictUpstreamCase):
         content = response["choices"][0]["message"]["content"]
         self.assertEqual(
             content,
-            f"<details>\n<summary>Thinking</summary>\n\n{THINKING_1_1}\n</details>\n\n",
+            (
+                "<details>\n<summary>Thinking</summary>\n\n"
+                f"{THINKING_1_1}\n</details>\n\n"
+            ),
         )
 
 
@@ -1252,7 +1316,9 @@ class ConcurrentThreadTests(unittest.TestCase):
         def first(thread: str) -> dict[str, Any]:
             return {
                 "model": "deepseek-v4-pro",
-                "messages": [{"role": "user", "content": f"Start thread {thread}."}],
+                "messages": [
+                    {"role": "user", "content": f"Start thread {thread}."}
+                ],
                 "tools": tools,
             }
 
@@ -1271,9 +1337,13 @@ class ConcurrentThreadTests(unittest.TestCase):
                 "tools": tools,
             }
 
-        status, first_a = _post(f"{self.proxy.url}/v1/chat/completions", first("A"))
+        status, first_a = _post(
+            f"{self.proxy.url}/v1/chat/completions", first("A")
+        )
         self.assertEqual(status, 200)
-        status, first_b = _post(f"{self.proxy.url}/v1/chat/completions", first("B"))
+        status, first_b = _post(
+            f"{self.proxy.url}/v1/chat/completions", first("B")
+        )
         self.assertEqual(status, 200)
         status, _ = _post(
             f"{self.proxy.url}/v1/chat/completions",
@@ -1354,7 +1424,7 @@ class _SlowToolStreamHandler(BaseHTTPRequestHandler):
                 },
             ]
             for chunk in chunks:
-                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode("utf-8"))
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.flush()
                 if chunk["choices"][0]["finish_reason"] is None:
                     time.sleep(0.2)
@@ -1367,7 +1437,8 @@ class _SlowToolStreamHandler(BaseHTTPRequestHandler):
         messages = payload.get("messages") or []
         if (
             len(messages) >= 2
-            and messages[1].get("reasoning_content") == "Streamed tool reasoning."
+            and messages[1].get("reasoning_content")
+            == "Streamed tool reasoning."
         ):
             self._send(
                 200,
@@ -1453,7 +1524,10 @@ class StreamingCacheTimingTests(unittest.TestCase):
                                 {
                                     "id": "call_stream_tool",
                                     "type": "function",
-                                    "function": {"name": "lookup", "arguments": "{}"},
+                                    "function": {
+                                        "name": "lookup",
+                                        "arguments": "{}",
+                                    },
                                 }
                             ],
                         },

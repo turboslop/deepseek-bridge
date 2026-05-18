@@ -149,18 +149,24 @@ class StreamAccumulatorTests(unittest.TestCase):
         )
 
         first_scope = conversation_scope([{"role": "user", "content": "full"}])
-        second_scope = conversation_scope([{"role": "user", "content": "active"}])
+        second_scope = conversation_scope(
+            [{"role": "user", "content": "active"}]
+        )
         first_stored = accumulator.store_finished_reasoning(store, first_scope)
-        second_stored = accumulator.store_finished_reasoning(store, second_scope)
+        second_stored = accumulator.store_finished_reasoning(
+            store, second_scope
+        )
 
         accumulator.flush_pending_store(store)
         self.assertGreater(first_stored, 0)
         self.assertGreater(second_stored, 0)
         self.assertEqual(
-            store.get(f"scope:{first_scope}:tool_call:call_stream"), "Need a tool."
+            store.get(f"scope:{first_scope}:tool_call:call_stream"),
+            "Need a tool.",
         )
         self.assertEqual(
-            store.get(f"scope:{second_scope}:tool_call:call_stream"), "Need a tool."
+            store.get(f"scope:{second_scope}:tool_call:call_stream"),
+            "Need a tool.",
         )
         store.close()
 
@@ -339,9 +345,13 @@ class CursorReasoningDisplayAdapterTests(unittest.TestCase):
             reasoning_delta["content"],
             "<details>\n<summary>Thinking</summary>\n\nNeed context.",
         )
-        self.assertEqual(answer_delta["content"], "\n</details>\n\nFinal answer.")
+        self.assertEqual(
+            answer_delta["content"], "\n</details>\n\nFinal answer."
+        )
 
-    def test_can_mirror_reasoning_content_into_legacy_think_content(self) -> None:
+    def test_can_mirror_reasoning_content_into_legacy_think_content(
+        self,
+    ) -> None:
         adapter = CursorReasoningDisplayAdapter(collapsible=False)
         reasoning_chunk = {
             "choices": [
@@ -366,7 +376,8 @@ class CursorReasoningDisplayAdapterTests(unittest.TestCase):
         adapter.rewrite_chunk(answer_chunk)
 
         self.assertEqual(
-            reasoning_chunk["choices"][0]["delta"]["content"], "<think>\nNeed context."
+            reasoning_chunk["choices"][0]["delta"]["content"],
+            "<think>\nNeed context.",
         )
         self.assertEqual(
             answer_chunk["choices"][0]["delta"]["content"],
@@ -395,7 +406,10 @@ class CursorReasoningDisplayAdapterTests(unittest.TestCase):
                                 "index": 0,
                                 "id": "call_1",
                                 "type": "function",
-                                "function": {"name": "lookup", "arguments": "{}"},
+                                "function": {
+                                    "name": "lookup",
+                                    "arguments": "{}",
+                                },
                             }
                         ]
                     },
@@ -455,7 +469,10 @@ class FoldReasoningTests(unittest.TestCase):
         fold_reasoning_into_content(payload, collapsible=True)
         self.assertEqual(
             payload["choices"][0]["message"]["content"],
-            "<details>\n<summary>Thinking</summary>\n\nthinking\n</details>\n\nanswer",
+            (
+                "<details>\n<summary>Thinking</summary>\n\n"
+                "thinking\n</details>\n\nanswer"
+            ),
         )
 
     def test_fold_reasoning_skips_empty_reasoning(self) -> None:

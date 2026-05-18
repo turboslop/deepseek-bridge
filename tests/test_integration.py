@@ -16,7 +16,7 @@ def _find_free_port() -> int:
 
 
 class ProxyStartupTests(unittest.TestCase):
-    """Verify the proxy can boot in headless mode and respond to requests."""
+    """Verify the proxy can boot as an HTTP process and respond to requests."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -26,7 +26,6 @@ class ProxyStartupTests(unittest.TestCase):
                 sys.executable,
                 "-m",
                 "deepseek_bridge",
-                "--headless",
                 "--tunnel",
                 "none",
                 "--port",
@@ -37,7 +36,7 @@ class ProxyStartupTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
         )
-        # Wait for proxy to be ready (macOS CI runners can take 30-60s to cold-start uv+Python)
+        # Wait for proxy to be ready. Cold-starting uv+Python can take time.
         timeout_s = 60
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:

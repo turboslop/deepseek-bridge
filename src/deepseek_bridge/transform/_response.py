@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..streaming._sse import SYSTEM_FINGERPRINT, fold_reasoning_into_content
 from ..reasoning_store import ReasoningStore, conversation_scope
+from ..streaming._sse import SYSTEM_FINGERPRINT, fold_reasoning_into_content
 
 
 def record_response_reasoning(
@@ -84,7 +84,9 @@ def rewrite_response_body(
     ).encode("utf-8")
 
 
-def prefix_response_content(response_payload: dict[str, Any], prefix: str) -> bool:
+def prefix_response_content(
+    response_payload: dict[str, Any], prefix: str
+) -> bool:
     choices = response_payload.get("choices")
     if not isinstance(choices, list):
         return False
@@ -95,6 +97,8 @@ def prefix_response_content(response_payload: dict[str, Any], prefix: str) -> bo
         if not isinstance(message, dict):
             continue
         content = message.get("content")
-        message["content"] = prefix + (content if isinstance(content, str) else "")
+        message["content"] = prefix + (
+            content if isinstance(content, str) else ""
+        )
         return True
     return False

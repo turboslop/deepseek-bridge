@@ -7,10 +7,9 @@ import time
 import urllib3
 
 from .. import __version__
-
 from .._types import RequestBodyTooLargeError, _error_body
-from ..config import MODEL_CREATED_TIMESTAMPS
 from ..config import (
+    MODEL_CREATED_TIMESTAMPS,
     OLLAMA_CONTEXT_LENGTH,
     OLLAMA_EMBEDDING_LENGTH,
     OLLAMA_FORMAT,
@@ -44,7 +43,9 @@ class HandlerEndpoints:
             LOG.warning("rejected embeddings request: %s", exc)
             self._send_json(
                 400,
-                _error_body(str(exc), "invalid_request_error", "invalid_request_error"),
+                _error_body(
+                    str(exc), "invalid_request_error", "invalid_request_error"
+                ),
             )
             return
 
@@ -81,7 +82,8 @@ class HandlerEndpoints:
                     self._write_to_client(body, "sending embeddings body")
                 else:
                     LOG.warning(
-                        "embeddings endpoint not supported by upstream status=%s",
+                        "embeddings endpoint not supported by upstream "
+                        "status=%s",
                         response.status,
                     )
                     self._send_json(
@@ -158,33 +160,36 @@ class HandlerEndpoints:
                 ]
             )
         )
-        models = []
-        for model_id in model_ids:
-            models.append(
-                {
-                    "name": model_id,
-                    "model": model_id,
-                    "modified_at": OLLAMA_MODIFIED_AT,
-                    "size": OLLAMA_MODEL_SIZE,
-                    "digest": f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}",
-                    "details": {
-                        "format": OLLAMA_FORMAT,
-                        "family": "deepseek" if "deepseek" in model_id else "custom",
-                        "families": (
-                            ["deepseek"] if "deepseek" in model_id else ["custom"]
-                        ),
-                        "parameter_size": OLLAMA_PARAMETER_SIZE,
-                        "quantization_level": OLLAMA_QUANTIZATION_LEVEL,
-                    },
-                }
-            )
+        models = [
+            {
+                "name": model_id,
+                "model": model_id,
+                "modified_at": OLLAMA_MODIFIED_AT,
+                "size": OLLAMA_MODEL_SIZE,
+                "digest": (
+                    f"sha256:{hashlib.sha256(model_id.encode()).hexdigest()}"
+                ),
+                "details": {
+                    "format": OLLAMA_FORMAT,
+                    "family": (
+                        "deepseek" if "deepseek" in model_id else "custom"
+                    ),
+                    "families": (
+                        ["deepseek"] if "deepseek" in model_id else ["custom"]
+                    ),
+                    "parameter_size": OLLAMA_PARAMETER_SIZE,
+                    "quantization_level": OLLAMA_QUANTIZATION_LEVEL,
+                },
+            }
+            for model_id in model_ids
+        ]
         self._send_json(200, {"models": models})
 
     def _handle_api_show(self) -> None:
         self._request_id = _generate_request_id()
         try:
             payload = self._read_json_body()
-        except (ValueError, RequestBodyTooLargeError):
+        except ValueError, RequestBodyTooLargeError:
             self._send_json(400, {"error": "invalid request"})
             return
         model_name = str(payload.get("model") or self.config.upstream_model)

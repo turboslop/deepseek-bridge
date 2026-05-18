@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from ..logging import LOG
-from ..trace import TraceRequest
+from ..trace import TraceRequest, TraceWriter
 
 
 class HandlerTrace:
     def _start_trace(self, request_path: str) -> TraceRequest | None:
-        writer = self.trace_writer
+        writer = cast(TraceWriter | None, self.trace_writer)
         if writer is None:
             return None
         try:
@@ -35,7 +35,9 @@ class HandlerTrace:
         except OSError as exc:
             LOG.warning("failed to write request trace: %s", exc)
 
-    def _record_request_body_for_trace(self, trace: TraceRequest | None) -> None:
+    def _record_request_body_for_trace(
+        self, trace: TraceRequest | None
+    ) -> None:
         if trace is None:
             return
         try:
@@ -49,7 +51,9 @@ class HandlerTrace:
             )
             return
         if length > self.config.max_request_body_bytes:
-            trace.record_cursor_body_omitted(reason="body_too_large", body_bytes=length)
+            trace.record_cursor_body_omitted(
+                reason="body_too_large", body_bytes=length
+            )
             self.close_connection = True
             return
         try:

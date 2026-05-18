@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import html
-import orjson
 import time
 from typing import Any
+
+import orjson
 
 # ── Fingerprint ───────────────────────────────────────────────
 
@@ -22,9 +23,13 @@ def fold_reasoning_into_content(
     collapsible: bool,
 ) -> None:
     block_start = (
-        COLLAPSIBLE_THINKING_BLOCK_START if collapsible else THINKING_BLOCK_START
+        COLLAPSIBLE_THINKING_BLOCK_START
+        if collapsible
+        else THINKING_BLOCK_START
     )
-    block_end = COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
+    block_end = (
+        COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
+    )
     choices = response_payload.get("choices")
     if not isinstance(choices, list):
         return

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import contextlib
-import orjson
 from http.client import IncompleteRead
 from typing import Any
 
+import orjson
+
 from .._types import _error_body
 from ..logging import (
+    LOG,
     log_bytes,
     read_response_body,
 )
-from ..logging import LOG
 from ..trace import TraceRequest
 
 
@@ -35,7 +36,9 @@ class HandlerResponse:
         trace: TraceRequest | None = None,
     ) -> None:
         body = orjson.dumps(payload)
-        LOG.debug("handler.response: sending %s, content-length=%s", status, len(body))
+        LOG.debug(
+            "handler.response: sending %s, content-length=%s", status, len(body)
+        )
         if trace is not None:
             trace.record_cursor_response(
                 status=status,
@@ -71,7 +74,9 @@ class HandlerResponse:
                 self.send_header("x-request-id", self._request_id)
             self.end_headers()
         except (BrokenPipeError, ConnectionError) as exc:
-            LOG.warning("client disconnected while %s: %s", disconnect_context, exc)
+            LOG.warning(
+                "client disconnected while %s: %s", disconnect_context, exc
+            )
             self.close_connection = True
             return False
         return True
@@ -88,7 +93,9 @@ class HandlerResponse:
             if flush:
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionError) as exc:
-            LOG.warning("client disconnected while %s: %s", disconnect_context, exc)
+            LOG.warning(
+                "client disconnected while %s: %s", disconnect_context, exc
+            )
             self.close_connection = True
             return False
         return True
@@ -112,7 +119,9 @@ class HandlerResponse:
         if self.config.debug:
             log_bytes("upstream error body", body)
         headers = {
-            "Content-Type": response.headers.get("Content-Type", "application/json"),
+            "Content-Type": response.headers.get(
+                "Content-Type", "application/json"
+            ),
             "Content-Length": str(len(body)),
         }
         if trace is not None:
@@ -152,4 +161,6 @@ class HandlerResponse:
             _error_body(message, "upstream_error", "upstream_error"),
         )
         sse_line = b"data: " + error_body + b"\n\n"
-        return self._write_to_client(sse_line, "sending SSE error body", flush=True)
+        return self._write_to_client(
+            sse_line, "sending SSE error body", flush=True
+        )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import logging
 import signal
 import sys
 import threading
@@ -22,21 +21,21 @@ from .config import (
 from .handler import (
     DeepSeekProxyHandler,
 )
-from .server_infrastructure import (
-    BoundedThreadPoolHTTPServer,
-    UpstreamPool,
-)
 from .helpers import (
     _handle_shutdown_signal,
     _shutdown_requested,
 )
 from .logging import LOG, configure_logging
 from .reasoning_store import ReasoningStore
+from .server_infrastructure import (
+    BoundedThreadPoolHTTPServer,
+    UpstreamPool,
+)
 from .trace import TraceWriter
 from .tunnel import (
+    CloudflaredTunnel,
     HealthCheckConfig,
     NgrokTunnel,
-    CloudflaredTunnel,
     TunnelService,
     create_tunnel,
     get_tunnel_choices,
@@ -45,7 +44,9 @@ from .tunnel import (
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the local DeepSeek Bridge proxy")
+    parser = argparse.ArgumentParser(
+        description="Run the local DeepSeek Bridge proxy"
+    )
 
     group_model = parser.add_argument_group("Model")
     group_model.add_argument(
@@ -75,11 +76,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--collapsible-reasoning",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Use Markdown details for mirrored reasoning when display is enabled",
+        help=(
+            "Use Markdown details for mirrored reasoning when display is "
+            "enabled"
+        ),
     )
 
     group_net = parser.add_argument_group("Network")
-    group_net.add_argument("--host", help="Bind host, default from config or 127.0.0.1")
+    group_net.add_argument(
+        "--host", help="Bind host, default from config or 127.0.0.1"
+    )
     group_net.add_argument(
         "--port",
         type=int,
@@ -87,7 +93,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     group_net.add_argument(
         "--tunnel",
-        choices=["none"] + get_tunnel_choices(),
+        choices=["none", *get_tunnel_choices()],
         default="cloudflared",
         help="Tunnel service for public URL exposure (default: cloudflared)",
     )
@@ -101,7 +107,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     group_net.add_argument(
         "--base-url",
-        help=("DeepSeek base URL, default from config or https://api.deepseek.com"),
+        help=(
+            "DeepSeek base URL, default from config or https://api.deepseek.com"
+        ),
     )
     group_net.add_argument(
         "--cors",
@@ -114,7 +122,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_storage.add_argument(
         "--log-dir",
         type=Path,
-        help="Write persistent timestamped log files to this directory (auto-purges old logs, keeps 5)",
+        help=(
+            "Write persistent timestamped log files to this directory "
+            "(auto-purges old logs, keeps 5)"
+        ),
     )
     group_storage.add_argument(
         "--no-log",
@@ -164,7 +175,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_perf.add_argument(
         "--max-thread-pool",
         type=int,
-        help="Maximum thread pool size for request handling, default from config or 20",
+        help=(
+            "Maximum thread pool size for request handling, default from "
+            "config or 20"
+        ),
     )
     group_perf.add_argument(
         "--max-request-body-bytes",
@@ -209,12 +223,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     group_other.add_argument(
-        "--headless",
-        action="store_true",
-        default=False,
-        help="Run without TUI dashboard (for CI/script usage)",
-    )
-    group_other.add_argument(
         "--version",
         action="version",
         version=f"deepseek-bridge {__version__}",
@@ -229,7 +237,9 @@ def warn_if_insecure_upstream(url: str) -> None:
     host = parsed.hostname or ""
     if host in {"127.0.0.1", "localhost", "::1"}:
         return
-    LOG.warning("upstream base_url uses plain HTTP; bearer tokens may be exposed")
+    LOG.warning(
+        "upstream base_url uses plain HTTP; bearer tokens may be exposed"
+    )
 
 
 def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
@@ -244,7 +254,9 @@ def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
             conn = (
                 http.client.HTTPSConnection(host, port=port, timeout=timeout)
                 if parsed.scheme == "https"
-                else http.client.HTTPConnection(host, port=port, timeout=timeout)
+                else http.client.HTTPConnection(
+                    host, port=port, timeout=timeout
+                )
             )
             conn.request("GET", "/v1/health")
             resp = conn.getresponse()
@@ -258,22 +270,28 @@ def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
                     time.sleep(5)
                     continue
                 LOG.warning(
-                    "tunnel health check: HTTP 530 at %s — Cloudflare tunnel not connected. "
-                    "Run 'cloudflared tunnel list' and 'cloudflared tunnel route dns'. "
+                    "tunnel health check: HTTP 530 at %s — Cloudflare tunnel "
+                    "not connected. Run 'cloudflared tunnel list' and "
+                    "'cloudflared tunnel route dns'. "
                     "Body: %s",
                     url,
                     body[:120],
                 )
                 return False
             LOG.warning(
-                "tunnel health check: HTTP %s at %s — %s", resp.status, url, body[:120]
+                "tunnel health check: HTTP %s at %s — %s",
+                resp.status,
+                url,
+                body[:120],
             )
             return False
         except Exception as exc:
             if attempt < 2:
                 time.sleep(5)
                 continue
-            LOG.warning("tunnel health check: failed to reach %s — %s", url, exc)
+            LOG.warning(
+                "tunnel health check: failed to reach %s — %s", url, exc
+            )
             return False
     return False
 
@@ -352,14 +370,6 @@ def main(argv: list[str] | None = None) -> int:
     log_file_path = configure_logging(
         debug=config.debug, log_dir=args.log_dir or config.log_dir
     )
-    if not args.headless:
-        from deepseek_bridge.tui.log_handler import install_pre_mount_handler
-
-        install_pre_mount_handler()
-        root = logging.getLogger()
-        for h in root.handlers[:]:
-            if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr:
-                root.removeHandler(h)
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,
@@ -435,7 +445,9 @@ def main(argv: list[str] | None = None) -> int:
     server.public_url = public_url
     local_base_url = f"http://{config.host}:{config.port}/v1"
     api_base_url = (
-        f"{public_url.rstrip('/')}/v1" if public_url is not None else local_base_url
+        f"{public_url.rstrip('/')}/v1"
+        if public_url is not None
+        else local_base_url
     )
 
     # ── Startup Banner ──────────────────────────────────────────
@@ -453,10 +465,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     display_reasoning = "off"
     if config.display_reasoning:
-        display_reasoning = "on (collapsible)" if config.collapsible_reasoning else "on"
+        display_reasoning = (
+            "on (collapsible)" if config.collapsible_reasoning else "on"
+        )
     LOG.info("  Display reasoning: %s", display_reasoning)
     if config.debug:
-        LOG.info("  Missing reasoning strategy: %s", config.missing_reasoning_strategy)
+        LOG.info(
+            "  Missing reasoning strategy: %s",
+            config.missing_reasoning_strategy,
+        )
     LOG.info("")
     LOG.info("Network")
     LOG.info("  Local:     %s", local_base_url)
@@ -478,7 +495,9 @@ def main(argv: list[str] | None = None) -> int:
         LOG.warning("debug mode: request/response logging enabled")
     if trace_writer is not None:
         LOG.info("Trace dir: %s", trace_writer.session_dir)
-        LOG.warning("trace logging enabled; prompts and code will be written to disk")
+        LOG.warning(
+            "trace logging enabled; prompts and code will be written to disk"
+        )
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     with contextlib.suppress(ValueError):
         signal.signal(signal.SIGINT, _handle_shutdown_signal)
@@ -486,36 +505,11 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     try:
-        use_tui = not args.headless
-        if use_tui:
-            try:
-                from .tui import TuiApp  # noqa: PLC0415
-            except ImportError:
-                LOG.info(
-                    "textual not available; running in headless mode. Run: uv pip install textual"
-                )
-                use_tui = False
-
-        if use_tui:
-            server_thread = threading.Thread(
-                target=_run_server,
-                args=(server,),
-                daemon=True,
-            )
-            server_thread.start()
-            try:
-                app = TuiApp(server_config=config, server=server)
-                app.run()
-            except KeyboardInterrupt:
-                pass  # Expected on Ctrl+C in TUI mode; cleanup handled by finally
+        try:
+            _run_server(server)
+        except KeyboardInterrupt:
+            LOG.info("received SIGINT, initiating graceful shutdown")
             _shutdown_requested.set()
-            server_thread.join(timeout=5)
-        else:
-            try:
-                _run_server(server)
-            except KeyboardInterrupt:
-                LOG.info("received SIGINT, initiating graceful shutdown")
-                _shutdown_requested.set()
     finally:
         if isinstance(server, BoundedThreadPoolHTTPServer):
             LOG.info("graceful shutdown: stopping new connections...")

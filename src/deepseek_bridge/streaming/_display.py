@@ -4,6 +4,7 @@ import html
 import time
 from typing import Any
 
+from ..logging import INTERNAL_LOG
 from ._sse import (
     COLLAPSIBLE_THINKING_BLOCK_END,
     COLLAPSIBLE_THINKING_BLOCK_START,
@@ -11,7 +12,6 @@ from ._sse import (
     THINKING_BLOCK_END,
     THINKING_BLOCK_START,
 )
-from ..logging import INTERNAL_LOG
 
 
 class CursorReasoningDisplayAdapter:
@@ -19,10 +19,14 @@ class CursorReasoningDisplayAdapter:
         self._open_choices: set[int] = set()
         self._last_chunk_metadata: dict[str, Any] = {}
         self._block_start = (
-            COLLAPSIBLE_THINKING_BLOCK_START if collapsible else THINKING_BLOCK_START
+            COLLAPSIBLE_THINKING_BLOCK_START
+            if collapsible
+            else THINKING_BLOCK_START
         )
         self._block_end = (
-            COLLAPSIBLE_THINKING_BLOCK_END if collapsible else THINKING_BLOCK_END
+            COLLAPSIBLE_THINKING_BLOCK_END
+            if collapsible
+            else THINKING_BLOCK_END
         )
 
     def rewrite_chunk(self, chunk: dict[str, Any]) -> None:
@@ -45,7 +49,8 @@ class CursorReasoningDisplayAdapter:
             if isinstance(reasoning_content, str) and reasoning_content:
                 if index not in self._open_choices:
                     INTERNAL_LOG.debug(
-                        "streaming.display: opened thinking block for choice[%s]",
+                        "streaming.display: opened thinking block for "
+                        "choice[%s]",
                         index,
                     )
                     mirrored_parts.append(self._block_start)
@@ -87,9 +92,15 @@ class CursorReasoningDisplayAdapter:
         self._open_choices.clear()
 
         chunk: dict[str, Any] = {
-            "id": self._last_chunk_metadata.get("id", "chatcmpl-reasoning-close"),
-            "object": self._last_chunk_metadata.get("object", "chat.completion.chunk"),
-            "created": self._last_chunk_metadata.get("created", int(time.time())),
+            "id": self._last_chunk_metadata.get(
+                "id", "chatcmpl-reasoning-close"
+            ),
+            "object": self._last_chunk_metadata.get(
+                "object", "chat.completion.chunk"
+            ),
+            "created": self._last_chunk_metadata.get(
+                "created", int(time.time())
+            ),
             "model": model,
             "system_fingerprint": SYSTEM_FINGERPRINT,
             "choices": choices,
@@ -98,7 +109,9 @@ class CursorReasoningDisplayAdapter:
 
     def _remember_chunk_metadata(self, chunk: dict[str, Any]) -> None:
         metadata = {
-            key: chunk[key] for key in ("id", "object", "created") if key in chunk
+            key: chunk[key]
+            for key in ("id", "object", "created")
+            if key in chunk
         }
         if metadata:
             self._last_chunk_metadata.update(metadata)

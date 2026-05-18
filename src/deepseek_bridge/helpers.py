@@ -15,7 +15,9 @@ def _generate_request_id() -> str:
 _shutdown_requested = threading.Event()
 
 
-def _handle_shutdown_signal(signum: int, frame: types.FrameType | None) -> None:
+def _handle_shutdown_signal(
+    signum: int, _frame: types.FrameType | None
+) -> None:
     LOG.info("received signal %s, initiating graceful shutdown", signum)
     _shutdown_requested.set()
 

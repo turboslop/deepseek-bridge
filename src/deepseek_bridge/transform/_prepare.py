@@ -81,13 +81,16 @@ def prepare_upstream_request(
     upstream_model = upstream_model_for(original_model, config)
     messages_raw = payload.get("messages")
     INTERNAL_LOG.debug(
-        "transform.prepare: starting request normalization, model=%s, messages=%s",
+        "transform.prepare: starting request normalization, model=%s, "
+        "messages=%s",
         upstream_model,
         len(messages_raw) if isinstance(messages_raw, list) else 0,
     )
 
     prepared = {
-        key: value for key, value in payload.items() if key in SUPPORTED_REQUEST_FIELDS
+        key: value
+        for key, value in payload.items()
+        if key in SUPPORTED_REQUEST_FIELDS
     }
     DEPRECATED_PARAMS = {"frequency_penalty", "presence_penalty"}
     dropped_fields = sorted(
@@ -99,7 +102,8 @@ def prepare_upstream_request(
     )
     if dropped_fields:
         LOG.warning(
-            "dropping unsupported request field(s): %s", ", ".join(dropped_fields)
+            "dropping unsupported request field(s): %s",
+            ", ".join(dropped_fields),
         )
     for key in DEPRECATED_PARAMS:
         if key in payload:
@@ -113,7 +117,8 @@ def prepare_upstream_request(
         prepared["tools"] = [normalize_tool(tool) for tool in prepared["tools"]]
     elif isinstance(payload.get("functions"), list):
         prepared["tools"] = [
-            legacy_function_to_tool(function) for function in payload["functions"]
+            legacy_function_to_tool(function)
+            for function in payload["functions"]
         ]
 
     if "tool_choice" in prepared:
@@ -175,7 +180,8 @@ def prepare_upstream_request(
         )
     )
     INTERNAL_LOG.debug(
-        "transform.prepare: cache lookup found %s patched messages, %s still missing",
+        "transform.prepare: cache lookup found %s patched messages, "
+        "%s still missing",
         patched_count,
         len(missing_indexes),
     )
@@ -186,8 +192,12 @@ def prepare_upstream_request(
     ):
         boundary = active_messages_from_recovery_boundary(pre_repair_messages)
         if boundary is not None:
-            INTERNAL_LOG.debug("transform.prepare: recovery boundary check - found")
-            messages_for_repair, retired_prefix_messages, boundary_step = boundary
+            INTERNAL_LOG.debug(
+                "transform.prepare: recovery boundary check - found"
+            )
+            messages_for_repair, retired_prefix_messages, boundary_step = (
+                boundary
+            )
             continued_recovery_boundary = True
             recovery_steps.append(boundary_step)
             messages, patched_count, missing_indexes, reasoning_diagnostics = (
@@ -200,7 +210,9 @@ def prepare_upstream_request(
                 )
             )
         else:
-            INTERNAL_LOG.debug("transform.prepare: recovery boundary check - not found")
+            INTERNAL_LOG.debug(
+                "transform.prepare: recovery boundary check - not found"
+            )
     while missing_indexes and config.missing_reasoning_strategy == "recover":
         recovered_messages, dropped_messages, notice, recovery_step = (
             recover_messages_from_missing_reasoning(messages, missing_indexes)

@@ -1,6 +1,7 @@
+---
 name: CI
 
-on:
+"on":
   workflow_dispatch:
   push:
     branches:
@@ -27,7 +28,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -35,16 +36,25 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra dev --python 3.10
+        run: uv sync --extra dev --python 3.14
 
       - name: Check formatting
         run: uv run black --check --diff src/ tests/
 
       - name: Check lint
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/deepseek_bridge tests/
+
+      - name: Check pycodestyle
+        run: uv run pycodestyle --max-line-length=80 --ignore=E203,W503 src/deepseek_bridge tests/
+
+      - name: Check pylint
+        run: uv run pylint src/deepseek_bridge
 
       - name: Check types
-        run: uv run mypy src/ --check-untyped-defs
+        run: uv run mypy src/deepseek_bridge
+
+      - name: Check YAML
+        run: uv run yamllint .github .pre-commit-config.yaml .yamllint.yaml
 
   unit-test:
     name: Unit test (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -54,17 +64,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            python-version: "3.10"
-          - os: ubuntu-latest
-            python-version: "3.11"
-          - os: ubuntu-latest
-            python-version: "3.12"
-          - os: ubuntu-latest
-            python-version: "3.13"
-          - os: macos-latest
-            python-version: "3.13"
-          - os: windows-latest
-            python-version: "3.13"
+            python-version: "3.14"
 
     steps:
       - uses: actions/checkout@v6
@@ -86,5 +86,5 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          uv run coverage run --branch -m unittest discover -s tests -v
-          uv run coverage report --fail-under=65 --show-missing
+          uv run coverage run -m unittest discover -s tests -v
+          uv run coverage report

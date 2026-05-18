@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 import os
 import threading
 import unittest
+from copy import deepcopy
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -60,7 +60,7 @@ class ProxyFixture:
         host, port = self.server.server_address
         return f"http://{host}:{port}/v1/chat/completions"
 
-    def start(self) -> "ProxyFixture":
+    def start(self) -> ProxyFixture:
         self.thread.start()
         return self
 
@@ -118,7 +118,9 @@ class LiveDeepSeekProxyTests(unittest.TestCase):
                 api_key=api_key,
             )
             self.assertEqual(direct_status, 400)
-            self.assertIn("reasoning_content", direct_response["error"]["message"])
+            self.assertIn(
+                "reasoning_content", direct_response["error"]["message"]
+            )
 
             proxy_status, second_response = post_json(
                 proxy.url,
@@ -128,7 +130,8 @@ class LiveDeepSeekProxyTests(unittest.TestCase):
             self.assertEqual(proxy_status, 200, second_response.get("error"))
             final_assistant = second_response["choices"][0]["message"]
             self.assertTrue(
-                final_assistant.get("content") or final_assistant.get("tool_calls")
+                final_assistant.get("content")
+                or final_assistant.get("tool_calls")
             )
 
             if final_assistant.get("content"):
@@ -152,7 +155,9 @@ class LiveDeepSeekProxyTests(unittest.TestCase):
                     followup_payload,
                     api_key=api_key,
                 )
-                self.assertEqual(followup_status, 200, followup_response.get("error"))
+                self.assertEqual(
+                    followup_status, 200, followup_response.get("error")
+                )
         finally:
             proxy.close()
 
@@ -163,7 +168,10 @@ def first_request() -> dict:
         "messages": [
             {
                 "role": "user",
-                "content": "Use the get_date tool exactly once, then tell me the date it returns.",
+                "content": (
+                    "Use the get_date tool exactly once, then tell me the "
+                    "date it returns."
+                ),
             }
         ],
         "tools": [

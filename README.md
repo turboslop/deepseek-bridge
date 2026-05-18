@@ -42,17 +42,6 @@ DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mod
 - Persistent log files with `--log-dir`.
 - Heartbeat and pool utilization counters.
 - Full structured request traces with `--trace-dir`.
-- Terminal UI dashboard with real-time metrics, config editing, and log viewing.
-
-## TUI Dashboard
-
-Starting with v0.2.0, DeepSeek Bridge opens a Terminal UI dashboard by default. The dashboard provides live monitoring and configuration:
-
-- **Dashboard tab** — Real-time request metrics, uptime, tunnel status, and pool utilization.
-- **Config tab** — Edit proxy settings (model, network, storage) without restarting.
-- **Logs tab** — Streaming log viewer with auto-scroll.
-
-Use `--headless` to disable the TUI and run in classic CLI mode.
 
 ## Why This Exists
 
@@ -75,11 +64,8 @@ uv run deepseek-bridge
 ### Usage
 
 ```bash
-# Full TUI dashboard (default)
+# Run the HTTP proxy
 deepseek-bridge
-
-# Headless mode — no TUI, classic CLI output
-deepseek-bridge --headless
 
 # Run without tunnel (localhost only)
 deepseek-bridge --tunnel none --port 9000
@@ -159,7 +145,7 @@ tunnel: cloudflared
 cf_url: https://app.example.com
 ```
 
-Use `--tunnel cloudflared` on the CLI, or select `cloudflared` in the TUI dashboard.
+Use `--tunnel cloudflared` on the CLI.
 
 ### GitHub Copilot
 
@@ -225,24 +211,23 @@ Cursor's native reasoning UI is available only for Cursor's own models. For cust
 
 ```bash
 # Run tests
-uv run python -m unittest discover -s tests
+uv run --extra dev --python 3.14 python -m unittest discover -s tests
 
-# Format and lint
-uv run pre-commit run --all-files
+# Format, lint, type-check, and YAML-check
+uv run --extra dev --python 3.14 pre-commit run --all-files
 
-# Type check
-uv run mypy src/ --check-untyped-defs
+# Strict type check for production code
+uv run --extra dev --python 3.14 mypy src/deepseek_bridge
 
-# Run with coverage
-uv run coverage run -m unittest discover -s tests
-uv run coverage report
+# Run with coverage gate
+uv run --extra dev --python 3.14 coverage run -m unittest discover -s tests
+uv run --extra dev --python 3.14 coverage report
 ```
 
 ## CLI Reference
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--headless` | off | Run without TUI |
 | `--model` | `deepseek-v4-pro` | Fallback model when request omits it |
 | `--thinking` | `enabled` | DeepSeek thinking mode |
 | `--reasoning-effort` | `max` | Reasoning effort level |

@@ -25,7 +25,9 @@ from deepseek_bridge.streaming._sse import SYSTEM_FINGERPRINT, sse_data
 ORIGINAL_MODEL = "deepseek-chat"
 SCOPE = conversation_scope([{"role": "user", "content": "hello"}])
 PRIOR_MESSAGES: list[dict[str, Any]] = [{"role": "user", "content": "hello"}]
-RESPONSE_CONTEXTS: list[tuple[str, list[dict[str, Any]]]] = [(SCOPE, PRIOR_MESSAGES)]
+RESPONSE_CONTEXTS: list[tuple[str, list[dict[str, Any]]]] = [
+    (SCOPE, PRIOR_MESSAGES)
+]
 
 NUM_ITERATIONS = 5
 BASELINE_PATH = Path(".sisyphus/evidence/baseline-sse-perf.txt")
@@ -53,14 +55,19 @@ def _chunk(
 def generate_synthetic_lines() -> list[bytes]:
     lines: list[bytes] = []
 
-    for i in range(699):
-        lines.append(sse_data(_chunk({"content": f"word_{i} "})))
+    lines.extend(
+        sse_data(_chunk({"content": f"word_{i} "})) for i in range(699)
+    )
     lines.append(sse_data(_chunk({"content": "final "}, finish_reason="stop")))
     lines.append(b"data: [DONE]\n\n")
 
-    for i in range(199):
-        lines.append(sse_data(_chunk({"reasoning_content": f"thinking_{i} "})))
-    lines.append(sse_data(_chunk({"reasoning_content": "done "}, finish_reason="stop")))
+    lines.extend(
+        sse_data(_chunk({"reasoning_content": f"thinking_{i} "}))
+        for i in range(199)
+    )
+    lines.append(
+        sse_data(_chunk({"reasoning_content": "done "}, finish_reason="stop"))
+    )
     lines.append(b"data: [DONE]\n\n")
 
     lines.append(
@@ -79,18 +86,23 @@ def generate_synthetic_lines() -> list[bytes]:
             )
         )
     )
-    for i in range(98):
-        lines.append(
+    lines.extend(
+        (
             sse_data(
                 _chunk(
                     {
                         "tool_calls": [
-                            {"index": 0, "function": {"arguments": f'"arg_{i}"'}}
+                            {
+                                "index": 0,
+                                "function": {"arguments": f'"arg_{i}"'},
+                            }
                         ],
                     }
                 )
             )
         )
+        for i in range(98)
+    )
     lines.append(sse_data(_chunk(delta={}, finish_reason="tool_calls")))
     lines.append(b"data: [DONE]\n\n")
 
@@ -115,7 +127,9 @@ def process_all_lines(
         data_part = stripped[len(b"data:") :].strip()
         if data_part == b"[DONE]":
             for scope, prior_messages in response_contexts:
-                accumulator.store_reasoning(reasoning_store, scope, "", prior_messages)
+                accumulator.store_reasoning(
+                    reasoning_store, scope, "", prior_messages
+                )
             if display_adapter is not None:
                 display_adapter.flush_chunk(original_model)
             outputs.append(b"data: [DONE]\n\n")
@@ -123,7 +137,7 @@ def process_all_lines(
 
         try:
             chunk: Any = json.loads(data_part.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             outputs.append(line)
             continue
 
@@ -147,9 +161,9 @@ def process_all_lines(
         ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
         outputs.append(
             b"data: "
-            + json.dumps(chunk, ensure_ascii=False, separators=(",", ":")).encode(
-                "utf-8"
-            )
+            + json.dumps(
+                chunk, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
             + ending
         )
 

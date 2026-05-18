@@ -16,7 +16,10 @@ from ..reasoning_store import (
     message_signature,
     tool_call_ids,
 )
-from ._cache import assistant_needs_reasoning_for_tool_context, reasoning_lookup_keys
+from ._cache import (
+    assistant_needs_reasoning_for_tool_context,
+    reasoning_lookup_keys,
+)
 
 
 def normalize_message(
@@ -29,7 +32,9 @@ def normalize_message(
 ) -> tuple[dict[str, Any], bool, bool, dict[str, Any] | None]:
     if not isinstance(message, dict):
         message = {"role": "user", "content": str(message)}
-    normalized = {key: value for key, value in message.items() if key in MESSAGE_FIELDS}
+    normalized = {
+        key: value for key, value in message.items() if key in MESSAGE_FIELDS
+    }
     role = normalized.get("role") or "user"
     normalized["role"] = role
 
@@ -37,9 +42,15 @@ def normalize_message(
         normalized["role"] = "tool"
 
     if "content" in normalized:
-        normalized["content"] = extract_text_content(normalized["content"]) or ""
-    if normalized["role"] == "assistant" and isinstance(normalized.get("content"), str):
-        normalized["content"] = strip_cursor_thinking_blocks(normalized["content"])
+        normalized["content"] = (
+            extract_text_content(normalized["content"]) or ""
+        )
+    if normalized["role"] == "assistant" and isinstance(
+        normalized.get("content"), str
+    ):
+        normalized["content"] = strip_cursor_thinking_blocks(
+            normalized["content"]
+        )
 
     if normalized.get("tool_calls"):
         normalized["tool_calls"] = [
@@ -60,7 +71,9 @@ def normalize_message(
                 needs_reasoning = assistant_needs_reasoning_for_tool_context(
                     normalized, prior_messages
                 )
-                lookup_scope = conversation_scope(prior_messages, cache_namespace)
+                lookup_scope = conversation_scope(
+                    prior_messages, cache_namespace
+                )
                 lookup_keys = (
                     reasoning_lookup_keys(
                         normalized,
@@ -104,7 +117,9 @@ def normalize_message(
                         "lookup_keys": lookup_keys,
                         "hit_kind": hit_kind,
                     }
-            elif assistant_needs_reasoning_for_tool_context(normalized, prior_messages):
+            elif assistant_needs_reasoning_for_tool_context(
+                normalized, prior_messages
+            ):
                 diagnostic = {
                     "message_index": len(prior_messages),
                     "role": "assistant",
@@ -112,14 +127,18 @@ def normalize_message(
                     "had_reasoning_content": True,
                     "patched": False,
                     "missing": False,
-                    "lookup_scope": conversation_scope(prior_messages, cache_namespace),
+                    "lookup_scope": conversation_scope(
+                        prior_messages, cache_namespace
+                    ),
                     "message_signature": message_signature(normalized),
                     "tool_call_ids": tool_call_ids(normalized),
                     "lookup_keys": [],
                     "hit_kind": "request",
                 }
 
-    allowed_fields = ROLE_MESSAGE_FIELDS.get(str(normalized["role"]), MESSAGE_FIELDS)
+    allowed_fields = ROLE_MESSAGE_FIELDS.get(
+        str(normalized["role"]), MESSAGE_FIELDS
+    )
     normalized = {
         key: value for key, value in normalized.items() if key in allowed_fields
     }
@@ -159,7 +178,8 @@ def normalize_messages(
         if missing:
             missing_indexes.append(len(normalized_messages) - 1)
             INTERNAL_LOG.debug(
-                "transform.normalize: message[%s] %s - MISSING reasoning_content",
+                "transform.normalize: message[%s] %s - MISSING "
+                "reasoning_content",
                 idx,
                 normalized["role"],
             )

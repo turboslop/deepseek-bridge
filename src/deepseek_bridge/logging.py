@@ -9,7 +9,7 @@ import threading
 import types
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .config import ProxyConfig
 
@@ -35,7 +35,9 @@ class ConsoleLogFormatter(stdlib_logging.Formatter):
     def __init__(self) -> None:
         super().__init__()
         self._info_formatter = stdlib_logging.Formatter(DEFAULT_INFO_LOG_FORMAT)
-        self._warning_formatter = stdlib_logging.Formatter(DEFAULT_WARNING_LOG_FORMAT)
+        self._warning_formatter = stdlib_logging.Formatter(
+            DEFAULT_WARNING_LOG_FORMAT
+        )
 
     def format(self, record: stdlib_logging.LogRecord) -> str:
         if record.levelno <= stdlib_logging.INFO:
@@ -43,7 +45,9 @@ class ConsoleLogFormatter(stdlib_logging.Formatter):
         return self._warning_formatter.format(record)
 
 
-def _purge_old_logs(log_dir: Path, prefix: str = "proxy", keep: int = 5) -> None:
+def _purge_old_logs(
+    log_dir: Path, prefix: str = "proxy", keep: int = 5
+) -> None:
     """Remove old log files, keeping the most recent *keep* files."""
     log_files = sorted(
         log_dir.glob(f"{prefix}-*.log"),
@@ -72,7 +76,9 @@ def configure_logging(
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         log_file = log_path / f"proxy-{timestamp}.log"
         log_file_path = str(log_file)
-        file_handler = stdlib_logging.FileHandler(log_file_path, encoding="utf-8")
+        file_handler = stdlib_logging.FileHandler(
+            log_file_path, encoding="utf-8"
+        )
         file_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
         handlers.append(file_handler)
         if debug:
@@ -81,7 +87,9 @@ def configure_logging(
             debug_handler = stdlib_logging.FileHandler(
                 str(debug_file), encoding="utf-8"
             )
-            debug_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
+            debug_handler.setFormatter(
+                stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
+            )
             INTERNAL_LOG.addHandler(debug_handler)
             INTERNAL_LOG.propagate = False
     level = stdlib_logging.DEBUG if debug else stdlib_logging.INFO
@@ -103,9 +111,7 @@ def configure_logging(
             exc_info=(exc_type, exc_value, exc_traceback),
         )
 
-    import sys as _sys
-
-    _sys.excepthook = _log_unhandled_exception
+    sys.excepthook = _log_unhandled_exception
     LOG.info("error logging: enabled")
     return log_file_path
 
@@ -124,7 +130,9 @@ class TerminalSpinner:
         interval: float = 0.12,
     ) -> None:
         self.stream = stream if stream is not None else sys.stderr
-        self.enabled = enabled and bool(getattr(self.stream, "isatty", lambda: False)())
+        self.enabled = enabled and bool(
+            getattr(self.stream, "isatty", lambda: False)()
+        )
         self.text = text
         self.interval = interval
         self._stop = threading.Event()
@@ -215,7 +223,9 @@ def _truncate_message_content(payload: Any, max_len: int = 200) -> Any:
                     fn2 = dict(fn)
                     desc = fn2.get("description", "")
                     if isinstance(desc, str) and len(desc) > max_len:
-                        fn2["description"] = desc[:max_len] + f"... [{len(desc)} chars]"
+                        fn2["description"] = (
+                            desc[:max_len] + f"... [{len(desc)} chars]"
+                        )
                     params = fn2.get("parameters", {})
                     if isinstance(params, dict) and isinstance(
                         params.get("properties"), dict
@@ -251,7 +261,7 @@ def log_json(label: str, payload: Any) -> None:
 def log_bytes(label: str, body: bytes) -> None:
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         LOG.info("%s:\n%s", label, body.decode("utf-8", errors="replace"))
         return
     log_json(label, payload)
@@ -260,7 +270,7 @@ def log_bytes(label: str, body: bytes) -> None:
 def usage_from_body(body: bytes) -> dict[str, Any] | None:
     try:
         payload = json.loads(body.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         return None
     if isinstance(payload, dict):
         usage = payload.get("usage")
@@ -313,7 +323,9 @@ def log_stats_summary(
     usage: dict[str, Any] | None,
     elapsed_ms: int | None = None,
 ) -> None:
-    elapsed_str = format_count(elapsed_ms) + "ms" if elapsed_ms is not None else "?"
+    elapsed_str = (
+        format_count(elapsed_ms) + "ms" if elapsed_ms is not None else "?"
+    )
     tokens_per_sec = ""
     if elapsed_ms and isinstance(usage, dict):
         total_tokens = int_or_zero(usage.get("total_tokens"))
@@ -417,14 +429,14 @@ def format_count(value: Any) -> str:
         return "?"
     try:
         return f"{int(value):,}"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(value)
 
 
 def int_or_zero(value: Any) -> int:
     try:
         return int(value or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -445,7 +457,9 @@ def summarize_chat_payload(payload: dict[str, Any]) -> str:
 def read_response_body(response: Any) -> bytes:
     try:
         if hasattr(response, "data") and response.data is not None:
-            return response.data
-        return response.read()
+            return cast(bytes, response.data)
+        return cast(bytes, response.read())
     except (TimeoutError, OSError, http.client.IncompleteRead) as exc:
-        raise ValueError(f"failed to read upstream response body: {exc}") from exc
+        raise ValueError(
+            f"failed to read upstream response body: {exc}"
+        ) from exc

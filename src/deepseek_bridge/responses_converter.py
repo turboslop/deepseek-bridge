@@ -54,7 +54,9 @@ def convert_responses_to_chat(payload: dict[str, Any]) -> dict[str, Any]:
     # --- 2. Prepend instructions as system message ---
     instructions = payload.get("instructions")
     if isinstance(instructions, str) and instructions.strip():
-        result["messages"].insert(0, {"role": "system", "content": instructions})
+        result["messages"].insert(
+            0, {"role": "system", "content": instructions}
+        )
 
     # --- 3. Pass through standard Chat Completions fields ---
     for key in (
@@ -87,7 +89,8 @@ def convert_responses_to_chat(payload: dict[str, Any]) -> dict[str, Any]:
     #   "previous_response_id" - Responses-API-only, dropped
     #   "store"        - Responses-API-only, dropped
     #   "text"         - Responses-API-specific output formatting, dropped
-    #   "tool_choice"  - keep aligned with Chat Completions semantics when present
+    #   "tool_choice"  - keep aligned with Chat Completions semantics when
+    #                    present
     if "tool_choice" in payload:
         result["tool_choice"] = payload["tool_choice"]
 
@@ -122,7 +125,9 @@ def _convert_input_item(item: dict[str, Any]) -> dict[str, Any] | None:
             "role": role,
             "content": _stringify_content(content),
         }
-        if "reasoning_content" in item and isinstance(item["reasoning_content"], str):
+        if "reasoning_content" in item and isinstance(
+            item["reasoning_content"], str
+        ):
             result["reasoning_content"] = item["reasoning_content"]
         return result
 
@@ -165,7 +170,7 @@ def _stringify_content(content: Any) -> str:
 
 
 def _convert_tools(tools: list[Any]) -> list[dict[str, Any]]:
-    """Convert a list of Responses-API tool definitions to Chat Completions format."""
+    """Convert Responses-API tool definitions to Chat Completions format."""
     converted: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict):
@@ -217,7 +222,9 @@ def _convert_tool(tool: dict[str, Any]) -> dict[str, Any] | None:
                 "type": "function",
                 "function": {
                     "name": str(name),
-                    "description": str(tool.get("description", f"Custom tool: {name}")),
+                    "description": str(
+                        tool.get("description", f"Custom tool: {name}")
+                    ),
                     "parameters": parameters,
                 },
             }

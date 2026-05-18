@@ -1,4 +1,4 @@
-"""Unit tests for DeepSeek API compliance — model routing, supported fields, effort aliases.
+"""Unit tests for DeepSeek API compliance.
 
 No network calls. Tests pure functions from transform.py and config.py.
 """

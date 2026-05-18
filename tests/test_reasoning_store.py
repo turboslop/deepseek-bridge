@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sqlite3
 import stat
-from tempfile import TemporaryDirectory
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from deepseek_bridge.config import _auto_cache_max_rows
 from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
@@ -30,7 +30,7 @@ class ReasoningStoreTests(unittest.TestCase):
     def test_store_prunes_by_age_and_can_clear(self) -> None:
         store = ReasoningStore(":memory:", max_age_seconds=3600)
         try:
-            # Manually set created_at to the past for entry 'a' to trigger age-based pruning
+            # Manually set created_at to the past for age-based pruning.
             store.put("a", "reasoning a", {"role": "assistant"})
             store._conn.execute(
                 "UPDATE reasoning_cache SET created_at = 0 WHERE key = 'a'"
@@ -61,10 +61,16 @@ class ReasoningStoreTests(unittest.TestCase):
             }
 
             self.assertGreater(store.store_assistant_message(message, scope), 0)
-            self.assertEqual(store.get(f"scope:{scope}:tool_call:call_empty"), "")
+            self.assertEqual(
+                store.get(f"scope:{scope}:tool_call:call_empty"), ""
+            )
             self.assertEqual(
                 store.lookup_for_message(
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                     scope,
                 ),
                 "",
@@ -80,7 +86,9 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(p)
             c = sqlite3.connect(p)
             av = c.execute("PRAGMA auto_vacuum").fetchone()[0]
-            self.assertEqual(av, 2, f"auto_vacuum should be 2 (INCREMENTAL), got {av}")
+            self.assertEqual(
+                av, 2, f"auto_vacuum should be 2 (INCREMENTAL), got {av}"
+            )
             s.close()
             c.close()
 
@@ -111,7 +119,8 @@ class ReasoningStoreTests(unittest.TestCase):
             s._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             warn, _ = s.check_bloat()
             self.assertIsNotNone(
-                warn, "Should detect bloat: large DB with few rows (>50MB, <2000 rows)"
+                warn,
+                "Should detect large DB bloat with few rows",
             )
             s.close()
 
@@ -121,7 +130,9 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(p)
             s.put("k", "small", {"role": "assistant"})
             warn, _ = s.check_bloat()
-            self.assertIsNone(warn, "Healthy small DB should not trigger bloat warning")
+            self.assertIsNone(
+                warn, "Healthy small DB should not trigger bloat warning"
+            )
             s.close()
 
     def test_check_bloat_memory_db(self) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import socket
 from typing import Any
 
 from .._types import RequestBodyTooLargeError
@@ -16,25 +18,21 @@ class HandlerClient:
         return f"Bearer {token.strip()}"
 
     def _check_client_alive(self) -> bool:
-        import socket
-
         sock = getattr(self, "request", None)
         if sock is not None:
             if hasattr(socket, "SO_NOSIGPIPE"):
-                try:
+                with contextlib.suppress(OSError):
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_NOSIGPIPE, 1)
-                except OSError:
-                    pass  # SO_NOSIGPIPE not available on this platform; best-effort
             try:
                 flags = getattr(socket, "MSG_NOSIGNAL", 0)
                 sock.sendall(b"", flags)
                 return True
-            except (ConnectionError, BrokenPipeError, OSError):
+            except ConnectionError, BrokenPipeError, OSError:
                 return False
         try:
             self.wfile.write(b"")
             return True
-        except (ConnectionError, BrokenPipeError, OSError):
+        except ConnectionError, BrokenPipeError, OSError:
             return False
 
     def _read_json_body(self) -> dict[str, Any]:
@@ -45,13 +43,17 @@ class HandlerClient:
         if length < 0:
             raise ValueError("Invalid Content-Length")
         if length > self.config.max_request_body_bytes:
-            raise RequestBodyTooLargeError(
-                f"Request body is too large; limit is {self.config.max_request_body_bytes} bytes"
+            message = (
+                "Request body is too large; limit is "
+                f"{self.config.max_request_body_bytes} bytes"
             )
+            raise RequestBodyTooLargeError(message)
         try:
             raw_body = self.rfile.read(length)
         except (ConnectionError, OSError) as exc:
-            LOG.warning("client disconnected while reading request body: %s", exc)
+            LOG.warning(
+                "client disconnected while reading request body: %s", exc
+            )
             raise ValueError("Client disconnected") from exc
         if not raw_body:
             raise ValueError("Request body is empty")

@@ -3,15 +3,15 @@ through the proxy (captures real request flow on disk)."""
 
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import stat
 import threading
-from tempfile import TemporaryDirectory
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -46,12 +46,18 @@ class TraceWriterUnitTests(unittest.TestCase):
             second.finish("completed", http_status=200)
 
             self.assertTrue((writer.session_dir / "manifest.json").exists())
-            self.assertTrue((writer.session_dir / "request-000001.json").exists())
-            self.assertTrue((writer.session_dir / "request-000002.json").exists())
+            self.assertTrue(
+                (writer.session_dir / "request-000001.json").exists()
+            )
+            self.assertTrue(
+                (writer.session_dir / "request-000002.json").exists()
+            )
             if os.name != "nt":
                 self.assertEqual(
                     stat.S_IMODE(
-                        (writer.session_dir / "request-000001.json").stat().st_mode
+                        (writer.session_dir / "request-000001.json")
+                        .stat()
+                        .st_mode
                     ),
                     0o600,
                 )
@@ -72,7 +78,9 @@ class TraceWriterUnitTests(unittest.TestCase):
             self.assertEqual(
                 payload["request"]["headers"]["Authorization"]["present"], True
             )
-            self.assertIn("sha256", payload["request"]["headers"]["Authorization"])
+            self.assertIn(
+                "sha256", payload["request"]["headers"]["Authorization"]
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -100,17 +108,21 @@ class _CannedUpstream(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(
                 b'data: {"id":"s","object":"chat.completion.chunk","choices":'
-                b'[{"index":0,"delta":{"role":"assistant","reasoning_content":"think"},'
+                b'[{"index":0,"delta":{"role":"assistant",'
+                b'"reasoning_content":"think"},'
                 b'"finish_reason":null}]}\n\n'
             )
             self.wfile.write(
                 b'data: {"id":"s","object":"chat.completion.chunk","choices":'
-                b'[{"index":0,"delta":{"content":"answer"},"finish_reason":null}],'
-                b'"usage":{"completion_tokens_details":{"reasoning_tokens":1}}}\n\n'
+                b'[{"index":0,"delta":{"content":"answer"},'
+                b'"finish_reason":null}],'
+                b'"usage":{"completion_tokens_details":'
+                b'{"reasoning_tokens":1}}}\n\n'
             )
             self.wfile.write(
                 b'data: {"id":"s","object":"chat.completion.chunk",'
-                b'"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+                b'"choices":[{"index":0,"delta":{},'
+                b'"finish_reason":"stop"}]}\n\n'
             )
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
@@ -182,7 +194,9 @@ def _read_single_trace(session_dir: Path) -> dict:
 class TraceIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         _CannedUpstream.requests = []
-        self.upstream = _Fixture(ThreadingHTTPServer(("127.0.0.1", 0), _CannedUpstream))
+        self.upstream = _Fixture(
+            ThreadingHTTPServer(("127.0.0.1", 0), _CannedUpstream)
+        )
         self.store = ReasoningStore(":memory:")
         self.temp_dir = TemporaryDirectory()
         self.writer = TraceWriter(self.temp_dir.name)
@@ -251,7 +265,9 @@ class TraceIntegrationTests(unittest.TestCase):
         self._post(
             {
                 "model": "deepseek-v4-pro",
-                "messages": [{"role": "user", "content": "What is tomorrow's date?"}],
+                "messages": [
+                    {"role": "user", "content": "What is tomorrow's date?"}
+                ],
             }
         )
         trace = _read_single_trace(self.writer.session_dir)
@@ -262,9 +278,9 @@ class TraceIntegrationTests(unittest.TestCase):
             "What is tomorrow's date?",
         )
         self.assertEqual(
-            trace["upstream"]["response"]["body"]["json"]["choices"][0]["message"][
-                "reasoning_content"
-            ],
+            trace["upstream"]["response"]["body"]["json"]["choices"][0][
+                "message"
+            ]["reasoning_content"],
             "I need the date.",
         )
         self.assertNotIn("sk-from-cursor", serialized)
@@ -316,7 +332,11 @@ class TraceIntegrationTests(unittest.TestCase):
                             }
                         ],
                     },
-                    {"role": "tool", "tool_call_id": "call_x", "content": "result"},
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_x",
+                        "content": "result",
+                    },
                     {"role": "user", "content": "new"},
                 ],
             }

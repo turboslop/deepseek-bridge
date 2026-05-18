@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
-from tempfile import TemporaryDirectory
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from deepseek_bridge import __version__
 from deepseek_bridge.config import (
     DEFAULT_COLLAPSIBLE_REASONING,
     DEFAULT_MISSING_REASONING_STRATEGY,
@@ -19,8 +20,6 @@ from deepseek_bridge.config import (
     default_config_path,
     default_reasoning_content_path,
 )
-
-from deepseek_bridge import __version__
 
 
 class ConfigTests(unittest.TestCase):
@@ -59,7 +58,10 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(config_path.exists())
             self.assertIn(f"model: {DEFAULT_UPSTREAM_MODEL}", config_text)
             self.assertIn(
-                f"# missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}",
+                (
+                    "# missing_reasoning_strategy: "
+                    f"{DEFAULT_MISSING_REASONING_STRATEGY}"
+                ),
                 config_text,
             )
             self.assertIn(
@@ -74,14 +76,17 @@ class ConfigTests(unittest.TestCase):
                 config_text,
             )
             if os.name != "nt":
-                self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
+                self.assertEqual(
+                    stat.S_IMODE(config_path.stat().st_mode), 0o600
+                )
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
             self.assertEqual(
                 config.collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
             )
             self.assertEqual(
-                config.missing_reasoning_strategy, DEFAULT_MISSING_REASONING_STRATEGY
+                config.missing_reasoning_strategy,
+                DEFAULT_MISSING_REASONING_STRATEGY,
             )
             self.assertEqual(
                 config.reasoning_cache_max_age_seconds,
@@ -109,7 +114,9 @@ class ConfigTests(unittest.TestCase):
     def test_loads_config_from_user_yaml_file(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
-            reasoning_content_path = Path(temp_dir) / "reasoning_content.sqlite3"
+            reasoning_content_path = (
+                Path(temp_dir) / "reasoning_content.sqlite3"
+            )
             config_path.write_text(
                 "\n".join(
                     [
@@ -170,7 +177,8 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.thinking, DEFAULT_THINKING)
         self.assertEqual(
-            config.missing_reasoning_strategy, DEFAULT_MISSING_REASONING_STRATEGY
+            config.missing_reasoning_strategy,
+            DEFAULT_MISSING_REASONING_STRATEGY,
         )
         self.assertEqual(config.port, DEFAULT_PORT)
         self.assertEqual(
@@ -178,7 +186,7 @@ class ConfigTests(unittest.TestCase):
             DEFAULT_COLLAPSIBLE_REASONING,
         )
 
-    def test_relative_reasoning_content_path_in_config_is_relative_to_config_file(
+    def test_relative_reasoning_path_in_config_is_relative_to_config_file(
         self,
     ) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -217,7 +225,9 @@ class ConfigTests(unittest.TestCase):
     def test_collapsible_reasoning_can_use_corrected_config_key(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
-            config_path.write_text("collapsible_reasoning: false\n", encoding="utf-8")
+            config_path.write_text(
+                "collapsible_reasoning: false\n", encoding="utf-8"
+            )
 
             config = ProxyConfig.from_file(config_path=config_path)
 

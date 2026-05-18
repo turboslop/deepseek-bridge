@@ -6,7 +6,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ TRACE_SCHEMA_VERSION = 1
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def sha256_text(value: str) -> str:
@@ -85,11 +85,13 @@ def message_summaries(payload: dict[str, Any]) -> list[dict[str, Any]]:
             summaries.append({"index": index, "type": type(message).__name__})
             continue
         tool_calls = message.get("tool_calls")
-        tool_call_ids = []
+        tool_call_ids: list[str] = []
         if isinstance(tool_calls, list):
-            for tool_call in tool_calls:
-                if isinstance(tool_call, dict) and tool_call.get("id"):
-                    tool_call_ids.append(str(tool_call["id"]))
+            tool_call_ids.extend(
+                str(tool_call["id"])
+                for tool_call in tool_calls
+                if isinstance(tool_call, dict) and tool_call.get("id")
+            )
         reasoning = message.get("reasoning_content")
         content = str(message.get("content") or "")
         summary: dict[str, Any] = {
@@ -141,7 +143,8 @@ def payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
 def write_json_private(path: Path, payload: dict[str, Any]) -> None:
     tmp_path = path.with_name(f".{path.name}.tmp")
     tmp_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
     tmp_path.chmod(0o600)
@@ -154,7 +157,7 @@ class TraceWriter:
         self.base_dir = Path(base_dir).expanduser()
         self.base_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         session_name = (
-            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
             + f"-pid{os.getpid()}"
         )
         self.session_dir = self.base_dir / session_name
@@ -250,7 +253,9 @@ class TraceRequest:
             "cache_namespace": prepared.cache_namespace,
             "patched_reasoning_messages": prepared.patched_reasoning_messages,
             "missing_reasoning_messages": prepared.missing_reasoning_messages,
-            "recovered_reasoning_messages": prepared.recovered_reasoning_messages,
+            "recovered_reasoning_messages": (
+                prepared.recovered_reasoning_messages
+            ),
             "recovery_dropped_messages": prepared.recovery_dropped_messages,
             "recovery_notice": prepared.recovery_notice,
             "record_response_scope": prepared.record_response_scope,
@@ -309,8 +314,12 @@ class TraceRequest:
             response["body"] = jsonable_body(body)
         self.data["cursor_response"].update(response)
 
-    def record_stream_chunk(self, upstream_line: bytes, cursor_line: bytes) -> None:
-        upstream_stream = self.data["upstream"].setdefault("stream", {"chunks": []})
+    def record_stream_chunk(
+        self, upstream_line: bytes, cursor_line: bytes
+    ) -> None:
+        upstream_stream = self.data["upstream"].setdefault(
+            "stream", {"chunks": []}
+        )
         cursor_stream = self.data["cursor_response"].setdefault(
             "stream", {"chunks": []}
         )

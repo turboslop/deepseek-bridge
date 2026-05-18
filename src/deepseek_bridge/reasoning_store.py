@@ -23,11 +23,11 @@ def tool_call_signature(tool_call: dict[str, Any]) -> str:
 
 
 def tool_call_ids(message: dict[str, Any]) -> list[str]:
-    ids: list[str] = []
-    for tool_call in message.get("tool_calls") or []:
-        if isinstance(tool_call, dict) and tool_call.get("id"):
-            ids.append(str(tool_call["id"]))
-    return ids
+    return [
+        str(tool_call["id"])
+        for tool_call in message.get("tool_calls") or []
+        if isinstance(tool_call, dict) and tool_call.get("id")
+    ]
 
 
 def tool_call_names(message: dict[str, Any]) -> list[str]:
@@ -78,7 +78,9 @@ def canonical_scope_message(message: dict[str, Any]) -> dict[str, Any]:
     return canonical
 
 
-def conversation_scope(messages: list[dict[str, Any]], namespace: str = "") -> str:
+def conversation_scope(
+    messages: list[dict[str, Any]], namespace: str = ""
+) -> str:
     scope_messages = [canonical_scope_message(message) for message in messages]
     payload: Any = scope_messages
     if namespace:
@@ -98,7 +100,10 @@ def turn_context_signature(prior_messages: list[dict[str, Any]]) -> str:
     start_index = 0
     if last_user_index != -1:
         start_index = last_user_index
-        while start_index > 0 and prior_messages[start_index - 1].get("role") == "user":
+        while (
+            start_index > 0
+            and prior_messages[start_index - 1].get("role") == "user"
+        ):
             start_index -= 1
 
     context_messages = [
@@ -125,7 +130,8 @@ def scoped_reasoning_keys(message: dict[str, Any], scope: str) -> list[str]:
     # so neither tool_call_id nor tool_call_signature (which canonicalizes
     # arguments) survives the round-trip through Cursor's transcript.
     keys.extend(
-        f"scope:{scope}:tool_name:{tool_name}" for tool_name in tool_call_names(message)
+        f"scope:{scope}:tool_name:{tool_name}"
+        for tool_name in tool_call_names(message)
     )
     return keys
 
@@ -155,7 +161,8 @@ def portable_reasoning_keys(
         if isinstance(tool_call, dict)
     )
     keys.extend(
-        f"namespace:{cache_namespace}:turn:{turn_signature}:" f"tool_name:{tool_name}"
+        f"namespace:{cache_namespace}:turn:{turn_signature}:"
+        f"tool_name:{tool_name}"
         for tool_name in tool_call_names(message)
     )
     return keys
@@ -171,7 +178,9 @@ class ReasoningStore:
         if str(reasoning_content_path) == ":memory:":
             self.reasoning_content_path: str | Path = ":memory:"
         else:
-            self.reasoning_content_path = Path(reasoning_content_path).expanduser()
+            self.reasoning_content_path = Path(
+                reasoning_content_path
+            ).expanduser()
             self.reasoning_content_path.parent.mkdir(
                 mode=0o700, parents=True, exist_ok=True
             )
@@ -221,7 +230,8 @@ class ReasoningStore:
             size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
             if size_mb > 1024:
                 LOG.warning(
-                    "reasoning DB is %.0f MB; skipping automatic VACUUM. Run manually.",
+                    "reasoning DB is %.0f MB; skipping automatic VACUUM. "
+                    "Run manually.",
                     size_mb,
                 )
                 return False
@@ -237,16 +247,19 @@ class ReasoningStore:
             return None, None
         try:
             page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
-            freelist_count = self._conn.execute("PRAGMA freelist_count").fetchone()[0]
+            freelist_count = self._conn.execute(
+                "PRAGMA freelist_count"
+            ).fetchone()[0]
             if page_count == 0:
                 return None, None
             free_pct = freelist_count / page_count
             size_mb = self.reasoning_content_path.stat().st_size / (1024 * 1024)
             if free_pct > 0.8:
                 return (
-                    f"reasoning DB is {size_mb:.0f} MB with {free_pct:.0%} free pages "
-                    f"({freelist_count}/{page_count}). Run with --clear-reasoning-cache "
-                    f"or restart to reclaim space."
+                    f"reasoning DB is {size_mb:.0f} MB with "
+                    f"{free_pct:.0%} free pages "
+                    f"({freelist_count}/{page_count}). Run with "
+                    f"--clear-reasoning-cache or restart to reclaim space."
                 ), free_pct
             if size_mb > 50:
                 row = self._conn.execute(
@@ -255,7 +268,8 @@ class ReasoningStore:
                 row_count = int(row[0]) if row else 0
                 if row_count < 2000:
                     return (
-                        f"reasoning DB is {size_mb:.0f} MB but only has {row_count} rows. "
+                        f"reasoning DB is {size_mb:.0f} MB but only has "
+                        f"{row_count} rows. "
                         f"Consider running with --clear-reasoning-cache."
                     ), free_pct
             return None, free_pct
@@ -266,7 +280,9 @@ class ReasoningStore:
     def get_row_count(self) -> int:
         """Return the number of cached reasoning rows."""
         try:
-            row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM reasoning_cache"
+            ).fetchone()
             return int(row[0]) if row else 0
         except Exception:
             return 0
@@ -288,7 +304,9 @@ class ReasoningStore:
             self.vacuum()
             self._conn.close()
 
-    def start_periodic_maintenance(self, interval_seconds: float = 1800.0) -> None:
+    def start_periodic_maintenance(
+        self, interval_seconds: float = 1800.0
+    ) -> None:
         self._maintenance_interval = interval_seconds
         if self._maintenance_thread is not None:
             return
@@ -318,7 +336,8 @@ class ReasoningStore:
                         LOG.info("periodic DB check: %s", bloat)
                         if free_pct is not None and free_pct > 0.8:
                             LOG.warning(
-                                "DB severely bloated (%.0f%% free), clearing cache",
+                                "DB severely bloated (%.0f%% free), "
+                                "clearing cache",
                                 free_pct * 100,
                             )
                             deleted = self._clear_locked()
@@ -328,7 +347,9 @@ class ReasoningStore:
                 LOG.warning("periodic DB maintenance failed: %s", exc)
 
     def _clear_locked(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM reasoning_cache"
+        ).fetchone()
         count = int(row[0] if row else 0)
         self._conn.execute("DELETE FROM reasoning_cache")
         self._conn.commit()
@@ -343,9 +364,11 @@ class ReasoningStore:
                 return
             try:
                 self._conn.execute(
-                    "INSERT INTO reasoning_cache(key, reasoning, message_json, created_at) "
+                    "INSERT INTO reasoning_cache("
+                    "key, reasoning, message_json, created_at) "
                     "VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
-                    "reasoning = excluded.reasoning, message_json = excluded.message_json, "
+                    "reasoning = excluded.reasoning, "
+                    "message_json = excluded.message_json, "
                     "created_at = excluded.created_at",
                     (key, reasoning, message_json, time.time()),
                 )
@@ -387,7 +410,9 @@ class ReasoningStore:
         keys = scoped_reasoning_keys(message, scope)
         if prior_messages is not None:
             keys.extend(
-                portable_reasoning_keys(message, cache_namespace, prior_messages)
+                portable_reasoning_keys(
+                    message, cache_namespace, prior_messages
+                )
             )
         keys = list(dict.fromkeys(keys))
         for key in keys:
@@ -404,7 +429,9 @@ class ReasoningStore:
         keys = scoped_reasoning_keys(message, scope)
         if prior_messages is not None:
             keys.extend(
-                portable_reasoning_keys(message, cache_namespace, prior_messages)
+                portable_reasoning_keys(
+                    message, cache_namespace, prior_messages
+                )
             )
         for key in keys:
             reasoning = self.get(key)
@@ -432,7 +459,9 @@ class ReasoningStore:
 
     def clear(self) -> int:
         with self._lock:
-            row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM reasoning_cache"
+            ).fetchone()
             count = int(row[0] if row else 0)
             self._conn.execute("DELETE FROM reasoning_cache")
             self._conn.commit()

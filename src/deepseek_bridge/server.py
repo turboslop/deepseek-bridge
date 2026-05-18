@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-# Re-exports from handler module
-from .handler import (
-    DeepSeekProxyHandler,
-)
-from .server_infrastructure import (
-    BoundedThreadPoolHTTPServer,
-    DeepSeekProxyServer,
-    UpstreamPool,
+# Re-exports from helpers module
+from ._types import (
+    ProxyResponseResult,
+    RequestBodyTooLargeError,
 )
 
 # Re-exports from cli module
@@ -16,13 +12,12 @@ from .cli import (
     main,
     warn_if_insecure_upstream,
 )
-
-# Re-exports from helpers module
-from ._types import (
-    ProxyResponseResult,
-    RequestBodyTooLargeError,
-)
 from .config import MODEL_CREATED_TIMESTAMPS
+
+# Re-exports from handler module
+from .handler import (
+    DeepSeekProxyHandler,
+)
 from .helpers import elapsed_ms
 from .logging import (
     cache_hit_rate,
@@ -45,6 +40,11 @@ from .logging import (
     usage_from_body,
     user_message_count,
 )
+from .server_infrastructure import (
+    BoundedThreadPoolHTTPServer,
+    DeepSeekProxyServer,
+    UpstreamPool,
+)
 from .streaming._sse import (
     SYSTEM_FINGERPRINT,
     inject_recovery_notice,
@@ -53,17 +53,15 @@ from .streaming._sse import (
 )
 
 __all__ = [
+    "MODEL_CREATED_TIMESTAMPS",
+    "SYSTEM_FINGERPRINT",
     "BoundedThreadPoolHTTPServer",
     "DeepSeekProxyHandler",
     "DeepSeekProxyServer",
+    "ProxyResponseResult",
+    "RequestBodyTooLargeError",
     "UpstreamPool",
     "build_arg_parser",
-    "main",
-    "warn_if_insecure_upstream",
-    "MODEL_CREATED_TIMESTAMPS",
-    "ProxyResponseResult",
-    "SYSTEM_FINGERPRINT",
-    "RequestBodyTooLargeError",
     "cache_hit_rate",
     "context_status",
     "elapsed_ms",
@@ -77,6 +75,7 @@ __all__ = [
     "log_json",
     "log_send_summary",
     "log_stats_summary",
+    "main",
     "message_count",
     "read_response_body",
     "reasoning_content_count",
@@ -87,4 +86,5 @@ __all__ = [
     "tool_count",
     "usage_from_body",
     "user_message_count",
+    "warn_if_insecure_upstream",
 ]
