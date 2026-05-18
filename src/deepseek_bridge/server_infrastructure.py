@@ -15,6 +15,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 from typing import Any, cast
+from urllib.parse import urlparse
 
 import urllib3
 
@@ -23,6 +24,12 @@ from .helpers import _shutdown_requested
 from .logging import LOG, format_count
 from .reasoning_store import ReasoningStoreProtocol, ReasoningStoreStats
 from .trace import TraceWriter
+
+_LIVENESS_PATHS = frozenset(
+    {"/healthz", "/v1/healthz", "/health", "/v1/health"}
+)
+_REQUEST_LINE_PEEK_BYTES = 4096
+_LIVENESS_PEEK_TIMEOUT_SECONDS = 0.05
 
 
 class UpstreamPool:
@@ -196,6 +203,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             config.max_queue_size if config is not None else 50
         )
         if queue_size >= effective_max_queue:
+            if self._serve_liveness_probe_when_saturated(request):
+                return
             LOG.warning(
                 "rejecting request from %s: queue full (%s queued)",
                 client_address,
@@ -207,6 +216,63 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             self.executor.submit(
                 self.process_request_thread, request, client_address
             )
+
+    def _serve_liveness_probe_when_saturated(self, request: Any) -> bool:
+        if not isinstance(request, socket.socket):
+            return False
+
+        request_path = self._peek_get_request_path(request)
+        if request_path not in _LIVENESS_PATHS:
+            return False
+
+        try:
+            uptime = (
+                int(time.monotonic() - self.start_time)
+                if hasattr(self, "start_time")
+                else 0
+            )
+            body = json.dumps(
+                {
+                    "ok": True,
+                    "server": "deepseek-bridge",
+                    "uptime_seconds": uptime,
+                },
+                separators=(",", ":"),
+            ).encode("utf-8")
+            request.sendall(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(body)).encode("utf-8") + b"\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + body
+            )
+            request.close()
+            return True
+        except Exception as exc:
+            LOG.warning("failed to serve liveness probe: %s", exc)
+            return False
+
+    @staticmethod
+    def _peek_get_request_path(request: socket.socket) -> str | None:
+        original_timeout = request.gettimeout()
+        try:
+            request.settimeout(_LIVENESS_PEEK_TIMEOUT_SECONDS)
+            try:
+                data = request.recv(_REQUEST_LINE_PEEK_BYTES, socket.MSG_PEEK)
+            finally:
+                request.settimeout(original_timeout)
+        except BlockingIOError, TimeoutError, OSError:
+            return None
+
+        if b"\n" not in data:
+            return None
+        request_line = data.split(b"\n", 1)[0].rstrip(b"\r")
+        parts = request_line.split()
+        if len(parts) < 3 or parts[0] != b"GET":
+            return None
+
+        target = parts[1].decode("latin-1", errors="replace")
+        return urlparse(target).path
 
     @staticmethod
     def _reject_connection(request: Any) -> None:
