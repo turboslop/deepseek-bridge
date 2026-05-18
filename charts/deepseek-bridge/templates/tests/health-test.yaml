@@ -1,0 +1,21 @@
+{{- if .Values.tests.enabled -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}-test-health
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: wget
+      image: "{{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}"
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command:
+        - wget
+      args:
+        - -qO-
+        - http://{{ include "deepseek-bridge.fullname" . }}:{{ .Values.service.port }}/healthz
+{{- end }}

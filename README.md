@@ -317,6 +317,29 @@ UID/GID, override all three values together and ensure every writable mount used
 by the cache, logs, traces, or temporary files is writable by that identity; keep
 the root filesystem read-only.
 
+### Helm
+
+An installable chart lives in
+[`charts/deepseek-bridge`](charts/deepseek-bridge):
+
+```bash
+helm install deepseek-bridge ./charts/deepseek-bridge
+```
+
+The default chart values run one replica with an in-memory SQLite reasoning
+cache for local/dev use. Use Valkey for multi-replica installs:
+
+```bash
+helm install deepseek-bridge ./charts/deepseek-bridge \
+  --set replicaCount=2 \
+  --set storage.backend=valkey \
+  --set valkey.existingSecret=deepseek-bridge-valkey
+```
+
+The chart can also deploy a small built-in Valkey instance for development with
+`--set valkey.enabled=true`. Enable Prometheus scraping with
+`--set metrics.enabled=true --set serviceMonitor.enabled=true`.
+
 ## Client Setup
 
 ### Cursor

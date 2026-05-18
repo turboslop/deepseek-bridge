@@ -1,0 +1,14 @@
+apiVersion: v2
+name: deepseek-bridge
+description: OpenAI-compatible DeepSeek proxy for Kubernetes.
+type: application
+version: 0.1.0
+appVersion: "latest"
+home: https://github.com/turboslop/deepseek-bridge
+sources:
+  - https://github.com/turboslop/deepseek-bridge
+keywords:
+  - deepseek
+  - openai
+  - proxy
+  - reasoning

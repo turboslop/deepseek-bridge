@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  config.yaml: |-
+    version: 1
+
+    runtime:
+      mode: kubernetes
+
+    server:
+      host: 0.0.0.0
+      port: {{ .Values.containerPort }}
+
+    upstream:
+      base_url: {{ .Values.upstream.baseUrl | quote }}
+      model: {{ .Values.upstream.model | quote }}
+      thinking:
+        mode: {{ .Values.upstream.thinking.mode | quote }}
+        reasoning_effort: {{ .Values.upstream.thinking.reasoningEffort | quote }}
+
+    storage:
+      backend: {{ lower .Values.storage.backend | quote }}
+      sqlite:
+        path: {{ include "deepseek-bridge.sqlitePath" . | quote }}
+
+    reasoning_cache:
+      max_age_seconds: {{ .Values.reasoningCache.maxAgeSeconds }}
+      {{- if .Values.reasoningCache.maxEntries }}
+      max_entries: {{ .Values.reasoningCache.maxEntries }}
+      {{- end }}
+      missing_reasoning_strategy: {{ .Values.reasoningCache.missingReasoningStrategy | quote }}
+
+    reasoning_display:
+      enabled: {{ .Values.reasoningDisplay.enabled }}
+      collapsible: {{ .Values.reasoningDisplay.collapsible }}
+
+    logging:
+      level: {{ .Values.logging.level | quote }}
+      format: {{ .Values.logging.format | quote }}
+      compact: {{ .Values.logging.compact }}
+      file:
+        enabled: false
+
+    metrics:
+      enabled: {{ .Values.metrics.enabled }}
+
+    tunnel:
+      mode: none
+
+    cors:
+      enabled: {{ .Values.cors.enabled }}
+      allowed_origins:
+        {{- range .Values.cors.allowedOrigins }}
+        - {{ . | quote }}
+        {{- end }}
+      allow_credentials: {{ .Values.cors.allowCredentials }}
+
+    ollama:
+      enabled: {{ .Values.ollama.enabled }}
+
+    performance:
+      request_timeout: {{ .Values.performance.requestTimeout }}
+      stream_read_timeout: {{ .Values.performance.streamReadTimeout }}
+      max_request_body_bytes: {{ int .Values.performance.maxRequestBodyBytes }}
+      max_pool_connections: {{ .Values.performance.maxPoolConnections }}
+      max_thread_pool: {{ .Values.performance.maxThreadPool }}
