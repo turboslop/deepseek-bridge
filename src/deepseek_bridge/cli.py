@@ -229,6 +229,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Compact 1-line-per-request output",
     )
     group_other.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Run without interactive terminal UI affordances; useful for "
+            "containers and services"
+        ),
+    )
+    group_other.add_argument(
         "--missing-reasoning-strategy",
         choices=["recover", "reject"],
         help=(
@@ -350,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["debug"] = True
     if args.compact is not None:
         updates["compact"] = args.compact
+    if args.headless:
+        updates["compact"] = True
     if args.trace_dir is not None:
         updates["trace_dir"] = args.trace_dir
     if args.display_reasoning is not None:

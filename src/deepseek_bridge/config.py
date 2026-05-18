@@ -276,12 +276,16 @@ def _auto_queue_size(max_thread_pool: int) -> int:
 
 def _auto_cache_max_rows(
     disk_budget_mb: int = DEFAULT_REASONING_CACHE_DISK_MB,
+    disk_usage_path: str | Path | None = None,
 ) -> int:
     """Auto-calculate max rows based on disk budget."""
     try:
         import shutil
 
-        available_gb = shutil.disk_usage(default_app_dir()).free / (1024**3)
+        usage_path = Path(disk_usage_path or default_app_dir()).expanduser()
+        while not usage_path.exists() and usage_path != usage_path.parent:
+            usage_path = usage_path.parent
+        available_gb = shutil.disk_usage(usage_path).free / (1024**3)
         budget_mb = min(disk_budget_mb, available_gb * 1024 * 0.05)
     except Exception as exc:
         from .logging import LOG

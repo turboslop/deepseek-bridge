@@ -218,7 +218,9 @@ class ReasoningStore:
         if isinstance(self.reasoning_content_path, Path):
             from .config import _auto_cache_max_rows
 
-            self._max_rows = _auto_cache_max_rows()
+            self._max_rows = _auto_cache_max_rows(
+                disk_usage_path=self.reasoning_content_path.parent
+            )
         else:
             self._max_rows = None
         self.prune()
