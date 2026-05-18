@@ -55,6 +55,7 @@ class KubernetesExampleTests(unittest.TestCase):
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertNotIn("--reasoning-content-path", container["args"])
         env = {item["name"]: item for item in container["env"]}
+        self.assertEqual(env["DEEPSEEK_BRIDGE_LOG_FORMAT"]["value"], "json")
         self.assertEqual(
             env["DEEPSEEK_BRIDGE_STORAGE_BACKEND"]["value"],
             "valkey",

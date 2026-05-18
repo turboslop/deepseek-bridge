@@ -92,10 +92,25 @@ class HandlerRoutes:
             self.client_address[0],
             self.headers.get("Content-Length", "0"),
             self.headers.get("User-Agent", ""),
+            extra={
+                "request_id": self._request_id,
+                "method": "POST",
+                "path": request_path,
+            },
         )
 
         if _shutdown_requested.is_set():
-            LOG.info("rejecting POST %s: shutdown in progress", request_path)
+            LOG.info(
+                "rejecting POST %s: shutdown in progress",
+                request_path,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "status": 503,
+                    "storage_backend": self.config.storage_backend,
+                },
+            )
             self._send_json(
                 503,
                 _error_body(
@@ -164,6 +179,7 @@ class HandlerRoutes:
         spinner = TerminalSpinner(
             enabled=stream
             and self.config.runtime_mode != "kubernetes"
+            and self.config.log_format != "json"
             and not self.config.debug
             and not self.config.compact,
             text="└ {frame}",
@@ -237,7 +253,15 @@ class HandlerRoutes:
             "/v1/completions",
         }:
             LOG.warning(
-                "rejected unsupported POST path=%s status=404", request_path
+                "rejected unsupported POST path=%s status=404",
+                request_path,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "status": 404,
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._record_request_body_for_trace(trace)
             self._send_json(
@@ -259,6 +283,13 @@ class HandlerRoutes:
                 "rejected request path=%s status=401 "
                 "reason=missing_bearer_token",
                 request_path,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "status": 401,
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._record_request_body_for_trace(trace)
             self._send_json(
@@ -280,6 +311,13 @@ class HandlerRoutes:
                 "rejected request path=%s status=413 reason=%s",
                 request_path,
                 exc,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "status": 413,
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._send_json(
                 413,
@@ -297,6 +335,13 @@ class HandlerRoutes:
                 "rejected request path=%s status=400 reason=%s",
                 request_path,
                 exc,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "status": 400,
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._send_json(
                 400,
@@ -398,9 +443,22 @@ class HandlerRoutes:
                 str(payload.get("model") or self.config.upstream_model),
                 format_count(message_count(payload)),
                 context_status(prepared),
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": request_path,
+                    "model": prepared.original_model,
+                    "storage_backend": self.config.storage_backend,
+                },
             )
         else:
-            log_cursor_request(payload, self.config)
+            log_cursor_request(
+                payload,
+                self.config,
+                request_id=self._request_id,
+                method="POST",
+                path=request_path,
+            )
             log_context_summary(prepared)
 
         if (
@@ -536,6 +594,14 @@ class HandlerRoutes:
                         max_retries,
                         elapsed_ms(started),
                         exc,
+                        extra={
+                            "request_id": self._request_id,
+                            "method": "POST",
+                            "path": urlparse(self.path).path,
+                            "status": 500,
+                            "duration_ms": elapsed_ms(started),
+                            "storage_backend": self.config.storage_backend,
+                        },
                     )
                     self._send_upstream_failure(
                         500,
@@ -552,6 +618,14 @@ class HandlerRoutes:
                 "upstream request failed elapsed_ms=%s reason=%s",
                 elapsed_ms(started),
                 exc.reason,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": urlparse(self.path).path,
+                    "status": 500,
+                    "duration_ms": elapsed_ms(started),
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._send_upstream_failure(
                 500,
@@ -567,6 +641,14 @@ class HandlerRoutes:
             LOG.warning(
                 "upstream request timed out elapsed_ms=%s",
                 elapsed_ms(started),
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": urlparse(self.path).path,
+                    "status": 504,
+                    "duration_ms": elapsed_ms(started),
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._send_upstream_failure(
                 504,
@@ -583,6 +665,14 @@ class HandlerRoutes:
                 "upstream request failed elapsed_ms=%s reason=%s",
                 elapsed_ms(started),
                 exc,
+                extra={
+                    "request_id": self._request_id,
+                    "method": "POST",
+                    "path": urlparse(self.path).path,
+                    "status": 500,
+                    "duration_ms": elapsed_ms(started),
+                    "storage_backend": self.config.storage_backend,
+                },
             )
             self._send_upstream_failure(
                 500,
@@ -642,14 +732,26 @@ class HandlerRoutes:
                     upstream_status,
                     stream,
                     elapsed_ms(started),
+                    extra={
+                        "request_id": self._request_id,
+                        "method": "POST",
+                        "path": urlparse(self.path).path,
+                        "status": upstream_status,
+                        "duration_ms": elapsed_ms(started),
+                        "model": prepared.original_model,
+                        "upstream_status": upstream_status,
+                        "storage_backend": self.config.storage_backend,
+                    },
                 )
                 if headers_sent:
-                    # Read upstream error body for diagnostics
-                    try:
-                        error_body = read_response_body(response)
-                        log_bytes("upstream error body (streaming)", error_body)
-                    except Exception:
-                        pass
+                    if self.config.debug:
+                        try:
+                            error_body = read_response_body(response)
+                            log_bytes(
+                                "upstream error body (streaming)", error_body
+                            )
+                        except Exception:
+                            pass
                     self._send_sse_error(
                         upstream_status,
                         f"Upstream returned {upstream_status}",
@@ -705,8 +807,17 @@ class HandlerRoutes:
                 )
                 return
             spinner.stop()
+            status = 200 if headers_sent else upstream_status
             log_stats_summary(
-                sent_response.usage, elapsed_ms=elapsed_ms(started)
+                sent_response.usage,
+                elapsed_ms=elapsed_ms(started),
+                request_id=self._request_id,
+                method="POST",
+                path=urlparse(self.path).path,
+                status=status,
+                model=prepared.original_model,
+                upstream_status=upstream_status,
+                storage_backend=self.config.storage_backend,
             )
             self._track_usage(sent_response.usage, prepared.original_model)
             self._finish_trace(

@@ -59,6 +59,7 @@ class ConfigTests(unittest.TestCase):
                 DEFAULT_COLLAPSIBLE_REASONING,
             )
             self.assertIsNone(ProxyConfig().trace_dir)
+            self.assertEqual(ProxyConfig().log_format, "text")
 
     def test_missing_default_config_file_is_populated(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -265,6 +266,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.collapsible_reasoning)
         self.assertTrue(config.debug)
         self.assertTrue(config.compact)
+        self.assertEqual(config.log_format, "text")
         self.assertEqual(config.trace_dir, Path(temp_dir) / "traces")
         self.assertIsNone(config.log_dir)
         self.assertFalse(config.cors)
@@ -583,6 +585,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.valkey_key_prefix, "env-prefix")
         self.assertIsNone(config.log_dir)
 
+    def test_environment_can_enable_json_logging(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text("", encoding="utf-8")
+
+            config = ProxyConfig.from_file(
+                config_path=config_path,
+                environ={"DEEPSEEK_BRIDGE_LOG_FORMAT": "json"},
+            )
+
+        self.assertEqual(config.log_format, "json")
+
+    def test_structured_config_can_enable_json_logging(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["logging:", "  format: json"]),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(config.log_format, "json")
+
     def test_environment_can_select_valkey_storage(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
@@ -738,7 +764,6 @@ class ConfigTests(unittest.TestCase):
     def test_unsupported_future_config_knobs_raise_value_error(self) -> None:
         cases = [
             ("metrics:\n  enabled: true\n", "metrics.enabled"),
-            ("logging:\n  format: json\n", "logging format 'json'"),
         ]
         for text, pattern in cases:
             with (

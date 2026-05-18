@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import signal
 import sys
 import threading
@@ -44,6 +45,12 @@ from .tunnel import (
     get_tunnel_choices,
     local_tunnel_target,
 )
+
+
+def _startup_log_format_from_env() -> str:
+    log_format = os.environ.get("DEEPSEEK_BRIDGE_LOG_FORMAT", "text")
+    log_format = log_format.strip().lower()
+    return log_format if log_format in {"text", "json"} else "text"
 
 
 def create_reasoning_store(config: ProxyConfig) -> ReasoningStoreProtocol:
@@ -395,7 +402,10 @@ def main(argv: list[str] | None = None) -> int:
             runtime_mode=args.runtime_mode,
         )
     except ValueError as exc:
-        configure_logging(debug=bool(args.debug))
+        configure_logging(
+            debug=bool(args.debug),
+            log_format=_startup_log_format_from_env(),
+        )
         LOG.error("%s", exc)
         return 2
     updates: dict[str, Any] = {}
@@ -479,7 +489,9 @@ def main(argv: list[str] | None = None) -> int:
         config = replace(config, log_dir=None)
 
     log_dir = None if args.no_log else (args.log_dir or config.log_dir)
-    log_file_path = configure_logging(debug=config.debug, log_dir=log_dir)
+    log_file_path = configure_logging(
+        debug=config.debug, log_dir=log_dir, log_format=config.log_format
+    )
     if config.runtime_mode == "kubernetes" and config.tunnel != "none":
         LOG.error(
             "kubernetes runtime requires tunnel=none; got %s", config.tunnel

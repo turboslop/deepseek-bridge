@@ -7,7 +7,7 @@ import logging as stdlib_logging
 import sys
 import threading
 import types
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -20,6 +20,17 @@ INTERNAL_LOG = stdlib_logging.getLogger("deepseek_bridge.internal")
 DEFAULT_INFO_LOG_FORMAT = "%(message)s"
 DEFAULT_WARNING_LOG_FORMAT = "%(levelname)s %(message)s"
 VERBOSE_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
+JSON_LOG_FIELDS = (
+    "request_id",
+    "method",
+    "path",
+    "status",
+    "duration_ms",
+    "model",
+    "upstream_status",
+    "cache_hit",
+    "storage_backend",
+)
 
 RECOVERY_NOTICE_TEXT = "[deepseek-bridge] Refreshed reasoning_content history."
 RECOVERY_NOTICE_CONTENT = f"{RECOVERY_NOTICE_TEXT}\n\n"
@@ -45,6 +56,30 @@ class ConsoleLogFormatter(stdlib_logging.Formatter):
         return self._warning_formatter.format(record)
 
 
+class JsonLogFormatter(stdlib_logging.Formatter):
+    def format(self, record: stdlib_logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(
+                timespec="milliseconds"
+            ),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for field in JSON_LOG_FIELDS:
+            value = getattr(record, field, None)
+            if value is not None:
+                payload[field] = value
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
+
+
 def _purge_old_logs(
     log_dir: Path, prefix: str = "proxy", keep: int = 5
 ) -> None:
@@ -63,11 +98,20 @@ def configure_logging(
     *,
     debug: bool = False,
     log_dir: str | Path | None = None,
+    log_format: str = "text",
 ) -> str | None:
     log_file_path: str | None = None
     handlers: list[stdlib_logging.Handler] = []
+    structured = log_format.strip().lower() == "json"
+    console_formatter: stdlib_logging.Formatter
+    if structured:
+        console_formatter = JsonLogFormatter()
+        file_formatter: stdlib_logging.Formatter = JsonLogFormatter()
+    else:
+        console_formatter = ConsoleLogFormatter()
+        file_formatter = stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
     console_handler = stdlib_logging.StreamHandler()
-    console_handler.setFormatter(ConsoleLogFormatter())
+    console_handler.setFormatter(console_formatter)
     handlers.append(console_handler)
     if log_dir:
         log_path = Path(log_dir).expanduser()
@@ -79,7 +123,7 @@ def configure_logging(
         file_handler = stdlib_logging.FileHandler(
             log_file_path, encoding="utf-8"
         )
-        file_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
+        file_handler.setFormatter(file_formatter)
         handlers.append(file_handler)
         if debug:
             _purge_old_logs(log_path, prefix="debug", keep=5)
@@ -87,9 +131,7 @@ def configure_logging(
             debug_handler = stdlib_logging.FileHandler(
                 str(debug_file), encoding="utf-8"
             )
-            debug_handler.setFormatter(
-                stdlib_logging.Formatter(VERBOSE_LOG_FORMAT)
-            )
+            debug_handler.setFormatter(file_formatter)
             INTERNAL_LOG.addHandler(debug_handler)
             INTERNAL_LOG.propagate = False
     level = stdlib_logging.DEBUG if debug else stdlib_logging.INFO
@@ -282,6 +324,10 @@ def usage_from_body(body: bytes) -> dict[str, Any] | None:
 def log_cursor_request(
     payload: dict[str, Any],
     config: ProxyConfig,
+    *,
+    request_id: str | None = None,
+    method: str | None = None,
+    path: str | None = None,
 ) -> None:
     model = str(payload.get("model") or config.upstream_model)
     LOG.info(
@@ -289,6 +335,13 @@ def log_cursor_request(
         model,
         config.reasoning_effort,
         format_count(message_count(payload)),
+        extra={
+            "request_id": request_id,
+            "method": method,
+            "path": path,
+            "model": model,
+            "storage_backend": config.storage_backend,
+        },
     )
 
 
@@ -322,6 +375,14 @@ def log_send_summary(prepared: Any) -> None:
 def log_stats_summary(
     usage: dict[str, Any] | None,
     elapsed_ms: int | None = None,
+    *,
+    request_id: str | None = None,
+    method: str | None = None,
+    path: str | None = None,
+    status: int | None = None,
+    model: str | None = None,
+    upstream_status: int | None = None,
+    storage_backend: str | None = None,
 ) -> None:
     elapsed_str = (
         format_count(elapsed_ms) + "ms" if elapsed_ms is not None else "?"
@@ -339,6 +400,17 @@ def log_stats_summary(
         cache_hit_rate(usage),
         elapsed_str,
         tokens_per_sec,
+        extra={
+            "request_id": request_id,
+            "method": method,
+            "path": path,
+            "status": status,
+            "duration_ms": elapsed_ms,
+            "model": model,
+            "upstream_status": upstream_status,
+            "cache_hit": cache_hit_rate(usage),
+            "storage_backend": storage_backend,
+        },
     )
 
 

@@ -213,9 +213,10 @@ combining credentials with wildcard `*`.
 YAML paths are relative to the config file. Environment-variable and CLI paths
 are relative to the process working directory unless absolute.
 `storage.backend` must be `sqlite` or `valkey`; Valkey storage requires
-`storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`. `logging.format` must be
-`text`, and `metrics.enabled` must be `false` until those runtime features are
-implemented.
+`storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`. `logging.format` supports
+`text` and `json`; use `DEEPSEEK_BRIDGE_LOG_FORMAT=json` for one-line
+structured records in container logging stacks. `metrics.enabled` must be
+`false` until that runtime feature is implemented.
 
 Supported environment variables:
 
@@ -285,11 +286,13 @@ deepseek-bridge --runtime-mode kubernetes
 In Kubernetes mode, the proxy defaults to `0.0.0.0:9000`, disables tunnels,
 logs only to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`,
 and uses an in-memory SQLite reasoning cache unless Valkey or a SQLite file path
-is configured. That allows a read-only root filesystem by default. For multiple
-replicas, set `DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey` and
-`DEEPSEEK_BRIDGE_VALKEY_URL` so all pods share the same reasoning cache. If you
-want the SQLite reasoning cache to survive process restarts, mount a writable
-directory and set the cache path to a file inside that mount.
+is configured. Set `DEEPSEEK_BRIDGE_LOG_FORMAT=json` when your cluster logging
+stack expects one-line structured records. That allows a read-only root
+filesystem by default. For multiple replicas, set
+`DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey` and `DEEPSEEK_BRIDGE_VALKEY_URL` so all
+pods share the same reasoning cache. If you want the SQLite reasoning cache to
+survive process restarts, mount a writable directory and set the cache path to a
+file inside that mount.
 
 The published container image already sets `runtime.mode: kubernetes` in its
 baked config. Workload manifests may still pass `--runtime-mode kubernetes`
