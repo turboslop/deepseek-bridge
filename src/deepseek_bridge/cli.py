@@ -33,7 +33,15 @@ from .helpers import (
 from .logging import LOG, configure_logging
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter
-from .tunnel import HealthCheckConfig, NgrokTunnel, CloudflaredTunnel, TunnelService, create_tunnel, get_tunnel_choices, local_tunnel_target
+from .tunnel import (
+    HealthCheckConfig,
+    NgrokTunnel,
+    CloudflaredTunnel,
+    TunnelService,
+    create_tunnel,
+    get_tunnel_choices,
+    local_tunnel_target,
+)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -227,14 +235,17 @@ def warn_if_insecure_upstream(url: str) -> None:
 def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
     import http.client
     import urllib.parse
+
     parsed = urllib.parse.urlparse(url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     for attempt in range(3):
         try:
-            conn = http.client.HTTPSConnection(host, port=port, timeout=timeout) \
-                if parsed.scheme == "https" else \
-                http.client.HTTPConnection(host, port=port, timeout=timeout)
+            conn = (
+                http.client.HTTPSConnection(host, port=port, timeout=timeout)
+                if parsed.scheme == "https"
+                else http.client.HTTPConnection(host, port=port, timeout=timeout)
+            )
             conn.request("GET", "/v1/health")
             resp = conn.getresponse()
             body = resp.read().decode("utf-8", errors="replace")
@@ -250,10 +261,13 @@ def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
                     "tunnel health check: HTTP 530 at %s — Cloudflare tunnel not connected. "
                     "Run 'cloudflared tunnel list' and 'cloudflared tunnel route dns'. "
                     "Body: %s",
-                    url, body[:120],
+                    url,
+                    body[:120],
                 )
                 return False
-            LOG.warning("tunnel health check: HTTP %s at %s — %s", resp.status, url, body[:120])
+            LOG.warning(
+                "tunnel health check: HTTP %s at %s — %s", resp.status, url, body[:120]
+            )
             return False
         except Exception as exc:
             if attempt < 2:
@@ -395,7 +409,9 @@ def main(argv: list[str] | None = None) -> int:
         tunnel = create_tunnel(config.tunnel, target_url)
         if isinstance(tunnel, CloudflaredTunnel):
             tunnel.cfd_url = config.cf_url
-            tunnel.cfd_tunnel_name = getattr(config, "cfd_tunnel_name", "deepseek-bridge")
+            tunnel.cfd_tunnel_name = getattr(
+                config, "cfd_tunnel_name", "deepseek-bridge"
+            )
         if isinstance(tunnel, NgrokTunnel) and config.ngrok_url:
             tunnel.ngrok_url = config.ngrok_url
         try:

@@ -40,7 +40,9 @@ class StreamAccumulator:
         self.choices: dict[int, StreamingChoice] = {}
         self._stored_choices: dict[tuple[int, str], str] = {}
         self._has_new_storeable_data: bool = False
-        self._pending_store: dict[tuple[int, str], tuple[dict, str, str, list[dict] | None]] = {}
+        self._pending_store: dict[
+            tuple[int, str], tuple[dict, str, str, list[dict] | None]
+        ] = {}
 
     def ingest_chunk(self, chunk: dict[str, Any]) -> None:
         choices = chunk.get("choices")

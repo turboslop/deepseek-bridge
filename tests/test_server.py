@@ -148,7 +148,8 @@ class CliAndHelperTests(unittest.TestCase):
                 "--no-display-reasoning",
                 "--no-collapsible-reasoning",
                 "--cors",
-                "--tunnel", "cloudflared",
+                "--tunnel",
+                "cloudflared",
                 "--trace-dir",
                 "/tmp/dcp-traces",
             ]
@@ -233,6 +234,7 @@ class CliAndHelperTests(unittest.TestCase):
 
     def test_startup_banner_includes_log_path_when_log_dir_set(self) -> None:
         import logging
+
         root = logging.getLogger()
         handlers_before = root.handlers[:]
         with TemporaryDirectory() as d:
@@ -426,10 +428,12 @@ class HandlerStubTests(unittest.TestCase):
 
     def test_pause_rejection_is_logged(self) -> None:
         """Verify paused server rejection is logged at WARNING level."""
-        body = json.dumps({
-            "model": "deepseek",
-            "messages": [{"role": "user", "content": "hi"}],
-        })
+        body = json.dumps(
+            {
+                "model": "deepseek",
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        )
         handler = _make_handler_stub(BytesIO())
         handler.server.paused = True
         handler.server.request_count = 0

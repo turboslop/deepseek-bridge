@@ -99,7 +99,9 @@ class HandlerStreaming:
                 # write-side already detects client disconnect naturally)
                 if alive_check_counter % 10 == 0:
                     if not self._check_client_alive():
-                        LOG.debug("handler.disconnect: client disconnected at stage=streaming")
+                        LOG.debug(
+                            "handler.disconnect: client disconnected at stage=streaming"
+                        )
                         if self.config.debug:
                             LOG.info("client disconnected, stopping upstream read")
                         response.release_conn()
@@ -168,14 +170,19 @@ class HandlerStreaming:
             return ProxyResponseResult(False, usage)
         finally:
             if not finalized:
-                LOG.debug("handler.disconnect: client disconnected at stage=streaming_finalize")
+                LOG.debug(
+                    "handler.disconnect: client disconnected at stage=streaming_finalize"
+                )
                 if self.config.debug:
                     log_json(
                         "model streaming assistant messages", accumulator.messages()
                     )
                 for ctx_scope, ctx_messages in response_contexts:
                     accumulator.store_reasoning(
-                        self.reasoning_store, ctx_scope, cache_namespace, ctx_messages,
+                        self.reasoning_store,
+                        ctx_scope,
+                        cache_namespace,
+                        ctx_messages,
                     )
                 stored = accumulator.flush_pending_store(self.reasoning_store)
                 if self.config.debug and stored:
@@ -208,7 +215,10 @@ class HandlerStreaming:
                 log_json("model streaming assistant messages", accumulator.messages())
             for ctx_scope, ctx_messages in response_contexts:
                 accumulator.store_reasoning(
-                    self.reasoning_store, ctx_scope, cache_namespace, ctx_messages,
+                    self.reasoning_store,
+                    ctx_scope,
+                    cache_namespace,
+                    ctx_messages,
                 )
             stored = accumulator.flush_pending_store(self.reasoning_store)
             scope_preview = (response_contexts[0][0] if response_contexts else "")[:16]
@@ -256,8 +266,10 @@ class HandlerStreaming:
         # model name substitution and system fingerprint injection, avoiding
         # orjson load/dump overhead in the common case.
         if (
-            display_adapter is None or not display_adapter._open_choices
-        ) and b'"reasoning_content"' not in data and b'"tool_calls"' not in data:
+            (display_adapter is None or not display_adapter._open_choices)
+            and b'"reasoning_content"' not in data
+            and b'"tool_calls"' not in data
+        ):
             result = data.replace(
                 b'"model":"deepseek-v4-pro"',
                 f'"model":"{original_model}"'.encode(),
@@ -313,11 +325,7 @@ class HandlerStreaming:
                 chunk["system_fingerprint"] = SYSTEM_FINGERPRINT
             ending = b"\r\n" if line.endswith(b"\r\n") else b"\n"
             return (
-                (
-                    b"data: "
-                    + orjson.dumps(chunk)
-                    + ending
-                ),
+                (b"data: " + orjson.dumps(chunk) + ending),
                 False,
                 recovery_notice,
                 chunk_usage if isinstance(chunk_usage, dict) else None,

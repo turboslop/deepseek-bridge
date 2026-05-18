@@ -74,9 +74,7 @@ class ConfigTests(unittest.TestCase):
                 config_text,
             )
             if os.name != "nt":
-                self.assertEqual(
-                    stat.S_IMODE(config_path.stat().st_mode), 0o600
-                )
+                self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
             self.assertEqual(
                 config.collapsible_reasoning,
@@ -247,9 +245,7 @@ class ConfigTests(unittest.TestCase):
                 clear=False,
             ):
                 config = ProxyConfig.from_file(config_path=config_path)
-                self.assertEqual(
-                    os.environ.get("PROXY_VERBOSE"), "true"
-                )
+                self.assertEqual(os.environ.get("PROXY_VERBOSE"), "true")
                 self.assertEqual(
                     os.environ.get("DEEPSEEK_CURSOR_PROXY_CONFIG_PATH"),
                     "/ignored.yaml",

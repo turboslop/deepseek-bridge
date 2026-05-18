@@ -360,7 +360,9 @@ class ProxyConfig:
             ),
             tunnel=as_str(setting_value(settings, "tunnel"), "cloudflared"),
             cf_url=as_str(setting_value(settings, "cf_url"), ""),
-            cfd_tunnel_name=as_str(setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"),
+            cfd_tunnel_name=as_str(
+                setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"
+            ),
             ngrok_url=as_str(setting_value(settings, "ngrok_url"), ""),
             max_pool_connections=_auto_pool_connections(
                 as_int(

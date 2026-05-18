@@ -12,13 +12,22 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import RichLog, Static
 
-
 FIELDS = [
     ("section", "", "── Model ──", None),
     ("thinking", "thinking", "Thinking", ["enabled", "disabled"]),
-    ("reasoning_effort", "reasoning_effort", "Effort", ["low", "medium", "high", "max", "xhigh"]),
+    (
+        "reasoning_effort",
+        "reasoning_effort",
+        "Effort",
+        ["low", "medium", "high", "max", "xhigh"],
+    ),
     ("display_reasoning", "display_reasoning", "Show Thinking", ["true", "false"]),
-    ("collapsible_reasoning", "collapsible_reasoning", "Collapsible", ["true", "false"]),
+    (
+        "collapsible_reasoning",
+        "collapsible_reasoning",
+        "Collapsible",
+        ["true", "false"],
+    ),
     ("section", "", "── Network ──", None),
     ("host", "host", "Host", None),
     ("port", "port", "Port", None),
@@ -110,10 +119,13 @@ class TuiApp(App[None]):
 
         handler = TuiLogHandler(emit_fn=self._write_to_log)
         root = logging.getLogger()
-        root.addHandler(handler)       # Add FIRST so there's never a gap
+        root.addHandler(handler)  # Add FIRST so there's never a gap
         self._tui_handler = handler
         for h in root.handlers[:]:
-            if isinstance(h, logging.StreamHandler) and h.stream in (sys.stdout, sys.stderr):
+            if isinstance(h, logging.StreamHandler) and h.stream in (
+                sys.stdout,
+                sys.stderr,
+            ):
                 root.removeHandler(h)  # THEN remove old ones
 
         self.flush_pre_mount_buffer()
@@ -229,11 +241,11 @@ class TuiApp(App[None]):
             urls = f"  Cursor   {api_base}"
             urls += f"\n  Copilot  {ollama}"
             if public:
-                tunnel_label = {"ngrok": "ngrok", "cloudflared": "cf"}.get(config.tunnel, "tunnel")
+                tunnel_label = {"ngrok": "ngrok", "cloudflared": "cf"}.get(
+                    config.tunnel, "tunnel"
+                )
                 urls += f"\n  {tunnel_label:<7} {public}"
             self.query_one("#urls", Static).update(urls)
-
-
 
         # --- Config (right panel) ---
         if config:
@@ -298,15 +310,17 @@ class TuiApp(App[None]):
             "[bold]Session[/]",
         ]
         if total_tokens:
-            stats_lines.extend([
-                f"  prompt      {prompt:,}",
-                f"  completion  {completion:,}",
-                f"  reasoning   {reasoning:,}",
-                f"  total       {total_tokens:,}",
-                "",
-                f"  cache hit   {hit_rate}",
-                "",
-            ])
+            stats_lines.extend(
+                [
+                    f"  prompt      {prompt:,}",
+                    f"  completion  {completion:,}",
+                    f"  reasoning   {reasoning:,}",
+                    f"  total       {total_tokens:,}",
+                    "",
+                    f"  cache hit   {hit_rate}",
+                    "",
+                ]
+            )
         if model_tokens:
             stats_lines.append("  [dim]per model[/]")
             for model, tokens in sorted(model_tokens.items()):
@@ -470,6 +484,7 @@ class TuiApp(App[None]):
             self.server.config = self.server_config
             if attr == "debug":
                 import logging as _logging
+
                 _logging.getLogger().setLevel(
                     _logging.DEBUG if self.server_config.debug else _logging.INFO
                 )

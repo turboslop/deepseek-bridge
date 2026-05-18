@@ -82,12 +82,15 @@ class ResponsesConverterConversionTests(unittest.TestCase):
             ]
         }
         from deepseek_bridge.responses_converter import convert_responses_to_chat
+
         result = convert_responses_to_chat(payload)
         messages = result.get("messages", [])
         self.assertEqual(len(messages), 1)
         assistant_msg = messages[0]
         self.assertEqual(assistant_msg["role"], "assistant")
-        self.assertEqual(assistant_msg.get("reasoning_content"), "I need to calculate...")
+        self.assertEqual(
+            assistant_msg.get("reasoning_content"), "I need to calculate..."
+        )
 
     def test_multiple_input_items(self) -> None:
         payload = {
