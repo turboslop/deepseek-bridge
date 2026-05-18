@@ -439,6 +439,11 @@ Cursor's native reasoning UI is available only for Cursor's own models. For cust
 # Run tests
 uv run --extra dev --python 3.14 python -m unittest discover -s tests
 
+# Run opt-in functional HTTP tests against a local Valkey
+RUN_FUNCTIONAL_TESTS=1 \
+FUNCTIONAL_VALKEY_URL=redis://127.0.0.1:6379/0 \
+uv run --extra dev --python 3.14 python -m unittest discover -s tests/functional -v
+
 # Format, lint, type-check, and YAML-check
 uv run --extra dev --python 3.14 pre-commit run --all-files
 
