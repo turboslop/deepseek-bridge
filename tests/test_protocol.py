@@ -22,6 +22,8 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import urllib3
+
 from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.reasoning_store import ReasoningStore
 from deepseek_bridge.server import (
@@ -314,6 +316,7 @@ class _StrictUpstreamCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from deepseek_bridge.helpers import _shutdown_requested
+
         _shutdown_requested.clear()
         self.upstream = _start_strict_upstream()
         self.store = ReasoningStore(":memory:")
@@ -997,6 +1000,104 @@ class StreamingDisplayTests(unittest.TestCase):
             chunks[2]["choices"][0]["delta"]["content"],
             "\n</details>\n\nFinal.",
         )
+
+
+class _StreamingHttpErrorHandler(BaseHTTPRequestHandler):
+    """Returns an upstream HTTP error for streaming requests."""
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        return
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        encoded = json.dumps({"error": {"message": "bad upstream"}}).encode("utf-8")
+        self.send_response(502)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
+class _FailingUpstreamPool:
+    def request(self, method: str, url: str, **kwargs: Any) -> object:
+        raise urllib3.exceptions.MaxRetryError(
+            None,
+            url,
+            reason=ConnectionError("connection refused"),
+        )
+
+
+class StreamingUpstreamErrorTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        proxy = getattr(self, "proxy", None)
+        if proxy is not None:
+            proxy.close()
+        upstream = getattr(self, "upstream", None)
+        if upstream is not None:
+            upstream.close()
+        store = getattr(self, "store", None)
+        if store is not None:
+            store.close()
+
+    def _streaming_request(self) -> Request:
+        return Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+
+    def test_streaming_setup_failure_returns_sse_error(self) -> None:
+        self.upstream = None
+        self.store = ReasoningStore(":memory:")
+        self.proxy = _start_proxy("http://127.0.0.1:1", self.store)
+        self.proxy.server.upstream_pool = _FailingUpstreamPool()
+
+        with urlopen(self._streaming_request(), timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+            body = response.read().decode("utf-8")
+
+        self.assertTrue(body.startswith("data: "), body)
+        self.assertTrue(body.endswith("\n\n"), body)
+        self.assertEqual(body.count("data: "), 1)
+        self.assertNotIn("HTTP/", body)
+        payload = json.loads(body.removeprefix("data: ").strip())
+        self.assertIn("Upstream request failed", payload["error"]["message"])
+        self.assertEqual(payload["error"]["type"], "upstream_error")
+        self.assertEqual(payload["error"]["code"], "upstream_error")
+        self.assertIsNone(payload["error"]["param"])
+
+    def test_streaming_upstream_http_error_returns_sse_error(self) -> None:
+        self.upstream = _Fixture(
+            ThreadingHTTPServer(("127.0.0.1", 0), _StreamingHttpErrorHandler)
+        )
+        self.store = ReasoningStore(":memory:")
+        self.proxy = _start_proxy(self.upstream.url, self.store)
+
+        with urlopen(self._streaming_request(), timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "text/event-stream")
+            body = response.read().decode("utf-8")
+
+        self.assertTrue(body.startswith("data: "), body)
+        self.assertTrue(body.endswith("\n\n"), body)
+        self.assertEqual(body.count("data: "), 1)
+        payload = json.loads(body.removeprefix("data: ").strip())
+        self.assertEqual(payload["error"]["message"], "Upstream returned 502")
+        self.assertEqual(payload["error"]["type"], "upstream_error")
+        self.assertEqual(payload["error"]["code"], "upstream_error")
+        self.assertIsNone(payload["error"]["param"])
 
 
 class NonStreamingDisplayTests(_StrictUpstreamCase):

@@ -147,6 +147,7 @@ class HandlerRoutes:
 
         # Check for shutdown signal before forwarding
         from ..helpers import _shutdown_requested
+
         if _shutdown_requested.is_set():
             LOG.info("shutdown in progress, aborting request")
             spinner.stop()
@@ -187,13 +188,27 @@ class HandlerRoutes:
         )
 
         response = self._send_upstream_with_retry(
-            upstream_url, upstream_body, upstream_headers,
-            stream, trace, started, spinner,
+            upstream_url,
+            upstream_body,
+            upstream_headers,
+            stream,
+            trace,
+            started,
+            spinner,
+            headers_sent=headers_sent,
         )
         if response is None:
             return
 
-        self._dispatch_response(response, prepared, stream, trace, started, spinner, headers_sent=headers_sent)
+        self._dispatch_response(
+            response,
+            prepared,
+            stream,
+            trace,
+            started,
+            spinner,
+            headers_sent=headers_sent,
+        )
 
     def _validate_chat_request(
         self, request_path: str
@@ -414,6 +429,7 @@ class HandlerRoutes:
         trace: "TraceRequest | None",
         started: float,
         spinner: "TerminalSpinner",
+        headers_sent: bool = False,
     ) -> "object | None":
         try:
             if self.config.debug:
@@ -476,14 +492,12 @@ class HandlerRoutes:
                         elapsed_ms(started),
                         exc,
                     )
-                    self._send_json(
+                    self._send_upstream_failure(
                         500,
-                        _error_body(
-                            f"Upstream request failed after retries: {exc}",
-                            "server_error",
-                            "upstream_failure",
-                        ),
+                        f"Upstream request failed after retries: {exc}",
+                        "upstream_failure",
                         trace=trace,
+                        headers_sent=headers_sent,
                     )
                     self._finish_trace(trace, "upstream_error", http_status=500)
                     return None
@@ -494,14 +508,12 @@ class HandlerRoutes:
                 elapsed_ms(started),
                 exc.reason,
             )
-            self._send_json(
+            self._send_upstream_failure(
                 500,
-                _error_body(
-                    f"Upstream request failed: {exc.reason}",
-                    "server_error",
-                    "upstream_failure",
-                ),
+                f"Upstream request failed: {exc.reason}",
+                "upstream_failure",
                 trace=trace,
+                headers_sent=headers_sent,
             )
             self._finish_trace(trace, "upstream_error", http_status=500)
             return None
@@ -511,14 +523,12 @@ class HandlerRoutes:
                 "upstream request timed out elapsed_ms=%s",
                 elapsed_ms(started),
             )
-            self._send_json(
+            self._send_upstream_failure(
                 504,
-                _error_body(
-                    "Upstream request timed out",
-                    "server_error",
-                    "upstream_timeout",
-                ),
+                "Upstream request timed out",
+                "upstream_timeout",
                 trace=trace,
+                headers_sent=headers_sent,
             )
             self._finish_trace(trace, "upstream_error", http_status=504)
             return None
@@ -529,14 +539,12 @@ class HandlerRoutes:
                 elapsed_ms(started),
                 exc,
             )
-            self._send_json(
+            self._send_upstream_failure(
                 500,
-                _error_body(
-                    f"Upstream request failed: {exc}",
-                    "server_error",
-                    "upstream_failure",
-                ),
+                f"Upstream request failed: {exc}",
+                "upstream_failure",
                 trace=trace,
+                headers_sent=headers_sent,
             )
             self._finish_trace(trace, "upstream_error", http_status=500)
             return None
@@ -544,6 +552,24 @@ class HandlerRoutes:
             spinner.stop()
             raise
         return None  # unreachable, satisfies mypy
+
+    def _send_upstream_failure(
+        self,
+        status: int,
+        message: str,
+        code: str,
+        *,
+        trace: "TraceRequest | None",
+        headers_sent: bool,
+    ) -> None:
+        if headers_sent:
+            self._send_sse_error(status, message, trace=trace)
+            return
+        self._send_json(
+            status,
+            _error_body(message, "server_error", code),
+            trace=trace,
+        )
 
     def _dispatch_response(
         self,
