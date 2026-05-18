@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - "codex/**"
   pull_request:
     types: [opened, reopened, synchronize]
 
