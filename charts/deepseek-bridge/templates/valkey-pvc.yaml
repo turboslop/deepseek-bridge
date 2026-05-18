@@ -1,0 +1,25 @@
+{{- if and .Values.valkey.enabled .Values.valkey.persistence.enabled (not .Values.valkey.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}-valkey-data
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+    {{- with .Values.valkey.persistence.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.valkey.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.valkey.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.valkey.persistence.size | quote }}
+  {{- if .Values.valkey.persistence.storageClass }}
+  storageClassName: {{ .Values.valkey.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

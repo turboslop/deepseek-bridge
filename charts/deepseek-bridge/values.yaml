@@ -1,0 +1,246 @@
+replicaCount: 1
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/turboslop/deepseek-bridge
+  pullPolicy: IfNotPresent
+  tag: latest
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+commonLabels: {}
+commonAnnotations: {}
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+containerPort: 9000
+terminationGracePeriodSeconds: 360
+
+service:
+  type: ClusterIP
+  port: 9000
+  appProtocol: http
+  annotations: {}
+
+upstream:
+  baseUrl: https://api.deepseek.com
+  model: deepseek-v4-pro
+  thinking:
+    mode: enabled
+    reasoningEffort: max
+
+storage:
+  backend: sqlite
+  sqlite:
+    path: ":memory:"
+    allowMultiReplica: false
+    persistence:
+      enabled: false
+      existingClaim: ""
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+      annotations: {}
+      labels: {}
+
+valkey:
+  enabled: false
+  url: ""
+  existingSecret: ""
+  existingSecretKey: url
+  keyPrefix: deepseek-bridge
+  image:
+    repository: valkey/valkey
+    tag: 8-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+    annotations: {}
+  persistence:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    annotations: {}
+    labels: {}
+  resources: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+reasoningCache:
+  maxAgeSeconds: 604800
+  maxEntries: null
+  missingReasoningStrategy: recover
+
+reasoningDisplay:
+  enabled: true
+  collapsible: true
+
+logging:
+  level: info
+  format: json
+  compact: true
+
+metrics:
+  enabled: false
+
+cors:
+  enabled: true
+  allowedOrigins:
+    - http://localhost
+    - http://localhost:*
+    - https://localhost
+    - https://localhost:*
+    - http://127.0.0.1
+    - http://127.0.0.1:*
+    - https://127.0.0.1
+    - https://127.0.0.1:*
+  allowCredentials: true
+
+ollama:
+  enabled: true
+
+performance:
+  requestTimeout: 300
+  streamReadTimeout: 180
+  maxRequestBodyBytes: 20971520
+  maxPoolConnections: 10
+  maxThreadPool: 12
+
+resources: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: null
+  behavior: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: null
+  maxUnavailable: 1
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: deepseek-bridge.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRefs: []
+  hostnames: []
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  labels: {}
+  annotations: {}
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  scheme: http
+  tlsConfig: {}
+  relabelings: []
+  metricRelabelings: []
+
+grafanaDashboard:
+  enabled: false
+  labels:
+    grafana_dashboard: "1"
+  annotations: {}
+  folderAnnotation: ""
+  folder: DeepSeek Bridge
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraArgs: []
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
+tests:
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent

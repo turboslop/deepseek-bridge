@@ -1,0 +1,24 @@
+{{- if and .Values.storage.sqlite.persistence.enabled (not .Values.storage.sqlite.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}-data
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+    {{- with .Values.storage.sqlite.persistence.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.storage.sqlite.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.storage.sqlite.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.sqlite.persistence.size | quote }}
+  {{- if .Values.storage.sqlite.persistence.storageClass }}
+  storageClassName: {{ .Values.storage.sqlite.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

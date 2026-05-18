@@ -1,0 +1,23 @@
+{{- if .Values.grafanaDashboard.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}-dashboard
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+    {{- with .Values.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.grafanaDashboard.folderAnnotation .Values.grafanaDashboard.annotations }}
+  annotations:
+    {{- if .Values.grafanaDashboard.folderAnnotation }}
+    {{ .Values.grafanaDashboard.folderAnnotation }}: {{ .Values.grafanaDashboard.folder | quote }}
+    {{- end }}
+    {{- with .Values.grafanaDashboard.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+data:
+  deepseek-bridge.json: |-
+{{ .Files.Get "dashboards/deepseek-bridge.json" | indent 4 }}
+{{- end }}

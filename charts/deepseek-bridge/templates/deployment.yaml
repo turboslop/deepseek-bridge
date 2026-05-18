@@ -1,0 +1,157 @@
+{{- include "deepseek-bridge.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "deepseek-bridge.fullname" . }}
+  labels:
+    {{- include "deepseek-bridge.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "deepseek-bridge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if and (eq (lower .Values.storage.backend) "valkey") .Values.valkey.url (not .Values.valkey.existingSecret) }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "deepseek-bridge.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "deepseek-bridge.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: deepseek-bridge
+          image: {{ include "deepseek-bridge.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/deepseek-bridge/config.yaml
+            - --runtime-mode
+            - kubernetes
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.containerPort | quote }}
+            - --tunnel
+            - none
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: DEEPSEEK_BRIDGE_RUNTIME_MODE
+              value: "kubernetes"
+            - name: DEEPSEEK_BRIDGE_HOST
+              value: "0.0.0.0"
+            - name: DEEPSEEK_BRIDGE_PORT
+              value: {{ .Values.containerPort | quote }}
+            - name: DEEPSEEK_BRIDGE_TUNNEL_MODE
+              value: "none"
+            - name: DEEPSEEK_BRIDGE_STORAGE_BACKEND
+              value: {{ lower .Values.storage.backend | quote }}
+            - name: DEEPSEEK_BRIDGE_LOG_FORMAT
+              value: {{ .Values.logging.format | quote }}
+            - name: DEEPSEEK_BRIDGE_LOG_FILE_ENABLED
+              value: "false"
+            - name: DEEPSEEK_BRIDGE_METRICS_ENABLED
+              value: {{ .Values.metrics.enabled | quote }}
+            {{- if eq (lower .Values.storage.backend) "sqlite" }}
+            - name: DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH
+              value: {{ include "deepseek-bridge.sqlitePath" . | quote }}
+            {{- end }}
+            {{- if eq (lower .Values.storage.backend) "valkey" }}
+            - name: DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX
+              value: {{ .Values.valkey.keyPrefix | quote }}
+            - name: DEEPSEEK_BRIDGE_VALKEY_URL
+              {{- if .Values.valkey.enabled }}
+              value: {{ include "deepseek-bridge.internalValkeyUrl" . | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "deepseek-bridge.valkeySecretName" .) .Values.valkey.existingSecret }}
+                  key: {{ .Values.valkey.existingSecretKey }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/deepseek-bridge/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            {{- if .Values.storage.sqlite.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "deepseek-bridge.fullname" . }}
+        {{- if .Values.storage.sqlite.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "deepseek-bridge.fullname" .)) .Values.storage.sqlite.persistence.existingClaim }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
