@@ -27,11 +27,7 @@ def _labels(values: Mapping[str, object] | None = None) -> LabelSet:
 
 
 def _escape_label_value(value: str) -> str:
-    return (
-        value.replace("\\", "\\\\")
-        .replace("\n", "\\n")
-        .replace('"', '\\"')
-    )
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 def _format_labels(labels: LabelSet) -> str:
