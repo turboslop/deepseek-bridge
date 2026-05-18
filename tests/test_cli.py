@@ -150,13 +150,12 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.max_thread_pool, 40)
         self.assertEqual(args.max_request_body_bytes, 1048576)
 
-    def test_headless_debug_compact_flags(self) -> None:
+    def test_debug_compact_flags(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
 
         parser = build_arg_parser()
         args = parser.parse_args(
             [
-                "--headless",
                 "--debug",
                 "--compact",
                 "--missing-reasoning-strategy",
@@ -166,7 +165,6 @@ class CliArgParserTests(unittest.TestCase):
                 "/tmp/config.yaml",
             ]
         )
-        self.assertTrue(args.headless)
         self.assertTrue(args.debug)
         self.assertTrue(args.compact)
         self.assertEqual(args.missing_reasoning_strategy, "reject")
@@ -202,7 +200,7 @@ class CliArgParserTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# main() – tunnel selection, headless, debug, config errors
+# main() - tunnel selection, server loop, debug, config errors
 # ---------------------------------------------------------------------------
 
 
@@ -214,11 +212,15 @@ class CliMainTests(unittest.TestCase):
 
     @staticmethod
     def _server_bind_patches():
-        """Return context-manager tuple: mock server_bind/activate so no port bind."""
+        """Return context-manager tuple with disabled socket binding."""
         return (
-            patch.object(BoundedThreadPoolHTTPServer, "server_bind", return_value=None),
             patch.object(
-                BoundedThreadPoolHTTPServer, "server_activate", return_value=None
+                BoundedThreadPoolHTTPServer, "server_bind", return_value=None
+            ),
+            patch.object(
+                BoundedThreadPoolHTTPServer,
+                "server_activate",
+                return_value=None,
             ),
         )
 
@@ -228,7 +230,9 @@ class CliMainTests(unittest.TestCase):
         srv_bind, srv_activate = self._server_bind_patches()
         with (
             patch("deepseek_bridge.cli.create_tunnel") as mock_create,
-            patch("deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt),
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
             patch("deepseek_bridge.cli.UpstreamPool"),
             patch("deepseek_bridge.cli.configure_logging"),
@@ -246,7 +250,7 @@ class CliMainTests(unittest.TestCase):
 
             from deepseek_bridge.cli import main
 
-            result = main(["--tunnel", cli_arg, "--headless"])
+            result = main(["--tunnel", cli_arg])
 
             self.assertEqual(result, 0)
             mock_create.assert_called_once_with(expected_kind, ANY)
@@ -265,7 +269,9 @@ class CliMainTests(unittest.TestCase):
         srv_bind, srv_activate = self._server_bind_patches()
         with (
             patch("deepseek_bridge.cli.create_tunnel") as mock_create,
-            patch("deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt),
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
             patch("deepseek_bridge.cli.UpstreamPool"),
             patch("deepseek_bridge.cli.configure_logging"),
@@ -280,13 +286,13 @@ class CliMainTests(unittest.TestCase):
 
             from deepseek_bridge.cli import main
 
-            result = main(["--tunnel", "none", "--headless"])
+            result = main(["--tunnel", "none"])
 
             self.assertEqual(result, 0)
             mock_create.assert_not_called()
 
-    def test_main_headless_avoids_tui(self) -> None:
-        """--headless flag runs server loop instead of TUI."""
+    def test_main_runs_http_server(self) -> None:
+        """main runs the HTTP server loop directly."""
         srv_bind, srv_activate = self._server_bind_patches()
         with (
             patch(
@@ -310,16 +316,18 @@ class CliMainTests(unittest.TestCase):
 
             from deepseek_bridge.cli import main
 
-            result = main(["--headless"])
+            result = main([])
 
             self.assertEqual(result, 0)
             mock_run.assert_called_once()
 
     def test_main_debug_sets_config_debug(self) -> None:
-        """--debug flag sets debug=True on config, passed to configure_logging."""
+        """--debug sets debug=True on config for configure_logging."""
         srv_bind, srv_activate = self._server_bind_patches()
         with (
-            patch("deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt),
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
             patch("deepseek_bridge.cli.create_tunnel") as mock_create,
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
             patch("deepseek_bridge.cli.UpstreamPool"),
@@ -338,13 +346,14 @@ class CliMainTests(unittest.TestCase):
 
             from deepseek_bridge.cli import main
 
-            result = main(["--headless", "--debug"])
+            result = main(["--debug"])
 
             self.assertEqual(result, 0)
             mock_log.assert_called_once()
             call_kwargs = mock_log.call_args[1]
             self.assertTrue(
-                call_kwargs["debug"], "configure_logging should receive debug=True"
+                call_kwargs["debug"],
+                "configure_logging should receive debug=True",
             )
 
     def test_main_config_loading_error_returns_2(self) -> None:

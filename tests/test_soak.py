@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import random
 import signal
@@ -39,12 +40,14 @@ from deepseek_bridge.server import (
 
 
 class _FakeUpstream(BaseHTTPRequestHandler):
-    """Minimal upstream that returns short streaming / non-streaming responses."""
+    """Minimal upstream for streaming and non-streaming responses."""
 
     request_count: int = 0
     _lock: threading.Lock = threading.Lock()
 
-    def log_message(self, format: str, *args: object) -> None:  # type: ignore[override]
+    def log_message(
+        self, format: str, *args: object
+    ) -> None:  # type: ignore[override]
         return  # silence HTTP request logging
 
     def do_POST(self) -> None:
@@ -58,16 +61,18 @@ class _FakeUpstream(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             for i in range(3):
-                chunk = {"choices": [{"index": 0, "delta": {"content": f"chunk{i}"}}]}
+                chunk = {
+                    "choices": [{"index": 0, "delta": {"content": f"chunk{i}"}}]
+                }
                 self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.flush()
                 time.sleep(0.01)  # tiny delay so clients can cancel mid-stream
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
         else:
-            body = json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode(
-                "utf-8"
-            )
+            body = json.dumps(
+                {"choices": [{"message": {"content": "ok"}}]}
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -89,8 +94,10 @@ def _start_upstream() -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 
 
-def _start_proxy(upstream_url: str) -> tuple[DeepSeekProxyServer, ReasoningStore, str]:
-    """Start a real proxy pointing at *upstream_url*.  Returns (server, store, url)."""
+def _start_proxy(
+    upstream_url: str,
+) -> tuple[DeepSeekProxyServer, ReasoningStore, str]:
+    """Start a real proxy and return (server, store, url)."""
     store = ReasoningStore(":memory:")
     proxy = DeepSeekProxyServer(("127.0.0.1", 0), DeepSeekProxyHandler)
     proxy.config = ProxyConfig(
@@ -144,7 +151,9 @@ _SOAK_PAYLOAD = {
 }
 
 
-def _send_request(proxy_url: str, stream: bool, timeout: int = 10) -> HTTPResponse:
+def _send_request(
+    proxy_url: str, stream: bool, timeout: int = 10
+) -> HTTPResponse:
     """Send a chat-completion POST.  Returns the file-like response on success,
     or raises.  (Connection errors bubble up so the caller classifies them.)"""
     payload = dict(_SOAK_PAYLOAD, stream=stream)
@@ -180,7 +189,7 @@ def _worker(
     stats: Stats,
     stop_event: threading.Event,
 ) -> None:
-    """Single worker loop — runs until *stop_event* is set or *duration* elapses."""
+    """Run one worker until stop_event is set or duration elapses."""
     deadline = time.monotonic() + duration
     while time.monotonic() < deadline and not stop_event.is_set():
         stream = random.random() < 0.5
@@ -192,10 +201,8 @@ def _worker(
                 # Cancel: sleep 0.1 – 2.0 s then close the connection early
                 delay = random.uniform(0.1, 2.0)
                 time.sleep(delay)
-                try:
+                with contextlib.suppress(Exception):
                     response.close()
-                except Exception:
-                    pass  # expected when we close mid-stream
                 with stats.lock:
                     stats.total += 1
                     stats.cancelled += 1
@@ -216,10 +223,7 @@ def _worker(
         except HTTPError as exc:
             with stats.lock:
                 stats.total += 1
-                if exc.code >= 500:
-                    stats.errors += 1
-                # 4xx from proxy is a real error too (not transient)
-                elif exc.code >= 400:
+                if exc.code >= 500 or exc.code >= 400:
                     stats.errors += 1
 
         except (URLError, ConnectionRefusedError, OSError) as exc:
@@ -267,13 +271,14 @@ def main() -> None:
     # Start services
     # ------------------------------------------------------------------
     print(
-        f"=== soak test: duration={args.duration}s  concurrency={args.concurrency} ==="
+        "=== soak test: "
+        f"duration={args.duration}s  concurrency={args.concurrency} ==="
     )
 
-    upstream_srv, upstream_url = _start_upstream()
+    _upstream_srv, upstream_url = _start_upstream()
     print(f"  upstream  → {upstream_url}")
 
-    proxy_srv, store, proxy_url = _start_proxy(upstream_url)
+    _proxy_srv, _store, proxy_url = _start_proxy(upstream_url)
     print(f"  proxy     → {proxy_url}")
     print(f"  launching {args.concurrency} workers …")
 
@@ -312,11 +317,9 @@ def main() -> None:
             ]
             # Wait for all workers (they stop when duration elapses or
             # stop_event is set via Ctrl‑C).
-            for _f in as_completed(futures):
-                try:
-                    _f.result()
-                except Exception:
-                    pass  # already tracked inside the worker
+            for future in as_completed(futures):
+                with contextlib.suppress(Exception):
+                    future.result()
     finally:
         elapsed = time.monotonic() - start_time
         s = stats.snapshot()

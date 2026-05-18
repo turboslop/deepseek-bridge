@@ -84,10 +84,8 @@ def extract_text_content(content: Any) -> str | None:
             item_type = item.get("type")
             text = item.get("text") or item.get("content")
             if (
-                item_type in {"text", "input_text"}
-                and isinstance(text, str)
-                or isinstance(text, str)
-            ):
+                item_type in {"text", "input_text"} and isinstance(text, str)
+            ) or isinstance(text, str):
                 parts.append(text)
         return "\n".join(part for part in parts if part) or ""
     if isinstance(content, (dict, tuple)):
@@ -169,7 +167,8 @@ def normalize_tool_choice(tool_choice: Any) -> Any:
                     "type": "function",
                     "function": {"name": str(function["name"])},
                 }
-            # Handle Responses API format: {"type": "function", "name": "my_func"}
+            # Handle Responses API format:
+            # {"type": "function", "name": "my_func"}
             name = tool_choice.get("name")
             if isinstance(name, str) and name:
                 return {

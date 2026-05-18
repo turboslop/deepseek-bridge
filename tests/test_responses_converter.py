@@ -1,6 +1,6 @@
 """Pure-function unit tests for responses_converter.py.
 
-Tests detection of Responses API payloads and conversion to Chat Completions format.
+Tests detection of Responses API payloads and conversion to Chat Completions.
 No network calls — purely dict-in/dict-out assertions.
 """
 
@@ -27,7 +27,10 @@ class ResponsesConverterDetectionTests(unittest.TestCase):
         self.assertTrue(detect_responses_payload(payload))
 
     def test_rejects_chat_payload(self) -> None:
-        payload = {"messages": [{"role": "user", "content": "hi"}], "model": "x"}
+        payload = {
+            "messages": [{"role": "user", "content": "hi"}],
+            "model": "x",
+        }
         self.assertFalse(detect_responses_payload(payload))
 
     def test_rejects_empty_dict(self) -> None:
@@ -63,7 +66,10 @@ class ResponsesConverterConversionTests(unittest.TestCase):
     # ── basic input → messages ──────────────────────────────────────────
 
     def test_input_to_messages_simple(self) -> None:
-        payload = {"input": [{"role": "user", "content": "Hello"}], "model": "x"}
+        payload = {
+            "input": [{"role": "user", "content": "Hello"}],
+            "model": "x",
+        }
         result = convert_responses_to_chat(payload)
         self.assertIn("messages", result)
         self.assertNotIn("input", result)
@@ -81,7 +87,9 @@ class ResponsesConverterConversionTests(unittest.TestCase):
                 }
             ]
         }
-        from deepseek_bridge.responses_converter import convert_responses_to_chat
+        from deepseek_bridge.responses_converter import (
+            convert_responses_to_chat,
+        )
 
         result = convert_responses_to_chat(payload)
         messages = result.get("messages", [])
@@ -137,7 +145,11 @@ class ResponsesConverterConversionTests(unittest.TestCase):
     def test_function_call_output_to_tool(self) -> None:
         payload = {
             "input": [
-                {"type": "function_call_output", "call_id": "abc", "output": "result"}
+                {
+                    "type": "function_call_output",
+                    "call_id": "abc",
+                    "output": "result",
+                }
             ],
             "model": "x",
         }
@@ -362,9 +374,9 @@ class ResponsesConverterConversionTests(unittest.TestCase):
         self.assertEqual(result["tools"][0]["type"], "function")
         self.assertEqual(result["tools"][0]["function"]["name"], "my_plugin")
         self.assertEqual(
-            result["tools"][0]["function"]["parameters"]["properties"]["action"][
-                "type"
-            ],
+            result["tools"][0]["function"]["parameters"]["properties"][
+                "action"
+            ]["type"],
             "string",
         )
 
@@ -433,7 +445,11 @@ class ResponsesConverterConversionTests(unittest.TestCase):
     def test_typed_message_item(self) -> None:
         payload = {
             "input": [
-                {"type": "message", "role": "assistant", "content": "Hello, user"}
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": "Hello, user",
+                }
             ],
             "model": "x",
         }
@@ -472,7 +488,9 @@ class ResponsesConverterConversionTests(unittest.TestCase):
 
 class ConvertInputItemTests(unittest.TestCase):
     def test_role_based_system(self) -> None:
-        result = _convert_input_item({"role": "system", "content": "You are helpful"})
+        result = _convert_input_item(
+            {"role": "system", "content": "You are helpful"}
+        )
         assert result is not None
         self.assertEqual(result["role"], "system")
         self.assertEqual(result["content"], "You are helpful")
@@ -483,7 +501,9 @@ class ConvertInputItemTests(unittest.TestCase):
         self.assertEqual(result["role"], "user")
 
     def test_role_based_assistant(self) -> None:
-        result = _convert_input_item({"role": "assistant", "content": "Hi there"})
+        result = _convert_input_item(
+            {"role": "assistant", "content": "Hi there"}
+        )
         assert result is not None
         self.assertEqual(result["role"], "assistant")
 

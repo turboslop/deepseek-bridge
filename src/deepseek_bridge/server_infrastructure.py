@@ -1,4 +1,4 @@
-"""Server infrastructure: connection pool, HTTP server, bounded thread-pool server.
+"""Server infrastructure: connection pool and HTTP server.
 
 These classes handle the transport layer — upstream HTTP pooling, request
 queuing/dispatch, and thread-pool management. The request handler logic
@@ -19,8 +19,7 @@ from typing import Any
 import urllib3
 
 from .config import ProxyConfig
-from .logging import format_count
-from .logging import LOG
+from .logging import LOG, format_count
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter
 
@@ -37,7 +36,12 @@ class UpstreamPool:
             ],
         )
 
-    def request(self, method: str, url: str, **kwargs) -> urllib3.BaseHTTPResponse:
+    def request(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> urllib3.BaseHTTPResponse:
         """Forward an HTTP request through the upstream connection pool."""
         return self._pool.request(method, url, **kwargs)
 
@@ -47,20 +51,25 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     reasoning_store: ReasoningStore
     trace_writer: TraceWriter | None
     upstream_pool: UpstreamPool
-    request_count: int = 0
-    start_time: float = 0.0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    reasoning_tokens: int = 0
-    cache_hit_tokens: int = 0
-    cache_miss_tokens: int = 0
-    model_tokens: dict[str, int] = {}
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.request_count = 0
+        self.start_time = 0.0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.reasoning_tokens = 0
+        self.cache_hit_tokens = 0
+        self.cache_miss_tokens = 0
+        self.model_tokens: dict[str, int] = {}
+        super().__init__(*args, **kwargs)
 
 
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     """ThreadingHTTPServer variant that uses a fixed-size ThreadPoolExecutor."""
 
-    def __init__(self, *args, max_workers: int = 20, **kwargs) -> None:
+    def __init__(
+        self, *args: Any, max_workers: int = 20, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -74,16 +83,26 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         timeout = int(config.request_timeout) if config is not None else 300
         self.socket.settimeout(timeout)
 
-    def process_request(self, request, client_address) -> None:
-        if hasattr(request, "settimeout"):
+    def process_request(
+        self,
+        request: socket.socket | tuple[bytes, socket.socket],
+        client_address: Any,
+    ) -> None:
+        if isinstance(request, socket.socket):
             request.settimeout(
                 self.socket.gettimeout()
                 if hasattr(self, "socket")
-                else int(getattr(getattr(self, "config", None), "request_timeout", 300))
+                else int(
+                    getattr(
+                        getattr(self, "config", None), "request_timeout", 300
+                    )
+                )
             )
         queue_size = self.queue_size
         config = getattr(self, "config", None)
-        effective_max_queue = config.max_queue_size if config is not None else 50
+        effective_max_queue = (
+            config.max_queue_size if config is not None else 50
+        )
         if queue_size > effective_max_queue:
             LOG.warning(
                 "rejecting request from %s: queue full (%s queued)",
@@ -93,18 +112,20 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             self._reject_connection(request)
             return
         with contextlib.suppress(RuntimeError):
-            self.executor.submit(self.process_request_thread, request, client_address)
+            self.executor.submit(
+                self.process_request_thread, request, client_address
+            )
 
     @staticmethod
     def _reject_connection(request: Any) -> None:
-        import socket
-
         try:
             if isinstance(request, socket.socket):
                 body = json.dumps(
                     {
                         "error": {
-                            "message": "Server overloaded — too many queued requests",
+                            "message": (
+                                "Server overloaded — too many queued requests"
+                            ),
                             "type": "server_error",
                             "code": "service_unavailable",
                         }
@@ -113,7 +134,9 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                 request.sendall(
                     b"HTTP/1.1 503 Service Unavailable\r\n"
                     b"Content-Type: application/json\r\n"
-                    b"Content-Length: " + str(len(body)).encode("utf-8") + b"\r\n"
+                    b"Content-Length: "
+                    + str(len(body)).encode("utf-8")
+                    + b"\r\n"
                     b"Connection: close\r\n"
                     b"\r\n" + body
                 )
@@ -188,7 +211,9 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             if isinstance(store.reasoning_content_path, Path):
                 size_mb = store.get_db_size_mb()
                 row_count = store.get_row_count()
-                parts.append(f"db={size_mb:.0f}MB/{format_count(row_count)}rows")
+                parts.append(
+                    f"db={size_mb:.0f}MB/{format_count(row_count)}rows"
+                )
         except Exception as exc:
             LOG.warning("failed to read db stats: %s", exc)
             parts.append("db=?")
@@ -196,6 +221,6 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         parts.append(f"uptime={uptime // 60}m")
         LOG.info(" | ".join(parts))
 
-    def server_close(self):
+    def server_close(self) -> None:
         self.executor.shutdown(wait=True, cancel_futures=False)
         super().server_close()

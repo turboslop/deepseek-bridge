@@ -94,11 +94,15 @@ class StripCursorThinkingBlocksTests(unittest.TestCase):
         self.assertEqual(result, "visible")
 
     def test_strips_multiple_blocks(self) -> None:
-        result = strip_cursor_thinking_blocks("<think>a</think><think>b</think>final")
+        result = strip_cursor_thinking_blocks(
+            "<think>a</think><think>b</think>final"
+        )
         self.assertEqual(result, "final")
 
     def test_no_blocks_returns_unchanged(self) -> None:
-        self.assertEqual(strip_cursor_thinking_blocks("plain text"), "plain text")
+        self.assertEqual(
+            strip_cursor_thinking_blocks("plain text"), "plain text"
+        )
 
     def test_leading_newlines_stripped(self) -> None:
         result = strip_cursor_thinking_blocks("<think>x</think>\n\n\ntext")

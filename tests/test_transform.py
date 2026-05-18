@@ -60,10 +60,13 @@ class ContentHelpersTests(unittest.TestCase):
         self.assertEqual(extract_text_content("plain"), "plain")
         self.assertIsNone(extract_text_content(None))
 
-    def test_strip_cursor_thinking_blocks_removes_details_and_think(self) -> None:
+    def test_strip_cursor_thinking_blocks_removes_details_and_think(
+        self,
+    ) -> None:
         self.assertEqual(
             strip_cursor_thinking_blocks(
-                "<details>\n<summary>Thinking</summary>\n\nplan\n</details>\n\nanswer"
+                "<details>\n<summary>Thinking</summary>\n\n"
+                "plan\n</details>\n\nanswer"
             ),
             "answer",
         )
@@ -72,7 +75,9 @@ class ContentHelpersTests(unittest.TestCase):
             "answer",
         )
 
-    def test_strip_cursor_thinking_blocks_preserves_unrelated_details(self) -> None:
+    def test_strip_cursor_thinking_blocks_preserves_unrelated_details(
+        self,
+    ) -> None:
         kept = "<details><summary>Diff</summary>\nrelevant\n</details>"
         self.assertEqual(strip_cursor_thinking_blocks(kept), kept)
 
@@ -97,13 +102,17 @@ class RequestPreparationTests(unittest.TestCase):
             {
                 "model": "deepseek-v4-pro",
                 "messages": [{"role": "user", "content": "hi"}],
-                "functions": [{"name": "lookup", "parameters": {"type": "object"}}],
+                "functions": [
+                    {"name": "lookup", "parameters": {"type": "object"}}
+                ],
                 "function_call": "auto",
             },
             ProxyConfig(),
             self.store,
         )
-        self.assertEqual(prepared.payload["tools"][0]["function"]["name"], "lookup")
+        self.assertEqual(
+            prepared.payload["tools"][0]["function"]["name"], "lookup"
+        )
         self.assertEqual(prepared.payload["tool_choice"], "auto")
         self.assertNotIn("functions", prepared.payload)
         self.assertNotIn("function_call", prepared.payload)
@@ -187,7 +196,9 @@ class RequestPreparationTests(unittest.TestCase):
         self.assertEqual(prepared.payload["model"], "deepseek-v4-pro")
         self.assertIn("non-DeepSeek", "\n".join(captured.output))
 
-    def test_thinking_disabled_strips_reasoning_from_assistant_history(self) -> None:
+    def test_thinking_disabled_strips_reasoning_from_assistant_history(
+        self,
+    ) -> None:
         prepared = prepare_upstream_request(
             {
                 "model": "deepseek-v4-pro",
@@ -246,14 +257,18 @@ class RecoveryNoticeStrippingTests(unittest.TestCase):
         stripped = strip_recovery_notice_for_upstream(original)
         # The cache scope is computed on the with-prefix history, so the
         # caller's list must NOT be mutated in place.
-        self.assertEqual(original[0]["content"], RECOVERY_NOTICE_CONTENT + "answer")
+        self.assertEqual(
+            original[0]["content"], RECOVERY_NOTICE_CONTENT + "answer"
+        )
         self.assertEqual(stripped[0]["content"], "answer")
         self.assertIsNot(stripped[0], original[0])
 
     def test_text_constant_matches_content_prefix(self) -> None:
         # Sanity check that the user-visible text used as a boundary marker
         # is consistent with the wire-format prefix.
-        self.assertTrue(RECOVERY_NOTICE_CONTENT.startswith(RECOVERY_NOTICE_TEXT))
+        self.assertTrue(
+            RECOVERY_NOTICE_CONTENT.startswith(RECOVERY_NOTICE_TEXT)
+        )
 
 
 class ResponseRewriteTests(unittest.TestCase):
@@ -343,7 +358,9 @@ class ResponseRewriteTests(unittest.TestCase):
                 },
             }
         ).encode()
-        rewritten = rewrite_response_body(body, "deepseek-v4-flash", self.store, [])
+        rewritten = rewrite_response_body(
+            body, "deepseek-v4-flash", self.store, []
+        )
         usage = json.loads(rewritten)["usage"]
         self.assertEqual(usage["prompt_cache_hit_tokens"], 6)
         self.assertEqual(usage["prompt_cache_miss_tokens"], 4)
@@ -406,7 +423,11 @@ class CrossModeAndModelTests(unittest.TestCase):
                 "model": "deepseek-v4-flash",
                 "messages": [
                     *prior,
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                 ],
             },
             config,
@@ -434,7 +455,10 @@ class CrossModeAndModelTests(unittest.TestCase):
         tool_call = {
             "id": "call_mode_switch",
             "type": "function",
-            "function": {"name": "read_file", "arguments": '{"path":"README.md"}'},
+            "function": {
+                "name": "read_file",
+                "arguments": '{"path":"README.md"}',
+            },
         }
         assistant_message = {
             "role": "assistant",
@@ -454,7 +478,11 @@ class CrossModeAndModelTests(unittest.TestCase):
                 "model": "deepseek-v4-pro",
                 "messages": [
                     *agent_prior,
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                 ],
             },
             ProxyConfig(),
@@ -467,7 +495,11 @@ class CrossModeAndModelTests(unittest.TestCase):
                 "model": "deepseek-v4-pro",
                 "messages": [
                     *plan_prior,
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                 ],
             },
             ProxyConfig(),
@@ -482,9 +514,9 @@ class CrossModeAndModelTests(unittest.TestCase):
             "Need README before answering.",
         )
         self.assertTrue(
-            str(portable_prepared.reasoning_diagnostics[-1]["hit_kind"]).startswith(
-                "portable_"
-            )
+            str(
+                portable_prepared.reasoning_diagnostics[-1]["hit_kind"]
+            ).startswith("portable_")
         )
 
     def test_portable_turn_cache_restores_final_assistant_after_tool_result(
@@ -537,7 +569,11 @@ class CrossModeAndModelTests(unittest.TestCase):
                 "messages": [
                     {"role": "system", "content": "Plan mode."},
                     plan_user,
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                     tool_result,
                     {"role": "assistant", "content": "The project is ready."},
                     {"role": "user", "content": "continue"},
@@ -602,7 +638,11 @@ class CrossModeAndModelTests(unittest.TestCase):
                 "messages": [
                     {"role": "system", "content": "Plan mode."},
                     {"role": "user", "content": "thread A"},
-                    {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
                 ],
             },
             ProxyConfig(),
@@ -614,7 +654,9 @@ class CrossModeAndModelTests(unittest.TestCase):
             "Reasoning for thread A.",
         )
 
-    def test_recovered_response_is_recorded_under_pre_recovery_scope(self) -> None:
+    def test_recovered_response_is_recorded_under_pre_recovery_scope(
+        self,
+    ) -> None:
         old_tool_call = {
             "id": "call_old",
             "type": "function",
@@ -632,8 +674,16 @@ class CrossModeAndModelTests(unittest.TestCase):
             "model": "deepseek-v4-pro",
             "messages": [
                 {"role": "user", "content": "old model turn"},
-                {"role": "assistant", "content": "", "tool_calls": [old_tool_call]},
-                {"role": "tool", "tool_call_id": "call_old", "content": "old result"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [old_tool_call],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_old",
+                    "content": "old result",
+                },
                 {"role": "user", "content": "continue with DeepSeek"},
             ],
         }
@@ -685,10 +735,12 @@ class CrossModeAndModelTests(unittest.TestCase):
         # under both so it survives whichever scope the next request uses.
         self.assertEqual(len(first_recovered.record_response_contexts), 2)
         for scope, _messages in first_recovered.record_response_contexts:
+            key = (
+                f"scope:{scope}:signature:"
+                f"{message_signature(recovered_assistant)}"
+            )
             self.assertEqual(
-                self.store.get(
-                    f"scope:{scope}:signature:{message_signature(recovered_assistant)}"
-                ),
+                self.store.get(key),
                 "Need the new lookup.",
             )
         recovered_assistant.pop("reasoning_content", None)
@@ -702,7 +754,11 @@ class CrossModeAndModelTests(unittest.TestCase):
             "messages": [
                 *first_payload["messages"],
                 recovered_assistant,
-                {"role": "tool", "tool_call_id": "call_new", "content": "new result"},
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_new",
+                    "content": "new result",
+                },
             ],
         }
 
@@ -737,7 +793,9 @@ class StopMidStreamingToolCallTests(unittest.TestCase):
     def setUp(self) -> None:
         self.store = ReasoningStore(":memory:")
 
-    def test_tool_name_fallback_restores_reasoning_when_id_missing(self) -> None:
+    def test_tool_name_fallback_restores_reasoning_when_id_missing(
+        self,
+    ) -> None:
         # Turn 1 prepares an upstream request and caches a partial assistant
         # message simulating a Stop before id arrived.
         first_payload = {
@@ -835,7 +893,9 @@ class StopMidStreamingToolCallTests(unittest.TestCase):
         # second turn's reasoning must not leak into the first turn's slot.
         config = ProxyConfig(missing_reasoning_strategy="recover")
 
-        def cache_partial(payload: dict, reasoning: str, args_fragment: str) -> dict:
+        def cache_partial(
+            payload: dict, reasoning: str, args_fragment: str
+        ) -> dict:
             prepared = prepare_upstream_request(payload, config, self.store)
             response = {
                 "choices": [
@@ -929,7 +989,9 @@ class StopMidStreamingToolCallTests(unittest.TestCase):
                 {"role": "user", "content": "u-A2"},
             ],
         }
-        prepared = prepare_upstream_request(recovery_payload, config, self.store)
+        prepared = prepare_upstream_request(
+            recovery_payload, config, self.store
+        )
         self.assertEqual(
             prepared.payload["messages"][2]["reasoning_content"],
             "Reasoning A.",

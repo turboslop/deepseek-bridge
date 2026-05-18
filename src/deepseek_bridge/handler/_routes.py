@@ -5,7 +5,7 @@ import json
 import ssl
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse
 
 import urllib3
@@ -53,7 +53,9 @@ class HandlerRoutes:
         self._request_id = _generate_request_id()
         request_path = urlparse(self.path).path
         if self.config.debug:
-            LOG.info("incoming GET %s from %s", request_path, self.client_address[0])
+            LOG.info(
+                "incoming GET %s from %s", request_path, self.client_address[0]
+            )
         if self.config.ollama and request_path == "/api/version":
             self._handle_api_version()
             return
@@ -68,7 +70,9 @@ class HandlerRoutes:
             return
         self._send_json(
             404,
-            _error_body("Not found", "invalid_request_error", "endpoint_not_found"),
+            _error_body(
+                "Not found", "invalid_request_error", "endpoint_not_found"
+            ),
         )
 
     def do_POST(self) -> None:
@@ -103,7 +107,9 @@ class HandlerRoutes:
             self._finish_trace(trace, "completed")
             return
 
-        payload, trace, error_status_code = self._validate_chat_request(request_path)
+        payload, trace, error_status_code = self._validate_chat_request(
+            request_path
+        )
         if error_status_code is not None:
             return
         assert payload is not None
@@ -141,7 +147,9 @@ class HandlerRoutes:
             log_send_summary(prepared)
 
         spinner = TerminalSpinner(
-            enabled=stream and not self.config.debug and not self.config.compact,
+            enabled=stream
+            and not self.config.debug
+            and not self.config.compact,
             text="└ {frame}",
         ).start()
 
@@ -212,7 +220,7 @@ class HandlerRoutes:
 
     def _validate_chat_request(
         self, request_path: str
-    ) -> tuple[dict | None, "TraceRequest | None", str | None]:
+    ) -> tuple[dict[str, Any] | None, TraceRequest | None, str | None]:
         trace = self._start_trace(request_path)
 
         if request_path not in {
@@ -221,12 +229,15 @@ class HandlerRoutes:
             "/completions",
             "/v1/completions",
         }:
-            LOG.warning("rejected unsupported POST path=%s status=404", request_path)
+            LOG.warning(
+                "rejected unsupported POST path=%s status=404", request_path
+            )
             self._record_request_body_for_trace(trace)
             self._send_json(
                 404,
                 _error_body(
-                    "Only /v1/chat/completions and /v1/completions are supported",
+                    "Only /v1/chat/completions and /v1/completions are "
+                    "supported",
                     "invalid_request_error",
                     "endpoint_not_found",
                 ),
@@ -238,7 +249,8 @@ class HandlerRoutes:
         cursor_authorization = self._cursor_authorization()
         if cursor_authorization is None:
             LOG.warning(
-                "rejected request path=%s status=401 reason=missing_bearer_token",
+                "rejected request path=%s status=401 "
+                "reason=missing_bearer_token",
                 request_path,
             )
             self._record_request_body_for_trace(trace)
@@ -258,25 +270,37 @@ class HandlerRoutes:
             payload = self._read_json_body()
         except RequestBodyTooLargeError as exc:
             LOG.warning(
-                "rejected request path=%s status=413 reason=%s", request_path, exc
+                "rejected request path=%s status=413 reason=%s",
+                request_path,
+                exc,
             )
             self._send_json(
                 413,
-                _error_body(str(exc), "invalid_request_error", "request_too_large"),
+                _error_body(
+                    str(exc), "invalid_request_error", "request_too_large"
+                ),
                 trace=trace,
             )
-            self._finish_trace(trace, "rejected", http_status=413, reason=str(exc))
+            self._finish_trace(
+                trace, "rejected", http_status=413, reason=str(exc)
+            )
             return None, trace, "413"
         except ValueError as exc:
             LOG.warning(
-                "rejected request path=%s status=400 reason=%s", request_path, exc
+                "rejected request path=%s status=400 reason=%s",
+                request_path,
+                exc,
             )
             self._send_json(
                 400,
-                _error_body(str(exc), "invalid_request_error", "invalid_request_error"),
+                _error_body(
+                    str(exc), "invalid_request_error", "invalid_request_error"
+                ),
                 trace=trace,
             )
-            self._finish_trace(trace, "rejected", http_status=400, reason=str(exc))
+            self._finish_trace(
+                trace, "rejected", http_status=400, reason=str(exc)
+            )
             return None, trace, "400"
 
         if request_path in {"/completions", "/v1/completions"}:
@@ -287,13 +311,16 @@ class HandlerRoutes:
                         {"role": "user", "content": str(p)} for p in prompt
                     ]
                 else:
-                    payload["messages"] = [{"role": "user", "content": str(prompt)}]
+                    payload["messages"] = [
+                        {"role": "user", "content": str(prompt)}
+                    ]
             for legacy_key in ("suffix", "best_of", "echo"):
                 payload.pop(legacy_key, None)
 
         if getattr(self.server, "paused", False):
             LOG.warning(
-                "rejecting request from %s: server paused", self.client_address[0]
+                "rejecting request from %s: server paused",
+                self.client_address[0],
             )
             self._send_json(
                 503,
@@ -326,7 +353,9 @@ class HandlerRoutes:
                 if detect_responses_payload(payload):
                     payload = convert_responses_to_chat(payload)
                     if self.config.debug:
-                        LOG.info("converted Responses API format to Chat Completions")
+                        LOG.info(
+                            "converted Responses API format to Chat Completions"
+                        )
                     if trace is not None:
                         trace.record_cursor_body(payload)
             except ImportError:
@@ -341,11 +370,11 @@ class HandlerRoutes:
 
     def _prepare_and_apply_upstream(
         self,
-        payload: dict,
+        payload: dict[str, Any],
         cursor_auth: str,
-        trace: "TraceRequest | None",
+        trace: TraceRequest | None,
         request_path: str,
-    ) -> "PreparedRequest | None":
+    ) -> PreparedRequest | None:
         prepared = prepare_upstream_request(
             payload,
             self.config,
@@ -386,18 +415,22 @@ class HandlerRoutes:
                         "message": (
                             "deepseek-bridge is running in strict "
                             "missing-reasoning mode and cannot automatically "
-                            "recover this thinking-mode tool-call history because "
+                            "recover this thinking-mode tool-call history "
+                            "because "
                             "cached DeepSeek reasoning_content is missing for "
                             f"{prepared.missing_reasoning_messages} assistant "
                             "message(s). Restart without "
                             "`--missing-reasoning-strategy reject`, or pass "
-                            "`--missing-reasoning-strategy recover`, so the proxy "
-                            "can recover from partial chat history automatically."
+                            "`--missing-reasoning-strategy recover`, so the "
+                            "proxy can recover from partial chat history "
+                            "automatically."
                         ),
                         "type": "missing_reasoning_content",
                         "code": "missing_reasoning_content",
                         "param": None,
-                        "missing_reasoning_messages": prepared.missing_reasoning_messages,
+                        "missing_reasoning_messages": (
+                            prepared.missing_reasoning_messages
+                        ),
                     }
                 },
                 trace=trace,
@@ -408,8 +441,9 @@ class HandlerRoutes:
         if self.config.debug:
             LOG.info(
                 (
-                    "upstream request metadata: original_model=%s upstream_model=%s "
-                    "patched_reasoning=%s missing_reasoning=%s %s"
+                    "upstream request metadata: original_model=%s "
+                    "upstream_model=%s patched_reasoning=%s "
+                    "missing_reasoning=%s %s"
                 ),
                 prepared.original_model,
                 prepared.upstream_model,
@@ -424,13 +458,13 @@ class HandlerRoutes:
         self,
         upstream_url: str,
         upstream_body: bytes,
-        upstream_headers: dict,
+        upstream_headers: dict[str, str],
         stream: bool,
-        trace: "TraceRequest | None",
+        trace: TraceRequest | None,
         started: float,
-        spinner: "TerminalSpinner",
+        spinner: TerminalSpinner,
         headers_sent: bool = False,
-    ) -> "object | None":
+    ) -> urllib3.BaseHTTPResponse | None:
         try:
             if self.config.debug:
                 LOG.info("forwarding to %s", upstream_url)
@@ -445,15 +479,17 @@ class HandlerRoutes:
             max_retries = 2
             for attempt in range(max_retries + 1):
                 try:
-                    response = self.upstream_pool.request(
-                        "POST",
-                        upstream_url,
-                        body=upstream_body,
-                        headers=upstream_headers,
-                        preload_content=not stream,
-                        timeout=timeout,
+                    return cast(
+                        urllib3.BaseHTTPResponse,
+                        self.upstream_pool.request(
+                            "POST",
+                            upstream_url,
+                            body=upstream_body,
+                            headers=upstream_headers,
+                            preload_content=not stream,
+                            timeout=timeout,
+                        ),
                     )
-                    return response
                 except (
                     http.client.BadStatusLine,
                     ConnectionError,
@@ -463,7 +499,9 @@ class HandlerRoutes:
                 ) as exc:
                     if attempt < max_retries:
                         if not self._check_client_alive():
-                            LOG.info("client disconnected before upstream retry")
+                            LOG.info(
+                                "client disconnected before upstream retry"
+                            )
                             spinner.stop()
                             self._finish_trace(trace, "aborted")
                             return None
@@ -486,8 +524,8 @@ class HandlerRoutes:
                         continue
                     spinner.stop()
                     LOG.warning(
-                        "upstream request failed after %d retries elapsed_ms=%s "
-                        "reason=%s",
+                        "upstream request failed after %d retries "
+                        "elapsed_ms=%s reason=%s",
                         max_retries,
                         elapsed_ms(started),
                         exc,
@@ -559,7 +597,7 @@ class HandlerRoutes:
         message: str,
         code: str,
         *,
-        trace: "TraceRequest | None",
+        trace: TraceRequest | None,
         headers_sent: bool,
     ) -> None:
         if headers_sent:
@@ -573,12 +611,12 @@ class HandlerRoutes:
 
     def _dispatch_response(
         self,
-        response: "object",
-        prepared: "PreparedRequest",
+        response: urllib3.BaseHTTPResponse,
+        prepared: PreparedRequest,
         stream: bool,
-        trace: "TraceRequest | None",
+        trace: TraceRequest | None,
         started: float,
-        spinner: "TerminalSpinner",
+        spinner: TerminalSpinner,
         headers_sent: bool = False,
     ) -> None:
         try:
@@ -621,7 +659,9 @@ class HandlerRoutes:
                 return
             if stream:
                 include_usage = bool(
-                    prepared.payload.get("stream_options", {}).get("include_usage")
+                    prepared.payload.get("stream_options", {}).get(
+                        "include_usage"
+                    )
                 )
                 sent_response = self._proxy_streaming_response(
                     response,
@@ -658,7 +698,9 @@ class HandlerRoutes:
                 )
                 return
             spinner.stop()
-            log_stats_summary(sent_response.usage, elapsed_ms=elapsed_ms(started))
+            log_stats_summary(
+                sent_response.usage, elapsed_ms=elapsed_ms(started)
+            )
             self._track_usage(sent_response.usage, prepared.original_model)
             self._finish_trace(
                 trace,
@@ -670,7 +712,7 @@ class HandlerRoutes:
             spinner.stop()
             response.release_conn()
 
-    def _track_usage(self, usage: dict | None, model: str) -> None:
+    def _track_usage(self, usage: dict[str, Any] | None, model: str) -> None:
         if not isinstance(usage, dict):
             return
         server = getattr(self, "server", None)
@@ -680,13 +722,19 @@ class HandlerRoutes:
         server.completion_tokens += int(usage.get("completion_tokens", 0) or 0)
         details = usage.get("completion_tokens_details")
         if isinstance(details, dict):
-            server.reasoning_tokens += int(details.get("reasoning_tokens", 0) or 0)
-        server.cache_hit_tokens += int(usage.get("prompt_cache_hit_tokens", 0) or 0)
-        server.cache_miss_tokens += int(usage.get("prompt_cache_miss_tokens", 0) or 0)
+            server.reasoning_tokens += int(
+                details.get("reasoning_tokens", 0) or 0
+            )
+        server.cache_hit_tokens += int(
+            usage.get("prompt_cache_hit_tokens", 0) or 0
+        )
+        server.cache_miss_tokens += int(
+            usage.get("prompt_cache_miss_tokens", 0) or 0
+        )
         total = int(usage.get("total_tokens", 0) or 0)
         if total:
-            # Atomic dict update (int += is GIL-atomic in CPython for simple cases,
-            # but dict access + assignment is not)
+            # Atomic dict update (int += is GIL-atomic in CPython for simple
+            # cases, but dict access + assignment is not)
             with _track_usage_lock:
                 if model not in server.model_tokens:
                     server.model_tokens[model] = 0

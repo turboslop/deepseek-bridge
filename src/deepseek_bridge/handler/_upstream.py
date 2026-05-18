@@ -5,14 +5,15 @@ from http.client import IncompleteRead
 from typing import Any
 
 from .._types import ProxyResponseResult, _error_body
-from ..logging import log_bytes, read_response_body, usage_from_body
-from ..logging import LOG
+from ..logging import LOG, log_bytes, read_response_body, usage_from_body
 from ..trace import TraceRequest
 from ..transform import rewrite_response_body
 
 
 class HandlerUpstream:
-    def _upstream_headers(self, stream: bool, authorization: str) -> dict[str, str]:
+    def _upstream_headers(
+        self, stream: bool, authorization: str
+    ) -> dict[str, str]:
         headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
@@ -35,7 +36,9 @@ class HandlerUpstream:
         trace: TraceRequest | None = None,
         record_response_scope: str | None = None,
         record_response_messages: list[dict[str, Any]] | None = None,
-        record_response_contexts: list[tuple[str, list[dict[str, Any]]]] | None = None,
+        record_response_contexts: (
+            list[tuple[str, list[dict[str, Any]]]] | None
+        ) = None,
     ) -> ProxyResponseResult:
         try:
             body = read_response_body(response)
@@ -74,7 +77,9 @@ class HandlerUpstream:
             log_bytes("cursor response body", body)
 
         headers = {
-            "Content-Type": response.headers.get("Content-Type", "application/json"),
+            "Content-Type": response.headers.get(
+                "Content-Type", "application/json"
+            ),
             "Content-Length": str(len(body)),
         }
         if trace is not None:
@@ -86,7 +91,7 @@ class HandlerUpstream:
             )
             try:
                 upstream_payload = json.loads(upstream_body.decode("utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except json.JSONDecodeError, UnicodeDecodeError:
                 upstream_payload = None
             if isinstance(upstream_payload, dict):
                 trace.record_usage(upstream_payload.get("usage"))

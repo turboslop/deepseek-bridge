@@ -1,19 +1,51 @@
+---
+default_language_version:
+  python: python3.14
+
 repos:
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v5.0.0
-  hooks:
-  - id: trailing-whitespace
-    exclude: \.(svg|png|jpg|jpeg|gif|ico|webp)$
-  - id: end-of-file-fixer
-    exclude: \.(svg|png|jpg|jpeg|gif|ico|webp)$
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.(svg|png|jpg|jpeg|gif|ico|webp)$
+      - id: end-of-file-fixer
+        exclude: \.(svg|png|jpg|jpeg|gif|ico|webp)$
 
-- repo: https://github.com/psf/black
-  rev: 26.3.1
-  hooks:
-  - id: black
+  - repo: https://github.com/psf/black
+    rev: 26.3.1
+    hooks:
+      - id: black
+        args: [--target-version=py314, --line-length=80]
 
-- repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.11.7
-  hooks:
-  - id: ruff
-    args: [--fix]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: pycodestyle
+        name: pycodestyle
+        entry: >-
+          uv run --extra dev --python 3.14 pycodestyle
+          --max-line-length=80 --ignore=E203,W503 src/deepseek_bridge tests/
+        language: system
+        pass_filenames: false
+      - id: pylint
+        name: pylint
+        entry: uv run --extra dev --python 3.14 pylint src/deepseek_bridge
+        language: system
+        pass_filenames: false
+      - id: mypy
+        name: mypy
+        entry: uv run --extra dev --python 3.14 mypy src/deepseek_bridge
+        language: system
+        pass_filenames: false
+      - id: yamllint
+        name: yamllint
+        entry: >-
+          uv run --extra dev --python 3.14 yamllint
+          .github .pre-commit-config.yaml .yamllint.yaml
+        language: system
+        pass_filenames: false

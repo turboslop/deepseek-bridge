@@ -42,7 +42,9 @@ def reasoning_lookup_keys(
     keys.extend(
         {
             "kind": "tool_call_signature",
-            "function_name": str((tool_call.get("function") or {}).get("name") or ""),
+            "function_name": str(
+                (tool_call.get("function") or {}).get("name") or ""
+            ),
             "key": (
                 f"scope:{scope}:tool_call_signature:"
                 f"{tool_call_signature(tool_call)}"

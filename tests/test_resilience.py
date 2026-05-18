@@ -11,15 +11,15 @@ from unittest.mock import MagicMock, patch
 import urllib3
 
 from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.helpers import (
+    _handle_shutdown_signal,
+    _shutdown_requested,
+)
 from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
     UpstreamPool,
     build_arg_parser,
-)
-from deepseek_bridge.helpers import (
-    _handle_shutdown_signal,
-    _shutdown_requested,
 )
 from deepseek_bridge.tunnel import HealthCheckConfig, NgrokTunnel
 
@@ -97,7 +97,9 @@ class BoundedThreadPoolTests(unittest.TestCase):
         try:
             with patch.object(server.executor, "shutdown") as mock_shutdown:
                 server.server_close()
-                mock_shutdown.assert_called_once_with(wait=True, cancel_futures=False)
+                mock_shutdown.assert_called_once_with(
+                    wait=True, cancel_futures=False
+                )
         finally:
             server.executor.shutdown(wait=True)
 

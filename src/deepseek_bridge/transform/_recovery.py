@@ -4,11 +4,11 @@ import threading
 from typing import Any
 
 from ..logging import (
+    INTERNAL_LOG,
     RECOVERY_NOTICE_CONTENT,
     RECOVERY_NOTICE_TEXT,
     RECOVERY_SYSTEM_CONTENT,
 )
-from ..logging import INTERNAL_LOG
 
 # Recovery notice tracking — prevents the cascade loop where the
 # recovery notice changes message content → changes conversation_scope
@@ -53,7 +53,9 @@ def strip_recovery_notice_for_upstream(
             stripped.append(message)
             continue
         content = message.get("content")
-        if not isinstance(content, str) or not content.startswith(RECOVERY_NOTICE_TEXT):
+        if not isinstance(content, str) or not content.startswith(
+            RECOVERY_NOTICE_TEXT
+        ):
             stripped.append(message)
             continue
         cleaned = dict(message)
@@ -62,7 +64,9 @@ def strip_recovery_notice_for_upstream(
     return stripped
 
 
-def leading_system_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def leading_system_messages(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     leading_messages: list[dict[str, Any]] = []
     for message in messages:
         if message.get("role") == "system":
@@ -105,7 +109,9 @@ def active_messages_from_recovery_boundary(
         *recovered_tail,
     ]
     kept_context_messages = 1 if context_user_index != -1 else 0
-    retired_messages = recovery_boundary_index - len(leading) - kept_context_messages
+    retired_messages = (
+        recovery_boundary_index - len(leading) - kept_context_messages
+    )
     retired_messages = max(retired_messages, 0)
     step = {
         "strategy": "continued_recovery_boundary",
@@ -153,7 +159,8 @@ def recover_messages_from_missing_reasoning(
             recovery_boundary_index - len(leading) - kept_context_messages
         )
         INTERNAL_LOG.debug(
-            "transform.recovery: strategy=recovery_boundary, boundary_at=%s, dropped=%s",
+            "transform.recovery: strategy=recovery_boundary, boundary_at=%s, "
+            "dropped=%s",
             recovery_boundary_index,
             omitted_messages,
         )
@@ -181,7 +188,8 @@ def recover_messages_from_missing_reasoning(
     )
     if last_user_index == -1:
         INTERNAL_LOG.debug(
-            "transform.recovery: strategy=none, no user messages to recover from",
+            "transform.recovery: strategy=none, no user messages to "
+            "recover from",
         )
         return (
             messages,

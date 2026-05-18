@@ -24,7 +24,6 @@ The console script is defined in `pyproject.toml` and points to `deepseek_bridge
 - `src/deepseek_bridge/streaming/` - SSE parsing, accumulation, reasoning display helpers.
 - `src/deepseek_bridge/reasoning_store.py` - current SQLite-backed reasoning cache.
 - `src/deepseek_bridge/logging.py` - log formatting, redaction, request summaries.
-- `src/deepseek_bridge/tui/` - Textual terminal UI; avoid coupling production/server behavior to this package.
 - `.codex/skills/gof/SKILL.md` - repo-level GoF workflow for taking an issue through branch, PR, CI, fixes, and auto-merge.
 - `tests/` - unittest-based test suite.
 
@@ -37,38 +36,38 @@ Use `.codex/skills/gof/SKILL.md` when picking up a GitHub issue or implementatio
 Run the full test suite:
 
 ```sh
-uv run python -m unittest discover -s tests
+uv run --extra dev --python 3.14 python -m unittest discover -s tests
 ```
 
 Run one test module:
 
 ```sh
-uv run python -m unittest tests.test_reasoning_store
+uv run --extra dev --python 3.14 python -m unittest tests.test_reasoning_store
 ```
 
-Run the server locally in headless mode without a tunnel:
+Run the server locally without a tunnel:
 
 ```sh
-uv run deepseek-bridge --headless --tunnel none --port 9000
+uv run --python 3.14 deepseek-bridge --tunnel none --port 9000
 ```
 
 Run with debug logs and request traces:
 
 ```sh
-uv run deepseek-bridge --headless --tunnel none --debug --trace-dir ./dumps
+uv run --python 3.14 deepseek-bridge --tunnel none --debug --trace-dir ./dumps
 ```
 
 Format, lint, and type-check commands documented in the README:
 
 ```sh
-uv run pre-commit run --all-files
-uv run mypy src/ --check-untyped-defs
+uv run --extra dev --python 3.14 pre-commit run --all-files
+uv run --extra dev --python 3.14 mypy src/deepseek_bridge
 ```
 
 ## Coding Guidelines
 
 - Preserve existing API compatibility unless a task explicitly changes it.
-- Keep local CLI/TUI behavior working when adding production or Kubernetes behavior.
+- Keep local CLI behavior working when adding production or Kubernetes behavior.
 - Avoid logging API keys, prompts, request bodies, response bodies, or trace payloads in normal logs.
 - Keep debug and trace modes explicit because they may write sensitive prompt data.
 - Add or update focused tests for behavior changes, especially around streaming, reasoning-cache lookup, and error responses.
@@ -94,7 +93,7 @@ When changing storage:
 
 Open issues track the Kubernetes work. The intended production direction is:
 
-- container image runs `deepseek-bridge --headless --tunnel none --host 0.0.0.0 --port 9000`;
+- container image runs `deepseek-bridge --tunnel none --host 0.0.0.0 --port 9000`;
 - configuration can come from environment variables;
 - liveness and readiness endpoints are separate;
 - logs go to stdout/stderr, with optional JSON formatting;
@@ -102,7 +101,7 @@ Open issues track the Kubernetes work. The intended production direction is:
 - the Helm chart manages Deployment, Service, probes, ServiceMonitor, autoscaling, and Grafana dashboard resources;
 - Valkey is the preferred shared reasoning-cache backend for multi-replica Kubernetes deployments.
 
-For Kubernetes changes, avoid making cloudflared, ngrok, TUI, or local file paths mandatory.
+For Kubernetes changes, avoid making cloudflared, ngrok, or local file paths mandatory.
 
 ## Valkey Backend Expectations
 

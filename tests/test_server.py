@@ -9,17 +9,17 @@ streaming connection close.
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
+import time
+import unittest
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
-import json
-import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import threading
-import time
 from types import SimpleNamespace
-import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -27,6 +27,7 @@ from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.logging import (
     ConsoleLogFormatter,
     TerminalSpinner,
+    _truncate_message_content,
     configure_logging,
 )
 from deepseek_bridge.reasoning_store import ReasoningStore
@@ -38,7 +39,6 @@ from deepseek_bridge.server import (
     build_arg_parser,
     read_response_body,
 )
-from deepseek_bridge.logging import _truncate_message_content
 
 # ---------------------------------------------------------------------------
 # Stubs for fast in-process tests of internal handler methods
@@ -46,7 +46,9 @@ from deepseek_bridge.logging import _truncate_message_content
 
 
 class _FakeResponse:
-    def __init__(self, body: bytes, encoding: str = "", status: int = 200) -> None:
+    def __init__(
+        self, body: bytes, encoding: str = "", status: int = 200
+    ) -> None:
         self._body = BytesIO(body)
         self.headers = {"Content-Encoding": encoding} if encoding else {}
         self.status = status
@@ -70,7 +72,7 @@ class _FakeStreamingResponse:
         return self._lines.pop(0)
 
     def read(self, size: int = -1) -> bytes:
-        """Read up to *size* bytes, returning whole lines to simulate buffered I/O."""
+        """Read up to *size* bytes, returning whole buffered lines."""
         if not self._lines:
             return b""
         result = b""
@@ -240,7 +242,8 @@ class CliAndHelperTests(unittest.TestCase):
         with TemporaryDirectory() as d:
             result = configure_logging(log_dir=d)
             self.assertIsNotNone(
-                result, "configure_logging should return path when log_dir is set"
+                result,
+                "configure_logging should return path when log_dir is set",
             )
             self.assertIn(d, result)
             for h in root.handlers[:]:
@@ -266,12 +269,6 @@ class CliAndHelperTests(unittest.TestCase):
         version_actions = [a for a in parser._actions if hasattr(a, "version")]
         self.assertTrue(len(version_actions) > 0, "No --version flag found")
 
-    def test_headless_flag_defaults_false(self) -> None:
-        """--headless flag defaults to False."""
-        parser = build_arg_parser()
-        args = parser.parse_args([])
-        self.assertFalse(args.headless)
-
     def test_truncate_message_content_basic(self) -> None:
         """Content truncation truncates long strings."""
         payload = {"messages": [{"role": "user", "content": "x" * 500}]}
@@ -290,7 +287,9 @@ class CliAndHelperTests(unittest.TestCase):
     def test_truncate_message_content_multimodal(self) -> None:
         """Content truncation handles multimodal arrays."""
         payload = {
-            "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "hi"}]}
+            ]
         }
         result = _truncate_message_content(payload, max_len=50)
         content = result["messages"][0]["content"]
@@ -333,7 +332,9 @@ class HandlerStubTests(unittest.TestCase):
             }
         ).encode("utf-8")
         try:
-            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
+            with self.assertLogs(
+                "deepseek_bridge", level="WARNING"
+            ) as captured:
                 result = handler._proxy_regular_response(
                     _FakeResponse(body),
                     "deepseek-v4-pro",
@@ -343,18 +344,22 @@ class HandlerStubTests(unittest.TestCase):
         finally:
             handler.server.reasoning_store.close()
         self.assertFalse(result.sent)
-        self.assertIn("sending upstream response body", "\n".join(captured.output))
+        self.assertIn(
+            "sending upstream response body", "\n".join(captured.output)
+        )
 
     def test_streaming_response_stops_on_client_disconnect(self) -> None:
         handler = _make_handler_stub(_BrokenPipeWfile(), debug=True)
         chunk = {
             "id": "stream",
             "model": "deepseek-v4-pro",
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "hi"}}],
+            "choices": [
+                {"index": 0, "delta": {"role": "assistant", "content": "hi"}}
+            ],
         }
         response = _FakeStreamingResponse(
             [
-                f"data: {json.dumps(chunk)}\n\n".encode("utf-8"),
+                f"data: {json.dumps(chunk)}\n\n".encode(),
                 b"data: [DONE]\n\n",
             ]
         )
@@ -375,7 +380,9 @@ class HandlerStubTests(unittest.TestCase):
     def test_streaming_response_handles_upstream_read_failure(self) -> None:
         handler = _make_handler_stub(BytesIO())
         try:
-            with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
+            with self.assertLogs(
+                "deepseek_bridge", level="WARNING"
+            ) as captured:
                 result = handler._proxy_streaming_response(
                     _FailingStreamingResponse(),
                     "deepseek-v4-pro",
@@ -386,10 +393,13 @@ class HandlerStubTests(unittest.TestCase):
             handler.server.reasoning_store.close()
         self.assertFalse(result.sent)
         self.assertIn(
-            "upstream streaming response read failed", "\n".join(captured.output)
+            "upstream streaming response read failed",
+            "\n".join(captured.output),
         )
 
-    def test_collapsible_reasoning_no_effect_when_display_disabled(self) -> None:
+    def test_collapsible_reasoning_no_effect_when_display_disabled(
+        self,
+    ) -> None:
         wfile = BytesIO()
         handler = _make_handler_stub(
             wfile, display_reasoning=False, collapsible_reasoning=True
@@ -397,11 +407,13 @@ class HandlerStubTests(unittest.TestCase):
         chunk = {
             "id": "stream",
             "model": "deepseek-v4-pro",
-            "choices": [{"index": 0, "delta": {"reasoning_content": "Need context."}}],
+            "choices": [
+                {"index": 0, "delta": {"reasoning_content": "Need context."}}
+            ],
         }
         response = _FakeStreamingResponse(
             [
-                f"data: {json.dumps(chunk)}\n\n".encode("utf-8"),
+                f"data: {json.dumps(chunk)}\n\n".encode(),
                 b"data: [DONE]\n\n",
             ]
         )
@@ -419,10 +431,9 @@ class HandlerStubTests(unittest.TestCase):
         self.assertNotIn("<details>", body)
 
     def test_check_client_alive_without_request_fallback(self) -> None:
-        """Verify _check_client_alive falls back to wfile.write when request is unset."""
+        """Verify _check_client_alive fallback without request."""
         handler = _make_handler_stub(_BrokenPipeWfile())
-        # handler.request is not set — should fall back to wfile.write which raises
-        # _BrokenPipeWfile
+        # handler.request is not set, so wfile.write raises BrokenPipeError.
         result = handler._check_client_alive()
         self.assertFalse(result)
 
@@ -527,7 +538,9 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
         self.__class__.requests.append(payload)
-        self.__class__.auth_headers.append(self.headers.get("Authorization", ""))
+        self.__class__.auth_headers.append(
+            self.headers.get("Authorization", "")
+        )
 
         if payload.get("stream"):
             self.send_response(200)
@@ -590,7 +603,9 @@ class _Fixture:
         self.thread.join(timeout=5)
 
 
-def _post(url: str, payload: dict, api_key: str = "sk-test") -> tuple[int, dict]:
+def _post(
+    url: str, payload: dict, api_key: str = "sk-test"
+) -> tuple[int, dict]:
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -671,7 +686,9 @@ class HttpBoundaryTests(unittest.TestCase):
             api_key="sk-from-cursor",
         )
         self.assertEqual(status, 200)
-        self.assertEqual(_PlainFakeUpstream.auth_headers[0], "Bearer sk-from-cursor")
+        self.assertEqual(
+            _PlainFakeUpstream.auth_headers[0], "Bearer sk-from-cursor"
+        )
 
     def test_streaming_response_closes_after_done_when_upstream_lingers(
         self,
@@ -716,7 +733,9 @@ class HttpBoundaryTests(unittest.TestCase):
                 time.sleep(0.01)
         output = "\n".join(captured.output)
         self.assertEqual(status, 200)
-        self.assertIn("┌ request model=deepseek-v4-pro effort=max messages=1", output)
+        self.assertIn(
+            "┌ request model=deepseek-v4-pro effort=max messages=1", output
+        )
         self.assertIn("├ context status=ok reasoning_context=0", output)
         self.assertIn("└ stats", output)
         self.assertNotIn(" tools=", output)
@@ -749,7 +768,10 @@ class BoundedPoolTests(unittest.TestCase):
     def test_reject_connection_sends_503(self) -> None:
         """Verify _reject_connection sends HTTP 503 with JSON body."""
         import socket
-        from deepseek_bridge.server_infrastructure import BoundedThreadPoolHTTPServer
+
+        from deepseek_bridge.server_infrastructure import (
+            BoundedThreadPoolHTTPServer,
+        )
 
         a, b = socket.socketpair()
         try:

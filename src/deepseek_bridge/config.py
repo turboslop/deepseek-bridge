@@ -77,7 +77,8 @@ max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
 
 # Advanced — defaults are fine for most users
 # missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
-# reasoning_content_path: {REASONING_CONTENT_FILE_NAME}  # auto: ~/.deepseek-bridge/reasoning_content.sqlite3
+# reasoning_content_path: {REASONING_CONTENT_FILE_NAME}
+#   auto: ~/.deepseek-bridge/reasoning_content.sqlite3
 # reasoning_cache_max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
 # log_dir: null  # auto: ~/.deepseek-bridge/logs
 """
@@ -114,11 +115,15 @@ def load_config_file(config_path: str | Path) -> dict[str, Any]:
     try:
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
-        raise ValueError(f"Invalid YAML config at {config_path}: {exc}") from exc
+        raise ValueError(
+            f"Invalid YAML config at {config_path}: {exc}"
+        ) from exc
     if loaded is None:
         return {}
     if not isinstance(loaded, Mapping):
-        raise ValueError(f"Config file must contain a YAML mapping: {config_path}")
+        raise ValueError(
+            f"Config file must contain a YAML mapping: {config_path}"
+        )
     return dict(loaded)
 
 
@@ -164,7 +169,7 @@ def as_int(value: Any, default: int) -> int:
         return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -173,7 +178,7 @@ def as_float(value: Any, default: float) -> float:
         return default
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -226,7 +231,9 @@ def _auto_queue_size(max_thread_pool: int) -> int:
     return max_thread_pool * 2 + 10
 
 
-def _auto_cache_max_rows(disk_budget_mb: int = DEFAULT_REASONING_CACHE_DISK_MB) -> int:
+def _auto_cache_max_rows(
+    disk_budget_mb: int = DEFAULT_REASONING_CACHE_DISK_MB,
+) -> int:
     """Auto-calculate max rows based on disk budget."""
     try:
         import shutil
@@ -253,9 +260,13 @@ class ProxyConfig:
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT
     stream_read_timeout: float = DEFAULT_STREAM_READ_TIMEOUT
     max_request_body_bytes: int = DEFAULT_MAX_REQUEST_BODY_BYTES
-    reasoning_content_path: Path = field(default_factory=default_reasoning_content_path)
+    reasoning_content_path: Path = field(
+        default_factory=default_reasoning_content_path
+    )
     missing_reasoning_strategy: str = DEFAULT_MISSING_REASONING_STRATEGY
-    reasoning_cache_max_age_seconds: int = DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS
+    reasoning_cache_max_age_seconds: int = (
+        DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS
+    )
     display_reasoning: bool = DEFAULT_DISPLAY_REASONING
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
@@ -310,11 +321,13 @@ class ProxyConfig:
             ),
             stream_read_timeout=_auto_stream_timeout(
                 as_float(
-                    setting_value(settings, "request_timeout"), DEFAULT_REQUEST_TIMEOUT
+                    setting_value(settings, "request_timeout"),
+                    DEFAULT_REQUEST_TIMEOUT,
                 ),
                 explicit=(
                     setting_value(settings, "stream_read_timeout")
-                    if setting_value(settings, "stream_read_timeout") is not MISSING
+                    if setting_value(settings, "stream_read_timeout")
+                    is not MISSING
                     else None
                 ),
             ),
@@ -366,11 +379,13 @@ class ProxyConfig:
             ngrok_url=as_str(setting_value(settings, "ngrok_url"), ""),
             max_pool_connections=_auto_pool_connections(
                 as_int(
-                    setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
+                    setting_value(settings, "max_thread_pool"),
+                    DEFAULT_MAX_THREAD_POOL,
                 ),
                 explicit=(
                     setting_value(settings, "max_pool_connections")
-                    if setting_value(settings, "max_pool_connections") is not MISSING
+                    if setting_value(settings, "max_pool_connections")
+                    is not MISSING
                     else None
                 ),
             ),
@@ -380,12 +395,14 @@ class ProxyConfig:
             ),
             max_queue_size=_auto_queue_size(
                 as_int(
-                    setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
+                    setting_value(settings, "max_thread_pool"),
+                    DEFAULT_MAX_THREAD_POOL,
                 )
             ),
             log_dir=(
                 Path(v)
-                if (v := setting_value(settings, "log_dir")) is not MISSING and v
+                if (v := setting_value(settings, "log_dir")) is not MISSING
+                and v
                 else default_log_dir()
             ),
         )
