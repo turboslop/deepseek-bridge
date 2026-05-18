@@ -340,6 +340,19 @@ The chart can also deploy a small built-in Valkey instance for development with
 `--set valkey.enabled=true`. Enable Prometheus scraping with
 `--set metrics.enabled=true --set serviceMonitor.enabled=true`.
 
+Run the same Minikube packaging smoke gate used by CI with:
+
+```bash
+DEEPSEEK_BRIDGE_RUN_K8S_SMOKE=1 \
+  python -m unittest tests.test_k8s_minikube_smoke -v
+```
+
+The smoke gate builds the local Docker image, loads that exact tag into
+Minikube, lints and renders the chart, validates the rendered manifests with the
+Kubernetes API, installs the release, waits for the app pod, checks Service
+endpoints, and probes `/healthz` and `/readyz` through a Service port-forward.
+It requires Docker, Helm, kubectl, Minikube, and curl.
+
 ## Client Setup
 
 ### Cursor
