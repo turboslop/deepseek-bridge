@@ -71,89 +71,83 @@ KUBERNETES_RUNTIME_MODE = "kubernetes"
 KUBERNETES_HOST = "0.0.0.0"
 KUBERNETES_TUNNEL = "none"
 KUBERNETES_REASONING_CONTENT_PATH = ":memory:"
-
-ENV_SETTING_KEYS: dict[str, tuple[str, ...]] = {
-    "runtime_mode": (
-        "DEEPSEEK_BRIDGE_RUNTIME_MODE",
-        "DEEPSEEK_BRIDGE_RUNTIME",
-    ),
-    "host": ("DEEPSEEK_BRIDGE_HOST",),
-    "port": ("DEEPSEEK_BRIDGE_PORT",),
-    "base_url": (
-        "DEEPSEEK_BRIDGE_BASE_URL",
-        "DEEPSEEK_BRIDGE_UPSTREAM_BASE_URL",
-    ),
-    "model": (
-        "DEEPSEEK_BRIDGE_MODEL",
-        "DEEPSEEK_BRIDGE_UPSTREAM_MODEL",
-    ),
-    "thinking": ("DEEPSEEK_BRIDGE_THINKING",),
-    "reasoning_effort": ("DEEPSEEK_BRIDGE_REASONING_EFFORT",),
-    "display_reasoning": ("DEEPSEEK_BRIDGE_DISPLAY_REASONING",),
-    "collapsible_reasoning": ("DEEPSEEK_BRIDGE_COLLAPSIBLE_REASONING",),
-    "request_timeout": ("DEEPSEEK_BRIDGE_REQUEST_TIMEOUT",),
-    "stream_read_timeout": ("DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT",),
-    "max_request_body_bytes": ("DEEPSEEK_BRIDGE_MAX_REQUEST_BODY_BYTES",),
-    "reasoning_content_path": ("DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH",),
-    "missing_reasoning_strategy": (
-        "DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY",
-    ),
-    "reasoning_cache_max_age_seconds": (
-        "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS",
-    ),
-    "cors": ("DEEPSEEK_BRIDGE_CORS",),
-    "cors_allowed_origins": ("DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS",),
-    "cors_allow_credentials": ("DEEPSEEK_BRIDGE_CORS_ALLOW_CREDENTIALS",),
-    "ollama": ("DEEPSEEK_BRIDGE_OLLAMA",),
-    "compact": ("DEEPSEEK_BRIDGE_COMPACT",),
-    "debug": ("DEEPSEEK_BRIDGE_DEBUG",),
-    "tunnel": ("DEEPSEEK_BRIDGE_TUNNEL",),
-    "cf_url": ("DEEPSEEK_BRIDGE_CF_URL",),
-    "cfd_tunnel_name": ("DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME",),
-    "ngrok_url": ("DEEPSEEK_BRIDGE_NGROK_URL",),
-    "max_pool_connections": ("DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS",),
-    "max_thread_pool": ("DEEPSEEK_BRIDGE_MAX_THREAD_POOL",),
-    "log_dir": ("DEEPSEEK_BRIDGE_LOG_DIR",),
-    "trace_dir": ("DEEPSEEK_BRIDGE_TRACE_DIR",),
-}
+DEFAULT_STORAGE_BACKEND = "sqlite"
+DEFAULT_VALKEY_KEY_PREFIX = "deepseek-bridge"
+DEFAULT_LOG_FORMAT = "text"
+DEFAULT_METRICS_ENABLED = False
+SUPPORTED_TUNNELS = {"none", "cloudflared", "ngrok"}
 
 CORS_ALLOWED_ORIGINS_TEXT = "\n".join(
-    f"  - {origin}" for origin in DEFAULT_CORS_ALLOWED_ORIGINS
+    f"    - {origin}" for origin in DEFAULT_CORS_ALLOWED_ORIGINS
 )
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-bridge/config.yaml."
 )
 DEFAULT_CONFIG_TEXT = f"""{DEFAULT_CONFIG_HEADER}
 # API keys are read from Cursor's Authorization header and forwarded upstream.
+version: 1
 
-# Essential settings — these are the ones you'll most likely customize
-runtime_mode: {DEFAULT_RUNTIME_MODE}
-model: {DEFAULT_UPSTREAM_MODEL}
-base_url: {DEFAULT_UPSTREAM_BASE_URL}
-thinking: {DEFAULT_THINKING}
-reasoning_effort: {DEFAULT_REASONING_EFFORT}
-display_reasoning: {str(DEFAULT_DISPLAY_REASONING).lower()}
-collapsible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
+runtime:
+  mode: {DEFAULT_RUNTIME_MODE}
 
-host: {DEFAULT_HOST}
-port: {DEFAULT_PORT}
-tunnel: cloudflared
-# cf_url: https://app.example.com  # required for cloudflared tunnel
-debug: false
-cors: {str(DEFAULT_CORS).lower()}
-cors_allowed_origins:
+server:
+  host: {DEFAULT_HOST}
+  port: {DEFAULT_PORT}
+
+upstream:
+  base_url: {DEFAULT_UPSTREAM_BASE_URL}
+  model: {DEFAULT_UPSTREAM_MODEL}
+  thinking:
+    mode: {DEFAULT_THINKING}
+    reasoning_effort: {DEFAULT_REASONING_EFFORT}
+
+storage:
+  backend: sqlite
+  sqlite:
+    path: {REASONING_CONTENT_FILE_NAME}
+
+reasoning_cache:
+  max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
+  # max_entries: null  # auto-sized from available disk space
+  missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
+
+reasoning_display:
+  enabled: {str(DEFAULT_DISPLAY_REASONING).lower()}
+  collapsible: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
+
+logging:
+  level: info
+  format: text
+  file:
+    enabled: true
+    path: null  # auto: ~/.deepseek-bridge/logs
+
+metrics:
+  enabled: false
+
+tunnel:
+  mode: cloudflared
+  # cf_url: https://app.example.com  # required for cloudflared tunnel
+  # ngrok_url: https://my-tunnel.ngrok.app
+
+cors:
+  enabled: {str(DEFAULT_CORS).lower()}
+  allowed_origins:
 {CORS_ALLOWED_ORIGINS_TEXT}
-cors_allow_credentials: {str(DEFAULT_CORS_ALLOW_CREDENTIALS).lower()}
-request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
-max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
+  allow_credentials: {str(DEFAULT_CORS_ALLOW_CREDENTIALS).lower()}
 
-# Advanced — defaults are fine for most users
-# missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
-# reasoning_content_path: {REASONING_CONTENT_FILE_NAME}
-#   auto: ~/.deepseek-bridge/reasoning_content.sqlite3
-# reasoning_cache_max_age_seconds: {DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}
-# log_dir: null  # auto: ~/.deepseek-bridge/logs
+ollama:
+  enabled: true
+
+performance:
+  request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
+  stream_read_timeout: {DEFAULT_STREAM_READ_TIMEOUT:g}
+  max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
+  max_pool_connections: {DEFAULT_MAX_POOL_CONNECTIONS}
+  max_thread_pool: {DEFAULT_MAX_THREAD_POOL}
 """
+
+ENV_CONFIG_PATH = "DEEPSEEK_BRIDGE_CONFIG_PATH"
 
 
 def default_app_dir() -> Path:
@@ -254,6 +248,16 @@ def as_float(value: Any, default: float) -> float:
         return default
 
 
+def as_optional_positive_int(value: Any) -> int | None:
+    if value is MISSING or value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except TypeError, ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _normalize_config_origin(value: object) -> str:
     origin = str(value).strip()
     if origin not in {"*", "null"}:
@@ -306,6 +310,649 @@ def as_optional_path(
     if candidate_path.is_absolute() or relative_base is None:
         return candidate_path
     return relative_base / candidate_path
+
+
+def _strict_bool(name: str, value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in TRUE_VALUES:
+        return True
+    if normalized in FALSE_VALUES:
+        return False
+    raise ValueError(
+        f"{name} must be a boolean "
+        f"({', '.join(sorted(TRUE_VALUES | FALSE_VALUES))}); got {value!r}"
+    )
+
+
+def _strict_int(
+    name: str,
+    value: Any,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer; got {value!r}") from exc
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum}; got {parsed!r}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be <= {maximum}; got {parsed!r}")
+    return parsed
+
+
+def _strict_float(
+    name: str, value: Any, *, minimum: float | None = None
+) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number; got {value!r}") from exc
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{name} must be >= {minimum:g}; got {parsed!r}")
+    return parsed
+
+
+def _strict_enum(name: str, value: Any, allowed: set[str]) -> str:
+    normalized = str(value).strip().lower()
+    if normalized in allowed:
+        return normalized
+    choices = ", ".join(sorted(allowed))
+    raise ValueError(f"{name} must be one of {choices}; got {value!r}")
+
+
+def _strict_thinking(name: str, value: Any) -> str:
+    normalized = str(value).strip().lower()
+    if normalized in {"enabled", "disabled"}:
+        return normalized
+    if normalized in TRUE_VALUES:
+        return "enabled"
+    if normalized in FALSE_VALUES:
+        return "disabled"
+    raise ValueError(f"{name} must be enabled or disabled; got {value!r}")
+
+
+def _strict_tunnel(name: str, value: Any) -> str:
+    return _strict_enum(name, value, SUPPORTED_TUNNELS)
+
+
+def _strict_str_tuple(name: str, value: Any) -> tuple[str, ...]:
+    parsed = as_str_tuple(value, ())
+    if parsed:
+        return parsed
+    raise ValueError(
+        f"{name} must be a non-empty list or comma-separated string"
+    )
+
+
+def _strict_mapping(name: str, value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    raise ValueError(f"{name} must be a mapping; got {type(value).__name__}")
+
+
+def _optional_mapping(
+    settings: Mapping[str, Any], key: str
+) -> Mapping[str, Any] | None:
+    value = setting_value(settings, key)
+    if value is MISSING or value is None:
+        return None
+    return _strict_mapping(key, value)
+
+
+def _env_path(value: Any) -> Path | str:
+    if str(value) == ":memory:":
+        return ":memory:"
+    path = Path(str(value)).expanduser()
+    if path.is_absolute():
+        return path
+    return Path.cwd() / path
+
+
+def _config_path(name: str, value: Any, config_dir: Path) -> Path | str:
+    if value is None or value == "":
+        raise ValueError(f"{name} must not be empty")
+    return as_path(value, Path(), config_dir)
+
+
+def _set_if_present(
+    target: dict[str, Any],
+    source: Mapping[str, Any],
+    source_key: str,
+    target_key: str,
+    converter: Any = None,
+    *,
+    name: str | None = None,
+) -> None:
+    value = setting_value(source, source_key)
+    if value is MISSING:
+        return
+    setting_name = name or source_key
+    target[target_key] = converter(setting_name, value) if converter else value
+
+
+def _validate_schema_version(settings: Mapping[str, Any]) -> None:
+    version = setting_value(settings, "version")
+    if version is MISSING or version is None:
+        return
+    parsed = _strict_int("version", version, minimum=1)
+    if parsed != 1:
+        raise ValueError(f"Unsupported config version {parsed}; expected 1")
+
+
+def normalize_config_settings(
+    settings: Mapping[str, Any], config_dir: Path
+) -> dict[str, Any]:
+    """Map structured schema v1 YAML onto the flat runtime settings."""
+
+    _validate_schema_version(settings)
+    normalized = dict(settings)
+
+    def to_str(_name: str, value: Any) -> str:
+        return str(value)
+
+    if runtime := _optional_mapping(settings, "runtime"):
+        _set_if_present(
+            normalized,
+            runtime,
+            "mode",
+            "runtime_mode",
+            lambda n, v: _strict_enum(
+                n, v, {DEFAULT_RUNTIME_MODE, KUBERNETES_RUNTIME_MODE}
+            ),
+            name="runtime.mode",
+        )
+
+    if server := _optional_mapping(settings, "server"):
+        _set_if_present(
+            normalized, server, "host", "host", to_str, name="server.host"
+        )
+        _set_if_present(
+            normalized,
+            server,
+            "port",
+            "port",
+            lambda n, v: _strict_int(n, v, minimum=1, maximum=65535),
+            name="server.port",
+        )
+
+    if upstream := _optional_mapping(settings, "upstream"):
+        _set_if_present(
+            normalized,
+            upstream,
+            "base_url",
+            "base_url",
+            to_str,
+            name="upstream.base_url",
+        )
+        _set_if_present(
+            normalized,
+            upstream,
+            "model",
+            "model",
+            to_str,
+            name="upstream.model",
+        )
+        thinking = setting_value(upstream, "thinking")
+        if isinstance(thinking, Mapping):
+            _set_if_present(
+                normalized,
+                thinking,
+                "mode",
+                "thinking",
+                _strict_thinking,
+                name="upstream.thinking.mode",
+            )
+            _set_if_present(
+                normalized,
+                thinking,
+                "reasoning_effort",
+                "reasoning_effort",
+                lambda n, v: _strict_enum(
+                    n, v, {"low", "medium", "high", "max", "xhigh"}
+                ),
+                name="upstream.thinking.reasoning_effort",
+            )
+        elif thinking is not MISSING:
+            normalized["thinking"] = _strict_thinking(
+                "upstream.thinking", thinking
+            )
+
+    if storage := _optional_mapping(settings, "storage"):
+        _set_if_present(
+            normalized,
+            storage,
+            "backend",
+            "storage_backend",
+            lambda n, v: _strict_enum(n, v, {"sqlite", "valkey"}),
+            name="storage.backend",
+        )
+        if sqlite := _optional_mapping(storage, "sqlite"):
+            path = setting_value(sqlite, "path")
+            if path is not MISSING:
+                normalized["reasoning_content_path"] = _config_path(
+                    "storage.sqlite.path", path, config_dir
+                )
+        if valkey := _optional_mapping(storage, "valkey"):
+            _set_if_present(
+                normalized,
+                valkey,
+                "url",
+                "valkey_url",
+                to_str,
+                name="storage.valkey.url",
+            )
+            _set_if_present(
+                normalized,
+                valkey,
+                "key_prefix",
+                "valkey_key_prefix",
+                to_str,
+                name="storage.valkey.key_prefix",
+            )
+
+    if reasoning_cache := _optional_mapping(settings, "reasoning_cache"):
+        _set_if_present(
+            normalized,
+            reasoning_cache,
+            "max_age_seconds",
+            "reasoning_cache_max_age_seconds",
+            lambda n, v: _strict_int(n, v, minimum=1),
+            name="reasoning_cache.max_age_seconds",
+        )
+        max_entries = setting_value(reasoning_cache, "max_entries")
+        if max_entries is not MISSING and max_entries is not None:
+            normalized["reasoning_cache_max_entries"] = _strict_int(
+                "reasoning_cache.max_entries", max_entries, minimum=1
+            )
+        _set_if_present(
+            normalized,
+            reasoning_cache,
+            "missing_reasoning_strategy",
+            "missing_reasoning_strategy",
+            lambda n, v: _strict_enum(n, v, {"recover", "reject"}),
+            name="reasoning_cache.missing_reasoning_strategy",
+        )
+
+    if reasoning_display := _optional_mapping(settings, "reasoning_display"):
+        _set_if_present(
+            normalized,
+            reasoning_display,
+            "enabled",
+            "display_reasoning",
+            _strict_bool,
+            name="reasoning_display.enabled",
+        )
+        _set_if_present(
+            normalized,
+            reasoning_display,
+            "collapsible",
+            "collapsible_reasoning",
+            _strict_bool,
+            name="reasoning_display.collapsible",
+        )
+
+    if logging_settings := _optional_mapping(settings, "logging"):
+        level = setting_value(logging_settings, "level")
+        if level is not MISSING:
+            normalized["debug"] = (
+                _strict_enum("logging.level", level, {"debug", "info"})
+                == "debug"
+            )
+        _set_if_present(
+            normalized,
+            logging_settings,
+            "format",
+            "log_format",
+            lambda n, v: _strict_enum(n, v, {"text", "json"}),
+            name="logging.format",
+        )
+        _set_if_present(
+            normalized,
+            logging_settings,
+            "compact",
+            "compact",
+            _strict_bool,
+            name="logging.compact",
+        )
+        trace_dir = setting_value(logging_settings, "trace_dir")
+        if trace_dir is not MISSING and trace_dir is not None:
+            normalized["trace_dir"] = _config_path(
+                "logging.trace_dir", trace_dir, config_dir
+            )
+        if file_settings := _optional_mapping(logging_settings, "file"):
+            _set_if_present(
+                normalized,
+                file_settings,
+                "enabled",
+                "log_file_enabled",
+                _strict_bool,
+                name="logging.file.enabled",
+            )
+            path = setting_value(file_settings, "path")
+            if path is not MISSING and path is not None:
+                normalized["log_dir"] = _config_path(
+                    "logging.file.path", path, config_dir
+                )
+
+    if metrics := _optional_mapping(settings, "metrics"):
+        _set_if_present(
+            normalized,
+            metrics,
+            "enabled",
+            "metrics_enabled",
+            _strict_bool,
+            name="metrics.enabled",
+        )
+
+    tunnel = setting_value(settings, "tunnel")
+    if isinstance(tunnel, Mapping):
+        if setting_value(tunnel, "mode") is MISSING:
+            normalized["tunnel"] = "cloudflared"
+        _set_if_present(
+            normalized,
+            tunnel,
+            "mode",
+            "tunnel",
+            _strict_tunnel,
+            name="tunnel.mode",
+        )
+        _set_if_present(
+            normalized,
+            tunnel,
+            "cf_url",
+            "cf_url",
+            to_str,
+            name="tunnel.cf_url",
+        )
+        _set_if_present(
+            normalized,
+            tunnel,
+            "cfd_tunnel_name",
+            "cfd_tunnel_name",
+            to_str,
+            name="tunnel.cfd_tunnel_name",
+        )
+        _set_if_present(
+            normalized,
+            tunnel,
+            "ngrok_url",
+            "ngrok_url",
+            to_str,
+            name="tunnel.ngrok_url",
+        )
+
+    cors = setting_value(settings, "cors")
+    if isinstance(cors, Mapping):
+        _set_if_present(
+            normalized,
+            cors,
+            "enabled",
+            "cors",
+            _strict_bool,
+            name="cors.enabled",
+        )
+        _set_if_present(
+            normalized,
+            cors,
+            "allowed_origins",
+            "cors_allowed_origins",
+            _strict_str_tuple,
+            name="cors.allowed_origins",
+        )
+        _set_if_present(
+            normalized,
+            cors,
+            "allow_credentials",
+            "cors_allow_credentials",
+            _strict_bool,
+            name="cors.allow_credentials",
+        )
+
+    ollama = setting_value(settings, "ollama")
+    if isinstance(ollama, Mapping):
+        _set_if_present(
+            normalized,
+            ollama,
+            "enabled",
+            "ollama",
+            _strict_bool,
+            name="ollama.enabled",
+        )
+
+    if performance := _optional_mapping(settings, "performance"):
+        _set_if_present(
+            normalized,
+            performance,
+            "request_timeout",
+            "request_timeout",
+            lambda n, v: _strict_float(n, v, minimum=0.001),
+            name="performance.request_timeout",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "stream_read_timeout",
+            "stream_read_timeout",
+            lambda n, v: _strict_float(n, v, minimum=0.001),
+            name="performance.stream_read_timeout",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "max_request_body_bytes",
+            "max_request_body_bytes",
+            lambda n, v: _strict_int(n, v, minimum=1),
+            name="performance.max_request_body_bytes",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "max_pool_connections",
+            "max_pool_connections",
+            lambda n, v: _strict_int(n, v, minimum=1),
+            name="performance.max_pool_connections",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "max_thread_pool",
+            "max_thread_pool",
+            lambda n, v: _strict_int(n, v, minimum=1),
+            name="performance.max_thread_pool",
+        )
+
+    return normalized
+
+
+def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
+    if environ is None:
+        environ = os.environ
+    settings: dict[str, Any] = {}
+
+    string_vars = {
+        "DEEPSEEK_BRIDGE_RUNTIME_MODE": "runtime_mode",
+        "DEEPSEEK_BRIDGE_RUNTIME": "runtime_mode",
+        "DEEPSEEK_BRIDGE_HOST": "host",
+        "DEEPSEEK_BRIDGE_BASE_URL": "base_url",
+        "DEEPSEEK_BRIDGE_UPSTREAM_BASE_URL": "base_url",
+        "DEEPSEEK_BRIDGE_MODEL": "model",
+        "DEEPSEEK_BRIDGE_UPSTREAM_MODEL": "model",
+        "DEEPSEEK_BRIDGE_CF_URL": "cf_url",
+        "DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME": "cfd_tunnel_name",
+        "DEEPSEEK_BRIDGE_NGROK_URL": "ngrok_url",
+        "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey_url",
+        "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "valkey_key_prefix",
+    }
+    for env_name, key in string_vars.items():
+        if env_name in environ:
+            settings[key] = environ[env_name]
+
+    path_vars = {
+        "DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH": "reasoning_content_path",
+        "DEEPSEEK_BRIDGE_SQLITE_PATH": "reasoning_content_path",
+        "DEEPSEEK_BRIDGE_LOG_DIR": "log_dir",
+        "DEEPSEEK_BRIDGE_TRACE_DIR": "trace_dir",
+    }
+    for env_name, key in path_vars.items():
+        if env_name in environ:
+            settings[key] = _env_path(environ[env_name])
+            if key == "log_dir":
+                settings["log_file_enabled"] = True
+
+    int_vars = {
+        "DEEPSEEK_BRIDGE_PORT": ("port", 1, 65535),
+        "DEEPSEEK_BRIDGE_MAX_REQUEST_BODY_BYTES": (
+            "max_request_body_bytes",
+            1,
+            None,
+        ),
+        "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS": (
+            "reasoning_cache_max_age_seconds",
+            1,
+            None,
+        ),
+        "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_ENTRIES": (
+            "reasoning_cache_max_entries",
+            1,
+            None,
+        ),
+        "DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS": (
+            "max_pool_connections",
+            1,
+            None,
+        ),
+        "DEEPSEEK_BRIDGE_MAX_THREAD_POOL": ("max_thread_pool", 1, None),
+    }
+    for env_name, (key, minimum, maximum) in int_vars.items():
+        if env_name in environ:
+            settings[key] = _strict_int(
+                env_name,
+                environ[env_name],
+                minimum=minimum,
+                maximum=maximum,
+            )
+
+    float_vars = {
+        "DEEPSEEK_BRIDGE_REQUEST_TIMEOUT": "request_timeout",
+        "DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT": "stream_read_timeout",
+    }
+    for env_name, key in float_vars.items():
+        if env_name in environ:
+            settings[key] = _strict_float(
+                env_name, environ[env_name], minimum=0.001
+            )
+
+    bool_vars = {
+        "DEEPSEEK_BRIDGE_DISPLAY_REASONING": "display_reasoning",
+        "DEEPSEEK_BRIDGE_COLLAPSIBLE_REASONING": "collapsible_reasoning",
+        "DEEPSEEK_BRIDGE_DEBUG": "debug",
+        "DEEPSEEK_BRIDGE_COMPACT": "compact",
+        "DEEPSEEK_BRIDGE_CORS": "cors",
+        "DEEPSEEK_BRIDGE_CORS_ENABLED": "cors",
+        "DEEPSEEK_BRIDGE_CORS_ALLOW_CREDENTIALS": "cors_allow_credentials",
+        "DEEPSEEK_BRIDGE_OLLAMA": "ollama",
+        "DEEPSEEK_BRIDGE_OLLAMA_ENABLED": "ollama",
+        "DEEPSEEK_BRIDGE_LOG_FILE_ENABLED": "log_file_enabled",
+        "DEEPSEEK_BRIDGE_METRICS_ENABLED": "metrics_enabled",
+    }
+    for env_name, key in bool_vars.items():
+        if env_name in environ:
+            settings[key] = _strict_bool(env_name, environ[env_name])
+
+    if "DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS" in environ:
+        settings["cors_allowed_origins"] = _strict_str_tuple(
+            "DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS",
+            environ["DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS"],
+        )
+
+    if "DEEPSEEK_BRIDGE_THINKING" in environ:
+        settings["thinking"] = _strict_thinking(
+            "DEEPSEEK_BRIDGE_THINKING", environ["DEEPSEEK_BRIDGE_THINKING"]
+        )
+    if "DEEPSEEK_BRIDGE_REASONING_EFFORT" in environ:
+        settings["reasoning_effort"] = _strict_enum(
+            "DEEPSEEK_BRIDGE_REASONING_EFFORT",
+            environ["DEEPSEEK_BRIDGE_REASONING_EFFORT"],
+            {"low", "medium", "high", "max", "xhigh"},
+        )
+    if "DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY" in environ:
+        settings["missing_reasoning_strategy"] = _strict_enum(
+            "DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY",
+            environ["DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY"],
+            {"recover", "reject"},
+        )
+    if "DEEPSEEK_BRIDGE_STORAGE_BACKEND" in environ:
+        settings["storage_backend"] = _strict_enum(
+            "DEEPSEEK_BRIDGE_STORAGE_BACKEND",
+            environ["DEEPSEEK_BRIDGE_STORAGE_BACKEND"],
+            {"sqlite", "valkey"},
+        )
+    if "DEEPSEEK_BRIDGE_TUNNEL_MODE" in environ:
+        settings["tunnel"] = _strict_tunnel(
+            "DEEPSEEK_BRIDGE_TUNNEL_MODE",
+            environ["DEEPSEEK_BRIDGE_TUNNEL_MODE"],
+        )
+    if "DEEPSEEK_BRIDGE_TUNNEL" in environ:
+        settings["tunnel"] = _strict_tunnel(
+            "DEEPSEEK_BRIDGE_TUNNEL", environ["DEEPSEEK_BRIDGE_TUNNEL"]
+        )
+    if "DEEPSEEK_BRIDGE_LOG_LEVEL" in environ:
+        settings["debug"] = (
+            _strict_enum(
+                "DEEPSEEK_BRIDGE_LOG_LEVEL",
+                environ["DEEPSEEK_BRIDGE_LOG_LEVEL"],
+                {"debug", "info"},
+            )
+            == "debug"
+        )
+    if "DEEPSEEK_BRIDGE_LOG_FORMAT" in environ:
+        settings["log_format"] = _strict_enum(
+            "DEEPSEEK_BRIDGE_LOG_FORMAT",
+            environ["DEEPSEEK_BRIDGE_LOG_FORMAT"],
+            {"text", "json"},
+        )
+
+    return settings
+
+
+def validate_runtime_settings(settings: Mapping[str, Any]) -> None:
+    storage_backend = (
+        as_str(
+            setting_value(settings, "storage_backend"), DEFAULT_STORAGE_BACKEND
+        )
+        .strip()
+        .lower()
+    )
+    if storage_backend != "sqlite":
+        raise ValueError(
+            "storage backend 'valkey' is not implemented yet; "
+            "set storage.backend or DEEPSEEK_BRIDGE_STORAGE_BACKEND to 'sqlite'"
+        )
+
+    log_format = (
+        as_str(setting_value(settings, "log_format"), DEFAULT_LOG_FORMAT)
+        .strip()
+        .lower()
+    )
+    if log_format != "text":
+        raise ValueError(
+            "logging format 'json' is not implemented yet; "
+            "set logging.format or DEEPSEEK_BRIDGE_LOG_FORMAT to 'text'"
+        )
+
+    metrics_enabled = as_bool(
+        setting_value(settings, "metrics_enabled"), DEFAULT_METRICS_ENABLED
+    )
+    if metrics_enabled:
+        raise ValueError(
+            "metrics.enabled is not implemented yet; leave it false"
+        )
 
 
 def settings_from_config(
@@ -383,39 +1030,13 @@ def _auto_cache_max_rows(
     return max(int((budget_mb * 1024 * 1024) / est_row_bytes), 10000)
 
 
-def _settings_from_environment(
-    environ: Mapping[str, str],
-) -> dict[str, str]:
-    settings: dict[str, str] = {}
-    for config_key, env_keys in ENV_SETTING_KEYS.items():
-        for env_key in env_keys:
-            if env_key in environ:
-                settings[config_key] = environ[env_key]
-                break
-    return settings
-
-
 def _runtime_mode_from_environment(
     environ: Mapping[str, str],
 ) -> str | None:
-    for env_key in ENV_SETTING_KEYS["runtime_mode"]:
+    for env_key in ("DEEPSEEK_BRIDGE_RUNTIME_MODE", "DEEPSEEK_BRIDGE_RUNTIME"):
         if env_key in environ:
             return environ[env_key]
     return None
-
-
-def _merged_settings(
-    settings: Mapping[str, Any],
-    environ: Mapping[str, str],
-    cli_runtime_mode: str | None,
-) -> tuple[dict[str, Any], str]:
-    merged: dict[str, Any] = dict(settings)
-    merged.update(_settings_from_environment(environ))
-    if cli_runtime_mode is not None:
-        merged["runtime_mode"] = cli_runtime_mode
-    runtime_mode = normalize_runtime_mode(setting_value(merged, "runtime_mode"))
-    merged["runtime_mode"] = runtime_mode
-    return merged, runtime_mode
 
 
 @dataclass(frozen=True)
@@ -437,8 +1058,12 @@ class ProxyConfig:
     reasoning_cache_max_age_seconds: int = (
         DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS
     )
+    reasoning_cache_max_entries: int | None = None
     display_reasoning: bool = DEFAULT_DISPLAY_REASONING
     collapsible_reasoning: bool = DEFAULT_COLLAPSIBLE_REASONING
+    storage_backend: str = DEFAULT_STORAGE_BACKEND
+    valkey_url: str = ""
+    valkey_key_prefix: str = DEFAULT_VALKEY_KEY_PREFIX
     max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS
     max_thread_pool: int = DEFAULT_MAX_THREAD_POOL
     max_queue_size: int = field(
@@ -456,6 +1081,8 @@ class ProxyConfig:
     compact: bool = False
     trace_dir: Path | None = None
     log_dir: Path | None = field(default_factory=default_log_dir)
+    log_format: str = DEFAULT_LOG_FORMAT
+    metrics_enabled: bool = DEFAULT_METRICS_ENABLED
 
     @classmethod
     def from_file(
@@ -465,19 +1092,43 @@ class ProxyConfig:
         environ: Mapping[str, str] | None = None,
         runtime_mode: str | None = None,
     ) -> ProxyConfig:
-        env = os.environ if environ is None else environ
+        return cls.from_sources(
+            config_path=config_path,
+            environ=environ,
+            runtime_mode=runtime_mode,
+        )
+
+    @classmethod
+    def from_sources(
+        cls: type[ProxyConfig],
+        config_path: str | Path | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+        runtime_mode: str | None = None,
+    ) -> ProxyConfig:
+        environ = os.environ if environ is None else environ
+        if config_path is None and (
+            env_config_path := environ.get(ENV_CONFIG_PATH)
+        ):
+            config_path = env_config_path
         initial_runtime_mode = normalize_runtime_mode(
             runtime_mode
             if runtime_mode is not None
-            else _runtime_mode_from_environment(env)
+            else _runtime_mode_from_environment(environ)
         )
         settings, resolved_config_path = settings_from_config(
             config_path,
             populate_default=initial_runtime_mode != KUBERNETES_RUNTIME_MODE,
         )
         config_dir = resolved_config_path.parent
-        settings, normalized_runtime_mode = _merged_settings(
-            settings, env, runtime_mode
+        settings = normalize_config_settings(settings, config_dir)
+        settings.update(settings_from_env(environ))
+        if runtime_mode is not None:
+            settings["runtime_mode"] = normalize_runtime_mode(runtime_mode)
+        validate_runtime_settings(settings)
+
+        normalized_runtime_mode = normalize_runtime_mode(
+            setting_value(settings, "runtime_mode")
         )
         kubernetes_mode = normalized_runtime_mode == KUBERNETES_RUNTIME_MODE
         host_default = KUBERNETES_HOST if kubernetes_mode else DEFAULT_HOST
@@ -488,6 +1139,41 @@ class ProxyConfig:
             else default_reasoning_content_path()
         )
         log_dir_default = None if kubernetes_mode else default_log_dir()
+
+        request_timeout = as_float(
+            setting_value(settings, "request_timeout"), DEFAULT_REQUEST_TIMEOUT
+        )
+        stream_read_timeout = _auto_stream_timeout(
+            request_timeout,
+            explicit=(
+                setting_value(settings, "stream_read_timeout")
+                if setting_value(settings, "stream_read_timeout") is not MISSING
+                else None
+            ),
+        )
+        max_thread_pool = as_int(
+            setting_value(settings, "max_thread_pool"), DEFAULT_MAX_THREAD_POOL
+        )
+        max_pool_connections = _auto_pool_connections(
+            max_thread_pool,
+            explicit=(
+                setting_value(settings, "max_pool_connections")
+                if setting_value(settings, "max_pool_connections")
+                is not MISSING
+                else None
+            ),
+        )
+        log_file_enabled = as_bool(
+            setting_value(settings, "log_file_enabled"), True
+        )
+        log_dir_value = setting_value(settings, "log_dir")
+        log_dir = None
+        if log_file_enabled:
+            log_dir = as_optional_path(
+                log_dir_value,
+                log_dir_default,
+                config_dir,
+            )
 
         return cls(
             runtime_mode=normalized_runtime_mode,
@@ -512,22 +1198,8 @@ class ProxyConfig:
                 setting_value(settings, "reasoning_effort"),
                 DEFAULT_REASONING_EFFORT,
             ),
-            request_timeout=as_float(
-                setting_value(settings, "request_timeout"),
-                DEFAULT_REQUEST_TIMEOUT,
-            ),
-            stream_read_timeout=_auto_stream_timeout(
-                as_float(
-                    setting_value(settings, "request_timeout"),
-                    DEFAULT_REQUEST_TIMEOUT,
-                ),
-                explicit=(
-                    setting_value(settings, "stream_read_timeout")
-                    if setting_value(settings, "stream_read_timeout")
-                    is not MISSING
-                    else None
-                ),
-            ),
+            request_timeout=request_timeout,
+            stream_read_timeout=stream_read_timeout,
             max_request_body_bytes=as_int(
                 setting_value(settings, "max_request_body_bytes"),
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
@@ -544,6 +1216,9 @@ class ProxyConfig:
                 setting_value(settings, "reasoning_cache_max_age_seconds"),
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
             ),
+            reasoning_cache_max_entries=as_optional_positive_int(
+                setting_value(settings, "reasoning_cache_max_entries")
+            ),
             display_reasoning=as_bool(
                 setting_value(settings, "display_reasoning"),
                 DEFAULT_DISPLAY_REASONING,
@@ -551,6 +1226,17 @@ class ProxyConfig:
             collapsible_reasoning=as_bool(
                 setting_value(settings, "collapsible_reasoning"),
                 DEFAULT_COLLAPSIBLE_REASONING,
+            ),
+            storage_backend=as_str(
+                setting_value(settings, "storage_backend"),
+                DEFAULT_STORAGE_BACKEND,
+            )
+            .strip()
+            .lower(),
+            valkey_url=as_str(setting_value(settings, "valkey_url"), ""),
+            valkey_key_prefix=as_str(
+                setting_value(settings, "valkey_key_prefix"),
+                DEFAULT_VALKEY_KEY_PREFIX,
             ),
             cors=as_bool(
                 setting_value(settings, "cors"),
@@ -582,35 +1268,22 @@ class ProxyConfig:
                 setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"
             ),
             ngrok_url=as_str(setting_value(settings, "ngrok_url"), ""),
-            max_pool_connections=_auto_pool_connections(
-                as_int(
-                    setting_value(settings, "max_thread_pool"),
-                    DEFAULT_MAX_THREAD_POOL,
-                ),
-                explicit=(
-                    setting_value(settings, "max_pool_connections")
-                    if setting_value(settings, "max_pool_connections")
-                    is not MISSING
-                    else None
-                ),
-            ),
-            max_thread_pool=as_int(
-                setting_value(settings, "max_thread_pool"),
-                DEFAULT_MAX_THREAD_POOL,
-            ),
-            max_queue_size=_auto_queue_size(
-                as_int(
-                    setting_value(settings, "max_thread_pool"),
-                    DEFAULT_MAX_THREAD_POOL,
-                )
-            ),
-            log_dir=as_optional_path(
-                setting_value(settings, "log_dir"),
-                log_dir_default,
-            ),
+            max_pool_connections=max_pool_connections,
+            max_thread_pool=max_thread_pool,
+            max_queue_size=_auto_queue_size(max_thread_pool),
             trace_dir=as_optional_path(
                 setting_value(settings, "trace_dir"),
                 None,
                 config_dir,
+            ),
+            log_dir=log_dir,
+            log_format=as_str(
+                setting_value(settings, "log_format"), DEFAULT_LOG_FORMAT
+            )
+            .strip()
+            .lower(),
+            metrics_enabled=as_bool(
+                setting_value(settings, "metrics_enabled"),
+                DEFAULT_METRICS_ENABLED,
             ),
         )

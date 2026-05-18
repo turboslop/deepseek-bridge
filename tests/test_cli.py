@@ -349,7 +349,7 @@ class CliMainTests(unittest.TestCase):
             mock_log.assert_called_once()
             self.assertIsNone(mock_log.call_args.kwargs["log_dir"])
             mock_store_cls.assert_called_once_with(
-                ":memory:", max_age_seconds=ANY
+                ":memory:", max_age_seconds=ANY, max_rows=None
             )
             mock_create.assert_not_called()
 
@@ -380,6 +380,96 @@ class CliMainTests(unittest.TestCase):
             self.assertEqual(result, 2)
             mock_store_cls.assert_not_called()
             mock_create.assert_not_called()
+
+    def test_main_uses_config_tunnel_when_cli_flag_absent(self) -> None:
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch("deepseek_bridge.cli.create_tunnel") as mock_create,
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging"),
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(tunnel="ngrok")
+            mock_tunnel = MagicMock()
+            mock_tunnel.start.return_value = "https://app.example.com"
+            mock_create.return_value = mock_tunnel
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main([])
+
+            self.assertEqual(result, 0)
+            mock_create.assert_called_once_with("ngrok", ANY)
+
+    def test_main_cli_flags_override_loaded_config(self) -> None:
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ) as mock_run,
+            patch("deepseek_bridge.cli.create_tunnel"),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging"),
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(
+                host="127.0.0.1",
+                port=9000,
+                upstream_model="from-config",
+                request_timeout=300,
+                stream_read_timeout=180,
+                reasoning_cache_max_entries=42,
+                max_thread_pool=10,
+                max_pool_connections=10,
+                tunnel="cloudflared",
+            )
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main(
+                [
+                    "--host",
+                    "0.0.0.0",
+                    "--port",
+                    "9100",
+                    "--model",
+                    "from-cli",
+                    "--request-timeout",
+                    "120",
+                    "--max-thread-pool",
+                    "20",
+                    "--tunnel",
+                    "none",
+                ]
+            )
+
+            self.assertEqual(result, 0)
+            server = mock_run.call_args.args[0]
+            self.assertEqual(server.config.host, "0.0.0.0")
+            self.assertEqual(server.config.port, 9100)
+            self.assertEqual(server.config.upstream_model, "from-cli")
+            self.assertEqual(server.config.request_timeout, 120)
+            self.assertEqual(server.config.stream_read_timeout, 72)
+            self.assertEqual(server.config.max_thread_pool, 20)
+            self.assertEqual(server.config.max_pool_connections, 20)
+            self.assertEqual(server.config.max_queue_size, 50)
+            self.assertEqual(server.config.tunnel, "none")
+            self.assertEqual(mock_store_cls.call_args.kwargs["max_rows"], 42)
 
     def test_main_runs_http_server(self) -> None:
         """main runs the HTTP server loop directly."""

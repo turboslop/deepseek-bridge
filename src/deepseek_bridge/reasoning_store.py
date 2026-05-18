@@ -173,6 +173,7 @@ class ReasoningStore:
         self,
         reasoning_content_path: str | Path,
         max_age_seconds: int | None = None,
+        max_rows: int | None = None,
     ) -> None:
         self.max_age_seconds = max_age_seconds
         if str(reasoning_content_path) == ":memory:":
@@ -215,7 +216,9 @@ class ReasoningStore:
             "ON reasoning_cache(created_at)"
         )
         self._conn.commit()
-        if isinstance(self.reasoning_content_path, Path):
+        if max_rows is not None:
+            self._max_rows = max_rows
+        elif isinstance(self.reasoning_content_path, Path):
             from .config import _auto_cache_max_rows
 
             self._max_rows = _auto_cache_max_rows(
@@ -386,6 +389,8 @@ class ReasoningStore:
                     "created_at = excluded.created_at",
                     (key, reasoning, message_json, time.time()),
                 )
+                if self._max_rows is not None and self._max_rows > 0:
+                    self._prune_locked()
                 self._conn.commit()
             except Exception as exc:
                 LOG.warning("SQLite write failed for key=%s: %s", key[:32], exc)

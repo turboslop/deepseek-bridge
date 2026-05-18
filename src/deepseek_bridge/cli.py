@@ -15,6 +15,9 @@ from deepseek_bridge import __version__
 
 from .config import (
     ProxyConfig,
+    _auto_pool_connections,
+    _auto_queue_size,
+    _auto_stream_timeout,
     default_config_path,
     default_reasoning_content_path,
 )
@@ -393,6 +396,14 @@ def main(argv: list[str] | None = None) -> int:
         updates["ollama"] = args.ollama
     if args.request_timeout is not None:
         updates["request_timeout"] = args.request_timeout
+        if (
+            args.stream_read_timeout is None
+            and config.stream_read_timeout
+            == _auto_stream_timeout(config.request_timeout)
+        ):
+            updates["stream_read_timeout"] = _auto_stream_timeout(
+                args.request_timeout
+            )
     if args.stream_read_timeout is not None:
         updates["stream_read_timeout"] = args.stream_read_timeout
     if args.max_request_body_bytes is not None:
@@ -407,6 +418,15 @@ def main(argv: list[str] | None = None) -> int:
         updates["max_pool_connections"] = args.max_pool_connections
     if args.max_thread_pool is not None:
         updates["max_thread_pool"] = args.max_thread_pool
+        updates["max_queue_size"] = _auto_queue_size(args.max_thread_pool)
+        if (
+            args.max_pool_connections is None
+            and config.max_pool_connections
+            == _auto_pool_connections(config.max_thread_pool)
+        ):
+            updates["max_pool_connections"] = _auto_pool_connections(
+                args.max_thread_pool
+            )
     if updates:
         config = replace(config, **updates)
 
@@ -424,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     store = ReasoningStore(
         config.reasoning_content_path,
         max_age_seconds=config.reasoning_cache_max_age_seconds,
+        max_rows=config.reasoning_cache_max_entries,
     )
     bloat_warning, _ = store.check_bloat()
     if bloat_warning:
@@ -571,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
             tunnel.stop()
         store.prune()
         store.close()
+        if hasattr(gc, "unfreeze"):
+            gc.unfreeze()
         LOG.info("graceful shutdown: complete")
         _shutdown_requested.clear()
     return 0

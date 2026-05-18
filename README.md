@@ -107,80 +107,182 @@ docker exec deepseek-bridge id -u
 docker stop deepseek-bridge
 ```
 
-The image runs as UID `10001` and starts:
+The image runs as UID `10001` and starts with a short command:
 
 ```bash
-deepseek-bridge --headless --tunnel none --host 0.0.0.0 --port 9000 \
-  --config /etc/deepseek-bridge/config.yaml \
-  --no-log \
-  --reasoning-content-path /data/reasoning_content.sqlite3
+deepseek-bridge --config /etc/deepseek-bridge/config.yaml
 ```
 
-Container defaults avoid local tunnels, bind port `9000` on all interfaces,
-disable file logs, and do not require a writable home directory. The SQLite
-reasoning cache uses `/data`; mount that path as an `emptyDir` or persistent
-volume in Kubernetes if the root filesystem is read-only or cache persistence
-is required. For read-only-root deployments, make the mounted `/data` volume
-writable by UID/GID `10001`, for example with a pod `fsGroup` or volume
-ownership setting.
+Container defaults are supplied by `/etc/deepseek-bridge/config.yaml`: no
+tunnel, `0.0.0.0:9000`, compact logs, no file logs, and SQLite cache path
+`/data/reasoning_content.sqlite3`. Override with `DEEPSEEK_BRIDGE_*` env vars
+or mount your own config file at that path. Mount `/data` as an `emptyDir` or
+persistent volume if the root filesystem is read-only or cache persistence is
+required. For read-only-root deployments, make `/data` writable by UID/GID
+`10001`, for example with a pod `fsGroup` or volume ownership setting.
 
 ## Configuration
 
-All settings are configurable via `~/.deepseek-bridge/config.yaml` or command-line overrides. Example configuration:
+Configuration precedence is:
 
-```yaml
-runtime_mode: local
-model: deepseek-v4-pro
-base_url: https://api.deepseek.com
-thinking: enabled
-reasoning_effort: max
-display_reasoning: true
-collapsible_reasoning: true
-
-host: 127.0.0.1
-port: 9000
-tunnel: cloudflared
-# ngrok_url: https://my-tunnel.ngrok.app  # optional: fixed ngrok endpoint
-debug: false
-cors: true
-cors_allowed_origins:
-  - http://localhost
-  - http://localhost:*
-  - http://127.0.0.1
-  - http://127.0.0.1:*
-cors_allow_credentials: true
-ollama: true
-stream_read_timeout: 180
-request_timeout: 300
+```text
+built-in defaults < YAML config < DEEPSEEK_BRIDGE_* env vars < CLI flags
 ```
 
-Settings can also come from environment variables named with the
-`DEEPSEEK_BRIDGE_` prefix, for example `DEEPSEEK_BRIDGE_RUNTIME_MODE`,
-`DEEPSEEK_BRIDGE_HOST`, `DEEPSEEK_BRIDGE_PORT`,
-`DEEPSEEK_BRIDGE_TUNNEL`, `DEEPSEEK_BRIDGE_BASE_URL`, and
-`DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH`. Precedence is config file,
-then environment, then command-line flags.
+The default config path is `~/.deepseek-bridge/config.yaml`. Pass
+`--config /path/to/deepseek-bridge.yaml` or set `DEEPSEEK_BRIDGE_CONFIG_PATH`
+to use another file. Existing flat config files continue to work, but the
+primary schema is structured YAML:
+
+```yaml
+version: 1
+
+runtime:
+  mode: local
+
+server:
+  host: 127.0.0.1
+  port: 9000
+
+upstream:
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-pro
+  thinking:
+    mode: enabled
+    reasoning_effort: max
+
+storage:
+  backend: sqlite
+  sqlite:
+    path: reasoning_content.sqlite3
+
+reasoning_cache:
+  max_age_seconds: 604800
+  max_entries: null
+  missing_reasoning_strategy: recover
+
+reasoning_display:
+  enabled: true
+  collapsible: true
+
+logging:
+  level: info
+  format: text
+  compact: false
+  file:
+    enabled: true
+    path: null
+
+metrics:
+  enabled: false
+
+tunnel:
+  mode: cloudflared
+  # cf_url: https://app.example.com
+  # ngrok_url: https://my-tunnel.ngrok.app
+
+cors:
+  enabled: true
+  allowed_origins:
+    - http://localhost
+    - http://localhost:*
+    - http://127.0.0.1
+    - http://127.0.0.1:*
+  allow_credentials: true
+
+ollama:
+  enabled: true
+
+performance:
+  request_timeout: 300
+  stream_read_timeout: 180
+  max_request_body_bytes: 20971520
+  max_pool_connections: 10
+  max_thread_pool: 12
+```
 
 For browser clients served from a public tunnel or custom domain, add that
-exact origin to `cors_allowed_origins`. Setting `cors_allowed_origins: ["*"]`
-is supported, but credentialed responses echo the request origin instead of
+exact origin to `cors.allowed_origins`. Setting `allowed_origins: ["*"]` is
+supported, but credentialed responses echo the request origin instead of
 combining credentials with wildcard `*`.
+
+YAML paths are relative to the config file. Environment-variable and CLI paths
+are relative to the process working directory unless absolute. `storage.backend`
+must be `sqlite`, `logging.format` must be `text`, and `metrics.enabled` must
+be `false` until those runtime features are implemented.
+
+Supported environment variables:
+
+| Variable | Config key |
+|----------|------------|
+| `DEEPSEEK_BRIDGE_CONFIG_PATH` | Config file path |
+| `DEEPSEEK_BRIDGE_RUNTIME_MODE` / `DEEPSEEK_BRIDGE_RUNTIME` | `runtime.mode` |
+| `DEEPSEEK_BRIDGE_HOST` | `server.host` |
+| `DEEPSEEK_BRIDGE_PORT` | `server.port` |
+| `DEEPSEEK_BRIDGE_BASE_URL` / `DEEPSEEK_BRIDGE_UPSTREAM_BASE_URL` | `upstream.base_url` |
+| `DEEPSEEK_BRIDGE_MODEL` / `DEEPSEEK_BRIDGE_UPSTREAM_MODEL` | `upstream.model` |
+| `DEEPSEEK_BRIDGE_THINKING` | `upstream.thinking.mode` |
+| `DEEPSEEK_BRIDGE_REASONING_EFFORT` | `upstream.thinking.reasoning_effort` |
+| `DEEPSEEK_BRIDGE_STORAGE_BACKEND` | `storage.backend` |
+| `DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH` / `DEEPSEEK_BRIDGE_SQLITE_PATH` | `storage.sqlite.path` |
+| `DEEPSEEK_BRIDGE_VALKEY_URL` | `storage.valkey.url` |
+| `DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX` | `storage.valkey.key_prefix` |
+| `DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS` | `reasoning_cache.max_age_seconds` |
+| `DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_ENTRIES` | `reasoning_cache.max_entries` |
+| `DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY` | `reasoning_cache.missing_reasoning_strategy` |
+| `DEEPSEEK_BRIDGE_DISPLAY_REASONING` | `reasoning_display.enabled` |
+| `DEEPSEEK_BRIDGE_COLLAPSIBLE_REASONING` | `reasoning_display.collapsible` |
+| `DEEPSEEK_BRIDGE_LOG_LEVEL` / `DEEPSEEK_BRIDGE_DEBUG` | `logging.level` |
+| `DEEPSEEK_BRIDGE_LOG_FORMAT` | `logging.format` |
+| `DEEPSEEK_BRIDGE_COMPACT` | `logging.compact` |
+| `DEEPSEEK_BRIDGE_LOG_FILE_ENABLED` | `logging.file.enabled` |
+| `DEEPSEEK_BRIDGE_LOG_DIR` | `logging.file.path` |
+| `DEEPSEEK_BRIDGE_TRACE_DIR` | `logging.trace_dir` |
+| `DEEPSEEK_BRIDGE_METRICS_ENABLED` | `metrics.enabled` |
+| `DEEPSEEK_BRIDGE_TUNNEL_MODE` / `DEEPSEEK_BRIDGE_TUNNEL` | `tunnel.mode` |
+| `DEEPSEEK_BRIDGE_CF_URL` | `tunnel.cf_url` |
+| `DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME` | `tunnel.cfd_tunnel_name` |
+| `DEEPSEEK_BRIDGE_NGROK_URL` | `tunnel.ngrok_url` |
+| `DEEPSEEK_BRIDGE_CORS` / `DEEPSEEK_BRIDGE_CORS_ENABLED` | `cors.enabled` |
+| `DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS` | `cors.allowed_origins` |
+| `DEEPSEEK_BRIDGE_CORS_ALLOW_CREDENTIALS` | `cors.allow_credentials` |
+| `DEEPSEEK_BRIDGE_OLLAMA` / `DEEPSEEK_BRIDGE_OLLAMA_ENABLED` | `ollama.enabled` |
+| `DEEPSEEK_BRIDGE_REQUEST_TIMEOUT` | `performance.request_timeout` |
+| `DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT` | `performance.stream_read_timeout` |
+| `DEEPSEEK_BRIDGE_MAX_REQUEST_BODY_BYTES` | `performance.max_request_body_bytes` |
+| `DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS` | `performance.max_pool_connections` |
+| `DEEPSEEK_BRIDGE_MAX_THREAD_POOL` | `performance.max_thread_pool` |
+
+Container-only configuration can be expressed without long CLI invocations:
+
+```bash
+docker run --rm -p 9000:9000 \
+  -e DEEPSEEK_BRIDGE_MODEL=deepseek-v4-pro \
+  -e DEEPSEEK_BRIDGE_THINKING=enabled \
+  -e DEEPSEEK_BRIDGE_REASONING_EFFORT=max \
+  -e DEEPSEEK_BRIDGE_TUNNEL_MODE=none \
+  deepseek-bridge:local
+```
+
+In Kubernetes, mount the YAML as a ConfigMap, put sensitive URLs or future
+backend credentials in Secrets-backed env vars, and keep `/data` writable for
+the SQLite cache.
 
 ## Kubernetes
 
 Use Kubernetes mode for headless container execution:
 
 ```bash
-deepseek-bridge --runtime-mode kubernetes --host 0.0.0.0 --port 9000 --tunnel none
+deepseek-bridge --runtime-mode kubernetes
 ```
 
 In Kubernetes mode, the proxy defaults to `0.0.0.0:9000`, disables tunnels,
 logs only to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`,
-and uses an in-memory reasoning cache unless `reasoning_content_path` is set.
+and uses an in-memory reasoning cache unless `storage.sqlite.path`,
+`reasoning_content_path`, or `DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH` is set.
 That allows a read-only root filesystem by default. If you want the SQLite
 reasoning cache to survive process restarts, mount a writable directory and set
-`--reasoning-content-path` or `DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH` to a file
-inside that mount.
+the cache path to a file inside that mount.
 
 Use distinct probes:
 
