@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from http.client import IncompleteRead
 from typing import Any
+from urllib.parse import urlparse
 
 import orjson
 
@@ -15,18 +16,134 @@ from ..logging import (
 from ..trace import TraceRequest
 
 
+def _safe_origin_header(origin: str) -> bool:
+    if not origin or origin == "*" or "\r" in origin or "\n" in origin:
+        return False
+    if origin == "null":
+        return True
+    try:
+        parsed = urlparse(origin)
+        _ = parsed.port
+    except ValueError:
+        return False
+    return (
+        bool(parsed.scheme)
+        and bool(parsed.netloc)
+        and parsed.path == ""
+        and parsed.params == ""
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and parsed.username is None
+        and parsed.password is None
+    )
+
+
+def _origin_matches_port_wildcard(origin: str, allowed_origin: str) -> bool:
+    if not allowed_origin.endswith(":*"):
+        return False
+    try:
+        request = urlparse(origin)
+        allowed = urlparse(allowed_origin[:-2])
+    except ValueError:
+        return False
+    if not request.hostname or not allowed.hostname:
+        return False
+    return (
+        request.scheme.lower() == allowed.scheme.lower()
+        and request.hostname.lower() == allowed.hostname.lower()
+        and allowed.path == ""
+        and allowed.params == ""
+        and allowed.query == ""
+        and allowed.fragment == ""
+    )
+
+
+def _allowed_origin_entries(
+    allowed_origins: tuple[str, ...],
+) -> tuple[str, ...]:
+    return tuple(origin.strip().rstrip("/") for origin in allowed_origins)
+
+
+def _origin_is_allowed(origin: str, allowed_origins: tuple[str, ...]) -> bool:
+    allowed_entries = _allowed_origin_entries(allowed_origins)
+    return (
+        "*" in allowed_entries
+        or any(
+            origin == allowed_origin
+            or _origin_matches_exact(origin, allowed_origin)
+            for allowed_origin in allowed_entries
+        )
+        or any(
+            _origin_matches_port_wildcard(origin, allowed_origin)
+            for allowed_origin in allowed_entries
+        )
+    )
+
+
+def _origin_matches_exact(origin: str, allowed_origin: str) -> bool:
+    try:
+        request = urlparse(origin)
+        allowed = urlparse(allowed_origin)
+        request_port = request.port
+        allowed_port = allowed.port
+    except ValueError:
+        return False
+    return (
+        request.scheme.lower() == allowed.scheme.lower()
+        and request.hostname is not None
+        and allowed.hostname is not None
+        and request.hostname.lower() == allowed.hostname.lower()
+        and request_port == allowed_port
+        and request.path == ""
+        and allowed.path == ""
+        and request.params == ""
+        and allowed.params == ""
+        and request.query == ""
+        and allowed.query == ""
+        and request.fragment == ""
+        and allowed.fragment == ""
+        and request.username is None
+        and allowed.username is None
+        and request.password is None
+        and allowed.password is None
+    )
+
+
 class HandlerResponse:
     def _send_cors_headers(self) -> None:
         if not self.config.cors:
             return
-        self.send_header("Access-Control-Allow-Origin", "*")
+
+        headers = getattr(self, "headers", None)
+        raw_origin = headers.get("Origin") if headers else None
+        origin = raw_origin.strip() if raw_origin else ""
+        origin_is_safe = _safe_origin_header(origin)
+        origin_is_allowed = origin_is_safe and _origin_is_allowed(
+            origin, self.config.cors_allowed_origins
+        )
+        wildcard_allowed = "*" in _allowed_origin_entries(
+            self.config.cors_allowed_origins
+        )
+
+        if origin:
+            self.send_header("Vary", "Origin")
+        if origin_is_allowed:
+            if self.config.cors_allow_credentials:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Credentials", "true")
+            elif wildcard_allowed:
+                self.send_header("Access-Control-Allow-Origin", "*")
+            else:
+                self.send_header("Access-Control-Allow-Origin", origin)
+        elif wildcard_allowed and not self.config.cors_allow_credentials:
+            self.send_header("Access-Control-Allow-Origin", "*")
+
         self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
             "Origin, Content-Type, Accept, Authorization",
         )
         self.send_header("Access-Control-Expose-Headers", "Content-Length")
-        self.send_header("Access-Control-Allow-Credentials", "true")
 
     def _send_json(
         self,

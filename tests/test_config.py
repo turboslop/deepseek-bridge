@@ -10,6 +10,7 @@ from unittest.mock import patch
 from deepseek_bridge import __version__
 from deepseek_bridge.config import (
     DEFAULT_COLLAPSIBLE_REASONING,
+    DEFAULT_CORS_ALLOWED_ORIGINS,
     DEFAULT_MISSING_REASONING_STRATEGY,
     DEFAULT_PORT,
     DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
@@ -75,6 +76,9 @@ class ConfigTests(unittest.TestCase):
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
                 config_text,
             )
+            self.assertIn("cors_allowed_origins:", config_text)
+            self.assertIn("  - http://localhost:*", config_text)
+            self.assertIn("cors_allow_credentials: true", config_text)
             if os.name != "nt":
                 self.assertEqual(
                     stat.S_IMODE(config_path.stat().st_mode), 0o600
@@ -130,6 +134,10 @@ class ConfigTests(unittest.TestCase):
                         "request_timeout: 123.5",
                         "max_request_body_bytes: 1234",
                         "cors: true",
+                        "cors_allowed_origins:",
+                        "  - https://app.example.com",
+                        "  - http://localhost:*",
+                        "cors_allow_credentials: false",
                         "display_reasoning: false",
                         "collapsible_reasoning: false",
                         f"reasoning_content_path: {reasoning_content_path}",
@@ -152,6 +160,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.request_timeout, 123.5)
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertTrue(config.cors)
+        self.assertEqual(
+            config.cors_allowed_origins,
+            ("https://app.example.com", "http://localhost:*"),
+        )
+        self.assertFalse(config.cors_allow_credentials)
         self.assertFalse(config.display_reasoning)
         self.assertFalse(config.collapsible_reasoning)
         self.assertEqual(config.reasoning_content_path, reasoning_content_path)
@@ -232,6 +245,35 @@ class ConfigTests(unittest.TestCase):
             config = ProxyConfig.from_file(config_path=config_path)
 
         self.assertFalse(config.collapsible_reasoning)
+
+    def test_cors_allowed_origins_accepts_csv_string(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "cors_allowed_origins: "
+                "https://app.example.com, http://localhost:3000/\n",
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path)
+
+        self.assertEqual(
+            config.cors_allowed_origins,
+            ("https://app.example.com", "http://localhost:3000"),
+        )
+
+    def test_invalid_cors_allowed_origins_falls_back_to_default(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "cors_allowed_origins: 123\n", encoding="utf-8"
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path)
+
+        self.assertEqual(
+            config.cors_allowed_origins, DEFAULT_CORS_ALLOWED_ORIGINS
+        )
 
     def test_invalid_yaml_config_raises_value_error(self) -> None:
         with TemporaryDirectory() as temp_dir:
