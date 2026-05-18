@@ -35,6 +35,8 @@ RUN groupadd --system --gid 10001 deepseek-bridge \
     && mkdir -p /etc/deepseek-bridge /data \
     && printf '%s\n' \
         'version: 1' \
+        'runtime:' \
+        '  mode: kubernetes' \
         'server:' \
         '  host: 0.0.0.0' \
         '  port: 9000' \

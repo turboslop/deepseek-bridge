@@ -113,13 +113,14 @@ The image runs as UID `10001` and starts with a short command:
 deepseek-bridge --config /etc/deepseek-bridge/config.yaml
 ```
 
-Container defaults are supplied by `/etc/deepseek-bridge/config.yaml`: no
-tunnel, `0.0.0.0:9000`, compact logs, no file logs, and SQLite cache path
-`/data/reasoning_content.sqlite3`. Override with `DEEPSEEK_BRIDGE_*` env vars
-or mount your own config file at that path. Mount `/data` as an `emptyDir` or
-persistent volume if the root filesystem is read-only or cache persistence is
-required. For read-only-root deployments, make `/data` writable by UID/GID
-`10001`, for example with a pod `fsGroup` or volume ownership setting.
+Container defaults are supplied by `/etc/deepseek-bridge/config.yaml`: explicit
+`runtime.mode: kubernetes`, no tunnel, `0.0.0.0:9000`, compact logs, no file
+logs, and SQLite cache path `/data/reasoning_content.sqlite3`. Override with
+`DEEPSEEK_BRIDGE_*` env vars or mount your own config file at that path. Mount
+`/data` as an `emptyDir` or persistent volume if the root filesystem is
+read-only or cache persistence is required. For read-only-root deployments, make
+`/data` writable by UID/GID `10001`, for example with a pod `fsGroup` or volume
+ownership setting.
 
 ## Configuration
 
@@ -283,6 +284,11 @@ and uses an in-memory reasoning cache unless `storage.sqlite.path`,
 That allows a read-only root filesystem by default. If you want the SQLite
 reasoning cache to survive process restarts, mount a writable directory and set
 the cache path to a file inside that mount.
+
+The published container image already sets `runtime.mode: kubernetes` in its
+baked config. Workload manifests may still pass `--runtime-mode kubernetes`
+explicitly when the deployment should pin the runtime profile regardless of
+mounted config or environment overrides.
 
 Use distinct probes:
 
