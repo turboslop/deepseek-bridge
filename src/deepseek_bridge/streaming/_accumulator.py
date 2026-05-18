@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..logging import INTERNAL_LOG
-from ..reasoning_store import ReasoningStore
+from ..reasoning_store import ReasoningStoreProtocol
 
 MAX_CONTENT_LENGTH: int = 500_000
 MAX_TOOL_CALLS: int = 100
@@ -110,7 +110,7 @@ class StreamAccumulator:
 
     def store_reasoning(
         self,
-        store: ReasoningStore,
+        store: ReasoningStoreProtocol,
         scope: str,
         cache_namespace: str = "",
         prior_messages: list[dict[str, Any]] | None = None,
@@ -130,7 +130,7 @@ class StreamAccumulator:
 
     def store_finished_reasoning(
         self,
-        store: ReasoningStore,
+        store: ReasoningStoreProtocol,
         scope: str,
         cache_namespace: str = "",
         prior_messages: list[dict[str, Any]] | None = None,
@@ -151,7 +151,7 @@ class StreamAccumulator:
 
     def store_ready_reasoning(
         self,
-        store: ReasoningStore,
+        store: ReasoningStoreProtocol,
         scope: str,
         cache_namespace: str = "",
         prior_messages: list[dict[str, Any]] | None = None,
@@ -184,7 +184,7 @@ class StreamAccumulator:
             self._has_new_storeable_data = False
         return stored
 
-    def flush_pending_store(self, store: ReasoningStore) -> int:
+    def flush_pending_store(self, store: ReasoningStoreProtocol) -> int:
         """Flush all buffered reasoning to the store in a single batch."""
         stored = 0
         for msg, scope, ns, prior in self._pending_store.values():
@@ -258,7 +258,7 @@ class StreamAccumulator:
         self,
         index: int,
         choice: StreamingChoice,
-        store: ReasoningStore,
+        store: ReasoningStoreProtocol,
         scope: str,
         stage: str = "final",
         cache_namespace: str = "",

@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from .. import __version__
 from ..config import ProxyConfig
-from ..reasoning_store import ReasoningStore
+from ..reasoning_store import ReasoningStoreProtocol
 from ..server_infrastructure import DeepSeekProxyServer, UpstreamPool
 from ..trace import TraceWriter
 from ._client import HandlerClient
@@ -35,8 +35,8 @@ class DeepSeekProxyHandler(
         return cast(DeepSeekProxyServer, self.server).config
 
     @property
-    def reasoning_store(self) -> ReasoningStore:
-        """SQLite-backed reasoning-content cache from the parent server."""
+    def reasoning_store(self) -> ReasoningStoreProtocol:
+        """Reasoning-content cache from the parent server."""
         return cast(DeepSeekProxyServer, self.server).reasoning_store
 
     @property
