@@ -12,7 +12,7 @@ import urllib3
 import urllib3.exceptions
 
 from .._types import RequestBodyTooLargeError, _error_body
-from ..helpers import _generate_request_id, elapsed_ms
+from ..helpers import _generate_request_id, _shutdown_requested, elapsed_ms
 from ..logging import (
     LOG,
     TerminalSpinner,
@@ -62,6 +62,9 @@ class HandlerRoutes:
         if self.config.ollama and request_path == "/api/tags":
             self._handle_api_tags()
             return
+        if request_path in {"/readyz", "/v1/readyz"}:
+            self._send_ready()
+            return
         if request_path in {"/healthz", "/v1/healthz", "/health", "/v1/health"}:
             self._send_health()
             return
@@ -90,6 +93,18 @@ class HandlerRoutes:
             self.headers.get("Content-Length", "0"),
             self.headers.get("User-Agent", ""),
         )
+
+        if _shutdown_requested.is_set():
+            LOG.info("rejecting POST %s: shutdown in progress", request_path)
+            self._send_json(
+                503,
+                _error_body(
+                    "Server is shutting down",
+                    "server_error",
+                    "server_shutting_down",
+                ),
+            )
+            return
 
         if self.config.ollama and request_path == "/api/show":
             trace = self._start_trace(request_path)
@@ -148,19 +163,11 @@ class HandlerRoutes:
 
         spinner = TerminalSpinner(
             enabled=stream
+            and self.config.runtime_mode != "kubernetes"
             and not self.config.debug
             and not self.config.compact,
             text="└ {frame}",
         ).start()
-
-        # Check for shutdown signal before forwarding
-        from ..helpers import _shutdown_requested
-
-        if _shutdown_requested.is_set():
-            LOG.info("shutdown in progress, aborting request")
-            spinner.stop()
-            self._finish_trace(trace, "aborted")
-            return
 
         headers_sent = False
         if stream:

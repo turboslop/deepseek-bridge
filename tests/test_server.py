@@ -20,12 +20,14 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import urllib3
 
 from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.helpers import _shutdown_requested
 from deepseek_bridge.logging import (
     ConsoleLogFormatter,
     TerminalSpinner,
@@ -531,6 +533,8 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
     auth_headers: list[str] = []
     delay_after_done: float = 0.0
+    delay_before_response: float = 0.0
+    request_started = threading.Event()
     response_status: int = 200
     response: dict[str, object] = {}
 
@@ -544,6 +548,7 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
         self.__class__.auth_headers.append(
             self.headers.get("Authorization", "")
         )
+        self.__class__.request_started.set()
 
         if payload.get("stream"):
             self.send_response(200)
@@ -558,6 +563,8 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
                 time.sleep(self.__class__.delay_after_done)
             return
 
+        if self.__class__.delay_before_response:
+            time.sleep(self.__class__.delay_before_response)
         body = json.dumps(self.__class__.response).encode("utf-8")
         self.send_response(self.__class__.response_status)
         self.send_header("Content-Type", "application/json")
@@ -636,6 +643,8 @@ class HttpBoundaryTests(unittest.TestCase):
         _PlainFakeUpstream.requests = []
         _PlainFakeUpstream.auth_headers = []
         _PlainFakeUpstream.delay_after_done = 0.0
+        _PlainFakeUpstream.delay_before_response = 0.0
+        _PlainFakeUpstream.request_started = threading.Event()
         _PlainFakeUpstream.response_status = 200
         _PlainFakeUpstream.response = dict(_BASE_RESPONSE)
         self.upstream = _Fixture(
@@ -778,6 +787,40 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1.0)
         self.assertIn("data: [DONE]", body)
 
+    def test_kubernetes_streaming_runtime_disables_spinner(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, runtime_mode="kubernetes"
+        )
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+        spinner = MagicMock()
+        spinner.start.return_value = spinner
+        with (
+            patch(
+                "deepseek_bridge.handler._routes.TerminalSpinner",
+                return_value=spinner,
+            ) as spinner_cls,
+            urlopen(request, timeout=2) as response,
+        ):
+            body = response.read().decode("utf-8")
+
+        self.assertIn("data: [DONE]", body)
+        spinner_cls.assert_called_once()
+        self.assertFalse(spinner_cls.call_args.kwargs["enabled"])
+
     def test_normal_logging_summarizes_without_bodies_or_keys(self) -> None:
         with self.assertLogs("deepseek_bridge", level="INFO") as captured:
             status, _ = _post(
@@ -821,6 +864,121 @@ class HttpBoundaryTests(unittest.TestCase):
         with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(json.loads(response.read())["ok"], True)
+
+    def test_readyz_returns_ok(self) -> None:
+        with urlopen(f"{self.proxy.url}/readyz", timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            body = json.loads(response.read())
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "ok")
+
+        with urlopen(f"{self.proxy.url}/v1/readyz", timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            body = json.loads(response.read())
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "ok")
+
+    def test_readyz_returns_503_when_storage_unhealthy(self) -> None:
+        class _UnhealthyStore:
+            def health_check(self) -> tuple[bool, str]:
+                return False, "unavailable"
+
+        self.proxy.server.reasoning_store = _UnhealthyStore()
+
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(f"{self.proxy.url}/readyz", timeout=2)
+        try:
+            self.assertEqual(caught.exception.code, 503)
+            body = json.loads(caught.exception.read())
+        finally:
+            caught.exception.close()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "unavailable")
+
+        with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(json.loads(response.read())["ok"])
+
+    def test_readyz_returns_503_when_shutdown_requested(self) -> None:
+        try:
+            _shutdown_requested.set()
+
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(f"{self.proxy.url}/v1/readyz", timeout=2)
+            try:
+                self.assertEqual(caught.exception.code, 503)
+                body = json.loads(caught.exception.read())
+            finally:
+                caught.exception.close()
+        finally:
+            _shutdown_requested.clear()
+
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["checks"]["shutdown"]["status"], "draining")
+
+        with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(json.loads(response.read())["ok"])
+
+    def test_new_post_is_rejected_while_shutting_down(self) -> None:
+        try:
+            _shutdown_requested.set()
+
+            status, payload = _post(
+                f"{self.proxy.url}/v1/chat/completions", self._request()
+            )
+        finally:
+            _shutdown_requested.clear()
+
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["error"]["code"], "server_shutting_down")
+        self.assertEqual(_PlainFakeUpstream.requests, [])
+
+    def test_shutdown_readiness_fails_but_inflight_request_drains(
+        self,
+    ) -> None:
+        _PlainFakeUpstream.delay_before_response = 0.5
+        result: dict[str, tuple[int, dict]] = {}
+
+        def send_inflight_request() -> None:
+            result["inflight"] = _post(
+                f"{self.proxy.url}/v1/chat/completions",
+                self._request(),
+            )
+
+        worker = threading.Thread(target=send_inflight_request)
+        worker.start()
+        self.assertTrue(_PlainFakeUpstream.request_started.wait(timeout=2))
+
+        try:
+            _shutdown_requested.set()
+
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(f"{self.proxy.url}/readyz", timeout=2)
+            try:
+                self.assertEqual(caught.exception.code, 503)
+                ready_body = json.loads(caught.exception.read())
+            finally:
+                caught.exception.close()
+
+            with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
+                self.assertEqual(response.status, 200)
+                self.assertTrue(json.loads(response.read())["ok"])
+
+            status, payload = _post(
+                f"{self.proxy.url}/v1/chat/completions", self._request()
+            )
+        finally:
+            _shutdown_requested.clear()
+            worker.join(timeout=3)
+
+        self.assertFalse(ready_body["ok"])
+        self.assertEqual(ready_body["checks"]["shutdown"]["status"], "draining")
+        self.assertEqual(status, 503)
+        self.assertEqual(payload["error"]["code"], "server_shutting_down")
+        self.assertIn("inflight", result)
+        self.assertEqual(result["inflight"][0], 200)
+        self.assertEqual(len(_PlainFakeUpstream.requests), 1)
 
 
 class BoundedPoolTests(unittest.TestCase):

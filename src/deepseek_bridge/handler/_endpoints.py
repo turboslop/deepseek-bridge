@@ -143,6 +143,18 @@ class HandlerEndpoints:
             },
         )
 
+    def _send_ready(self) -> None:
+        checks = self.server.readiness_checks()
+        ready = all(bool(check["ok"]) for check in checks.values())
+        self._send_json(
+            200 if ready else 503,
+            {
+                "ok": ready,
+                "server": "deepseek-bridge",
+                "checks": checks,
+            },
+        )
+
     def _handle_api_version(self) -> None:
         self._request_id = _generate_request_id()
         self._send_json(200, {"version": __version__})

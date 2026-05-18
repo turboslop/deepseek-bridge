@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import threading
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import urllib3
 
@@ -82,6 +82,72 @@ class BoundedThreadPoolTests(unittest.TestCase):
                     "fake_request",
                     ("127.0.0.1", 12345),
                 )
+        finally:
+            server.server_close()
+
+    def test_queue_at_limit_rejects_new_request(self) -> None:
+        server = self._make_server(max_workers=5)
+        server.config = ProxyConfig(max_queue_size=1)
+        try:
+            with (
+                patch.object(
+                    BoundedThreadPoolHTTPServer,
+                    "queue_size",
+                    new_callable=PropertyMock,
+                    return_value=1,
+                ),
+                patch.object(server, "_reject_connection") as reject,
+                patch.object(server.executor, "submit") as submit,
+            ):
+                server.process_request("fake_request", ("127.0.0.1", 12345))
+
+            reject.assert_called_once_with("fake_request")
+            submit.assert_not_called()
+        finally:
+            server.server_close()
+
+    def test_readiness_fails_when_queue_is_full(self) -> None:
+        class _HealthyStore:
+            def health_check(self) -> tuple[bool, str]:
+                return True, "ok"
+
+        server = self._make_server(max_workers=5)
+        server.config = ProxyConfig(max_queue_size=1)
+        server.reasoning_store = _HealthyStore()
+        server.upstream_pool = object()
+        _shutdown_requested.clear()
+        try:
+            with patch.object(
+                BoundedThreadPoolHTTPServer,
+                "queue_size",
+                new_callable=PropertyMock,
+                return_value=1,
+            ):
+                checks = server.readiness_checks()
+                ready = server.is_ready()
+
+            self.assertFalse(checks["queue"]["ok"])
+            self.assertEqual(checks["queue"]["status"], "full")
+            self.assertFalse(ready)
+        finally:
+            server.server_close()
+
+    def test_readiness_returns_503_state_for_storage_exception(self) -> None:
+        class _FailingStore:
+            def health_check(self) -> tuple[bool, str]:
+                raise RuntimeError("db offline")
+
+        server = self._make_server(max_workers=5)
+        server.config = ProxyConfig(max_queue_size=10)
+        server.reasoning_store = _FailingStore()
+        server.upstream_pool = object()
+        _shutdown_requested.clear()
+        try:
+            checks = server.readiness_checks()
+
+            self.assertFalse(checks["storage"]["ok"])
+            self.assertEqual(checks["storage"]["status"], "unavailable")
+            self.assertFalse(server.is_ready())
         finally:
             server.server_close()
 

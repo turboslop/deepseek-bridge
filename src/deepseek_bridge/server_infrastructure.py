@@ -11,14 +11,16 @@ import contextlib
 import json
 import socket
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import urllib3
 
 from .config import ProxyConfig
+from .helpers import _shutdown_requested
 from .logging import LOG, format_count
 from .reasoning_store import ReasoningStore
 from .trace import TraceWriter
@@ -63,6 +65,80 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
         self.model_tokens: dict[str, int] = {}
         super().__init__(*args, **kwargs)
 
+    def readiness_checks(self) -> dict[str, dict[str, Any]]:
+        """Return cheap local checks used by `/readyz`."""
+        checks: dict[str, dict[str, Any]] = {
+            "shutdown": {
+                "ok": not _shutdown_requested.is_set(),
+                "status": (
+                    "ok" if not _shutdown_requested.is_set() else "draining"
+                ),
+            },
+            "paused": {
+                "ok": not bool(getattr(self, "paused", False)),
+                "status": (
+                    "ok" if not getattr(self, "paused", False) else "paused"
+                ),
+            },
+            "upstream_pool": {
+                "ok": hasattr(self, "upstream_pool")
+                and self.upstream_pool is not None,
+                "status": (
+                    "ok"
+                    if hasattr(self, "upstream_pool")
+                    and self.upstream_pool is not None
+                    else "missing"
+                ),
+            },
+        }
+
+        store = getattr(self, "reasoning_store", None)
+        health_check = getattr(store, "health_check", None)
+        if callable(health_check):
+            health_check_fn = cast(Callable[[], object], health_check)
+            try:
+                result = health_check_fn()  # pylint: disable=not-callable
+                if isinstance(result, tuple) and len(result) == 2:
+                    ok, detail = result
+                else:
+                    ok = bool(result)
+                    detail = "ok" if result else "unavailable"
+            except Exception as exc:
+                LOG.warning("storage readiness check failed: %s", exc)
+                ok, detail = False, "unavailable"
+            checks["storage"] = {"ok": bool(ok), "status": str(detail)}
+        else:
+            checks["storage"] = {
+                "ok": store is not None,
+                "status": "ok" if store is not None else "missing",
+            }
+
+        executor = getattr(self, "executor", None)
+        if executor is not None:
+            executor_shutdown = bool(getattr(executor, "_shutdown", False))
+            checks["executor"] = {
+                "ok": not executor_shutdown,
+                "status": "ok" if not executor_shutdown else "shutdown",
+            }
+
+        if hasattr(self, "queue_size"):
+            queue_size = int(self.queue_size)
+            max_queue_size = int(
+                getattr(getattr(self, "config", None), "max_queue_size", 50)
+            )
+            checks["queue"] = {
+                "ok": queue_size < max_queue_size,
+                "status": "ok" if queue_size < max_queue_size else "full",
+                "queued": queue_size,
+                "max": max_queue_size,
+            }
+
+        return checks
+
+    def is_ready(self) -> bool:
+        checks = self.readiness_checks()
+        return all(bool(check["ok"]) for check in checks.values())
+
 
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     """ThreadingHTTPServer variant that uses a fixed-size ThreadPoolExecutor."""
@@ -103,7 +179,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         effective_max_queue = (
             config.max_queue_size if config is not None else 50
         )
-        if queue_size > effective_max_queue:
+        if queue_size >= effective_max_queue:
             LOG.warning(
                 "rejecting request from %s: queue full (%s queued)",
                 client_address,
