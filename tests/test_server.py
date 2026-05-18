@@ -23,6 +23,8 @@ from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import urllib3
+
 from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.logging import (
     ConsoleLogFormatter,
@@ -529,6 +531,7 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
     auth_headers: list[str] = []
     delay_after_done: float = 0.0
+    response_status: int = 200
     response: dict[str, object] = {}
 
     def log_message(self, fmt: str, *args: object) -> None:
@@ -556,7 +559,7 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
             return
 
         body = json.dumps(self.__class__.response).encode("utf-8")
-        self.send_response(200)
+        self.send_response(self.__class__.response_status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -619,7 +622,10 @@ def _post(
         with urlopen(request, timeout=5) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+        try:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+        finally:
+            exc.close()
 
 
 class HttpBoundaryTests(unittest.TestCase):
@@ -630,6 +636,7 @@ class HttpBoundaryTests(unittest.TestCase):
         _PlainFakeUpstream.requests = []
         _PlainFakeUpstream.auth_headers = []
         _PlainFakeUpstream.delay_after_done = 0.0
+        _PlainFakeUpstream.response_status = 200
         _PlainFakeUpstream.response = dict(_BASE_RESPONSE)
         self.upstream = _Fixture(
             ThreadingHTTPServer(("127.0.0.1", 0), _PlainFakeUpstream)
@@ -665,7 +672,10 @@ class HttpBoundaryTests(unittest.TestCase):
         )
         with self.assertRaises(HTTPError) as caught:
             urlopen(request, timeout=5)
-        self.assertEqual(caught.exception.code, 401)
+        try:
+            self.assertEqual(caught.exception.code, 401)
+        finally:
+            caught.exception.close()
         self.assertEqual(_PlainFakeUpstream.requests, [])
 
     def test_rejects_oversized_request_body(self) -> None:
@@ -689,6 +699,57 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertEqual(
             _PlainFakeUpstream.auth_headers[0], "Bearer sk-from-cursor"
         )
+
+    def test_embeddings_forward_upstream_http_error(self) -> None:
+        _PlainFakeUpstream.response_status = 401
+        _PlainFakeUpstream.response = {
+            "error": {
+                "message": "bad key",
+                "type": "authentication_error",
+                "code": "invalid_api_key",
+            }
+        }
+
+        status, payload = _post(
+            f"{self.proxy.url}/v1/embeddings",
+            {"model": "deepseek-v4-pro", "input": "hello"},
+        )
+
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["error"]["code"], "invalid_api_key")
+        self.assertNotEqual(payload.get("object"), "list")
+
+    def test_embeddings_transport_failure_returns_error(self) -> None:
+        class _FailingUpstreamPool:
+            def request(self, *_args: object, **_kwargs: object) -> object:
+                raise OSError("connection refused")
+
+        self.proxy.server.upstream_pool = _FailingUpstreamPool()
+
+        status, payload = _post(
+            f"{self.proxy.url}/v1/embeddings",
+            {"model": "deepseek-v4-pro", "input": "hello"},
+        )
+
+        self.assertEqual(status, 500)
+        self.assertEqual(payload["error"]["code"], "upstream_failure")
+        self.assertNotEqual(payload.get("object"), "list")
+
+    def test_embeddings_timeout_returns_gateway_timeout_error(self) -> None:
+        class _TimeoutUpstreamPool:
+            def request(self, *_args: object, **_kwargs: object) -> object:
+                raise urllib3.exceptions.TimeoutError("read timed out")
+
+        self.proxy.server.upstream_pool = _TimeoutUpstreamPool()
+
+        status, payload = _post(
+            f"{self.proxy.url}/v1/embeddings",
+            {"model": "deepseek-v4-pro", "input": "hello"},
+        )
+
+        self.assertEqual(status, 504)
+        self.assertEqual(payload["error"]["code"], "upstream_timeout")
+        self.assertNotEqual(payload.get("object"), "list")
 
     def test_streaming_response_closes_after_done_when_upstream_lingers(
         self,

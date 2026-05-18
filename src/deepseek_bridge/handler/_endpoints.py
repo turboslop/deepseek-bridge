@@ -49,7 +49,6 @@ class HandlerEndpoints:
             )
             return
 
-        model = str(payload.get("model") or self.config.upstream_model)
         upstream_body = json.dumps(
             payload, ensure_ascii=False, separators=(",", ":")
         ).encode("utf-8")
@@ -69,44 +68,43 @@ class HandlerEndpoints:
                     read=self.config.request_timeout,
                 ),
             )
-            try:
-                if response.status < 400:
-                    body = response.data
-                    headers = [
-                        ("Content-Type", "application/json"),
-                        ("Content-Length", str(len(body))),
-                    ]
+            if response.status < 400:
+                body = response.data
+                headers = [
+                    ("Content-Type", "application/json"),
+                    ("Content-Length", str(len(body))),
+                ]
+                try:
                     self._send_response_headers(
                         response.status, headers, "sending embeddings response"
                     )
                     self._write_to_client(body, "sending embeddings body")
-                else:
-                    LOG.warning(
-                        "embeddings endpoint not supported by upstream "
-                        "status=%s",
-                        response.status,
-                    )
-                    self._send_json(
-                        200,
-                        {
-                            "object": "list",
-                            "data": [],
-                            "model": model,
-                            "usage": {"prompt_tokens": 0, "total_tokens": 0},
-                        },
-                    )
-            finally:
-                response.release_conn()
+                finally:
+                    response.release_conn()
+                return
+
+            LOG.warning(
+                "embeddings upstream returned error status=%s",
+                response.status,
+            )
+            self._send_upstream_error(response)
+        except urllib3.exceptions.TimeoutError:
+            LOG.warning("embeddings request timed out")
+            self._send_upstream_failure(
+                504,
+                "Upstream embeddings request timed out",
+                "upstream_timeout",
+                trace=None,
+                headers_sent=False,
+            )
         except (urllib3.exceptions.HTTPError, OSError, ValueError) as exc:
             LOG.warning("embeddings request failed: %s", exc)
-            self._send_json(
-                200,
-                {
-                    "object": "list",
-                    "data": [],
-                    "model": model,
-                    "usage": {"prompt_tokens": 0, "total_tokens": 0},
-                },
+            self._send_upstream_failure(
+                500,
+                f"Upstream embeddings request failed: {exc}",
+                "upstream_failure",
+                trace=None,
+                headers_sent=False,
             )
 
     def _send_models(self) -> None:
