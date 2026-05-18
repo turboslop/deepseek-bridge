@@ -4,7 +4,7 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "links": [],
   "panels": [
     {
@@ -20,18 +20,52 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 0
       },
       "id": 1,
       "targets": [
         {
-          "expr": "sum(rate(deepseek_bridge_http_requests_total[5m])) by (status)",
-          "legendFormat": "{{status}}"
+          "expr": "sum by (status) (rate(deepseek_bridge_http_requests_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
         }
       ],
       "title": "HTTP request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(deepseek_bridge_http_requests_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",status=~\"4..\"}[$__rate_interval]))",
+          "legendFormat": "4xx",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(deepseek_bridge_http_requests_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",status=~\"5..\"}[$__rate_interval]))",
+          "legendFormat": "5xx",
+          "refId": "B"
+        }
+      ],
+      "title": "HTTP error rate",
       "type": "timeseries"
     },
     {
@@ -47,18 +81,123 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 0
       },
-      "id": 2,
+      "id": 3,
       "targets": [
         {
-          "expr": "sum(rate(deepseek_bridge_upstream_request_duration_seconds_sum[5m])) / clamp_min(sum(rate(deepseek_bridge_upstream_request_duration_seconds_count[5m])), 1)",
-          "legendFormat": "upstream"
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(deepseek_bridge_http_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(deepseek_bridge_http_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(deepseek_bridge_http_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
         }
       ],
-      "title": "Upstream latency average",
+      "title": "HTTP latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum by (model, status) (rate(deepseek_bridge_upstream_requests_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{model}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Upstream request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(deepseek_bridge_upstream_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(deepseek_bridge_upstream_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(deepseek_bridge_upstream_request_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Upstream latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(deepseek_bridge_upstream_requests_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",status=~\"4..|5..\"}[$__rate_interval]))",
+          "legendFormat": "errors",
+          "refId": "A"
+        }
+      ],
+      "title": "Upstream error rate",
       "type": "timeseries"
     },
     {
@@ -76,16 +215,22 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 8
+        "y": 16
       },
-      "id": 3,
+      "id": 7,
       "targets": [
         {
-          "expr": "deepseek_bridge_streams_active",
-          "legendFormat": "streams"
+          "expr": "sum(deepseek_bridge_streams_active{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "total",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (pod) (deepseek_bridge_streams_active{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "B"
         }
       ],
-      "title": "Active streams",
+      "title": "Active streaming responses",
       "type": "timeseries"
     },
     {
@@ -103,20 +248,22 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 8
+        "y": 16
       },
-      "id": 4,
+      "id": 8,
       "targets": [
         {
-          "expr": "deepseek_bridge_thread_pool_active",
-          "legendFormat": "active"
+          "expr": "sum by (pod) (deepseek_bridge_thread_pool_active{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "{{pod}} active",
+          "refId": "A"
         },
         {
-          "expr": "deepseek_bridge_thread_pool_queue",
-          "legendFormat": "queued"
+          "expr": "sum by (pod) (deepseek_bridge_thread_pool_queue{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "{{pod}} queued",
+          "refId": "B"
         }
       ],
-      "title": "Thread pool",
+      "title": "Thread pool workers and queue",
       "type": "timeseries"
     },
     {
@@ -136,13 +283,19 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 8
+        "y": 16
       },
-      "id": 5,
+      "id": 9,
       "targets": [
         {
-          "expr": "deepseek_bridge_cache_hit_ratio",
-          "legendFormat": "{{backend}}"
+          "expr": "sum by (backend) (rate(deepseek_bridge_cache_hits_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])) / clamp_min(sum by (backend) (rate({__name__=~\"deepseek_bridge_cache_hits_total|deepseek_bridge_cache_misses_total\",namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval])), 0.001)",
+          "legendFormat": "{{backend}} fleet",
+          "refId": "A"
+        },
+        {
+          "expr": "avg by (backend, pod) (deepseek_bridge_cache_hit_ratio{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"})",
+          "legendFormat": "{{backend}} {{pod}} current",
+          "refId": "B"
         }
       ],
       "title": "Cache hit ratio",
@@ -161,18 +314,24 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 16
+        "y": 24
       },
-      "id": 6,
+      "id": 10,
       "targets": [
         {
-          "expr": "sum(rate(deepseek_bridge_storage_errors_total[5m])) by (backend, operation)",
-          "legendFormat": "{{backend}} {{operation}}"
+          "expr": "sum by (backend) (rate(deepseek_bridge_cache_hits_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{backend}} hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (backend) (rate(deepseek_bridge_cache_misses_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{backend}} misses",
+          "refId": "B"
         }
       ],
-      "title": "Storage errors",
+      "title": "Cache hits and misses",
       "type": "timeseries"
     },
     {
@@ -188,36 +347,290 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
+        "w": 8,
+        "x": 8,
+        "y": 24
       },
-      "id": 7,
+      "id": 11,
       "targets": [
         {
-          "expr": "sum(rate(deepseek_bridge_storage_operation_duration_seconds_sum[5m])) by (backend, operation) / clamp_min(sum(rate(deepseek_bridge_storage_operation_duration_seconds_count[5m])) by (backend, operation), 1)",
-          "legendFormat": "{{backend}} {{operation}}"
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(deepseek_bridge_storage_operation_duration_seconds_bucket{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",backend=\"valkey\"}[$__rate_interval])))",
+          "legendFormat": "{{operation}} p95",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (operation) (rate(deepseek_bridge_storage_operation_duration_seconds_sum{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",backend=\"valkey\"}[$__rate_interval])) / clamp_min(sum by (operation) (rate(deepseek_bridge_storage_operation_duration_seconds_count{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",backend=\"valkey\"}[$__rate_interval])), 0.001)",
+          "legendFormat": "{{operation}} avg",
+          "refId": "B"
         }
       ],
-      "title": "Storage latency average",
+      "title": "Valkey operation latency",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(deepseek_bridge_storage_errors_total{namespace=~\"$namespace\",service=~\"$service\",pod=~\"$pod\",backend=\"valkey\"}[$__rate_interval]))",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Valkey storage errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",pod=~\"$pod\",container=\"deepseek-bridge\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod CPU usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\",pod=~\"$pod\",container=\"deepseek-bridge\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod memory usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\",pod=~\"$pod\",container=\"deepseek-bridge\"}[1h]))",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod restarts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 16,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "expr": "{namespace=~\"$namespace\",pod=~\"$pod\",container=\"deepseek-bridge\"} | json",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod logs (Loki)",
+      "type": "logs"
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": [
-    "deepseek-bridge"
+    "deepseek-bridge",
+    "kubernetes"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "Loki",
+          "value": "loki"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Loki",
+        "name": "DS_LOKI",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(deepseek_bridge_streams_active, namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Namespace",
+        "multi": true,
+        "name": "namespace",
+        "options": [],
+        "query": "label_values(deepseek_bridge_streams_active, namespace)",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(deepseek_bridge_streams_active{namespace=~\"$namespace\"}, service)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Service",
+        "multi": true,
+        "name": "service",
+        "options": [],
+        "query": "label_values(deepseek_bridge_streams_active{namespace=~\"$namespace\"}, service)",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(deepseek_bridge_streams_active{namespace=~\"$namespace\",service=~\"$service\"}, pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": "label_values(deepseek_bridge_streams_active{namespace=~\"$namespace\",service=~\"$service\"}, pod)",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-1h",
     "to": "now"
   },
   "timezone": "browser",
-  "title": "DeepSeek Bridge",
+  "title": "DeepSeek Bridge Kubernetes",
   "uid": "deepseek-bridge",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

@@ -1434,6 +1434,14 @@ class HttpBoundaryTests(unittest.TestCase):
             "deepseek_bridge_http_request_duration_seconds_count",
             body,
         )
+        self.assertIn(
+            "deepseek_bridge_http_request_duration_seconds_bucket",
+            body,
+        )
+        self.assertIn(
+            "deepseek_bridge_upstream_request_duration_seconds_bucket",
+            body,
+        )
         self.assertNotIn("sk-test", body)
 
     def test_metrics_normalizes_unknown_paths_and_models(self) -> None:
