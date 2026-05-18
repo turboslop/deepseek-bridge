@@ -301,6 +301,13 @@ The example sets `readOnlyRootFilesystem: true`, disables tunnels, binds to
 `0.0.0.0`, uses separate liveness/readiness probes, and gives SQLite one
 explicit writable `emptyDir` mount. Set `terminationGracePeriodSeconds` longer
 than your expected request or stream duration so SIGTERM can drain active work.
+Because that SQLite cache is pod-local, keep this example at one replica for
+development until a shared backend such as Valkey is implemented and configured.
+The pod security context matches the image runtime user with `runAsUser: 10001`,
+`runAsGroup: 10001`, and `fsGroup: 10001`. If your platform requires a different
+UID/GID, override all three values together and ensure every writable mount used
+by the cache, logs, traces, or temporary files is writable by that identity; keep
+the root filesystem read-only.
 
 ## Client Setup
 
