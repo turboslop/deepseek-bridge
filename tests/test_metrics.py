@@ -41,32 +41,32 @@ class MetricsRegistryTests(unittest.TestCase):
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_bucket'
+            "deepseek_bridge_http_request_duration_seconds_bucket"
             '{le="0.1",path="/v1/chat/completions",status="200"} 0',
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_bucket'
+            "deepseek_bridge_http_request_duration_seconds_bucket"
             '{le="0.25",path="/v1/chat/completions",status="200"} 1',
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_bucket'
+            "deepseek_bridge_http_request_duration_seconds_bucket"
             '{le="1",path="/v1/chat/completions",status="200"} 2',
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_bucket'
+            "deepseek_bridge_http_request_duration_seconds_bucket"
             '{le="+Inf",path="/v1/chat/completions",status="200"} 2',
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_count'
+            "deepseek_bridge_http_request_duration_seconds_count"
             '{path="/v1/chat/completions",status="200"} 2',
             body,
         )
         self.assertIn(
-            'deepseek_bridge_http_request_duration_seconds_sum'
+            "deepseek_bridge_http_request_duration_seconds_sum"
             '{path="/v1/chat/completions",status="200"} 0.8',
             body,
         )
@@ -76,7 +76,7 @@ class MetricsRegistryTests(unittest.TestCase):
             body,
         )
         self.assertIn(
-            'deepseek_bridge_upstream_request_duration_seconds_bucket'
+            "deepseek_bridge_upstream_request_duration_seconds_bucket"
             '{le="+Inf",model="deepseek-v4-pro"} 1',
             body,
         )
@@ -86,7 +86,7 @@ class MetricsRegistryTests(unittest.TestCase):
             body,
         )
         self.assertIn(
-            'deepseek_bridge_storage_operation_duration_seconds_bucket'
+            "deepseek_bridge_storage_operation_duration_seconds_bucket"
             '{backend="valkey",le="+Inf",operation="get"} 1',
             body,
         )
