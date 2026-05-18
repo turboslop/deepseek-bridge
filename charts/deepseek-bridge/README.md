@@ -67,3 +67,18 @@ the dashboard, but that panel will remain empty until Loki is configured.
 
 For Prometheus Operator users, set `serviceMonitor.enabled=true` as well so the
 application metrics are scraped by the cluster Prometheus.
+
+## Minikube smoke test
+
+The repository includes a CI-compatible smoke gate that builds the local Docker
+image, loads that exact tag into Minikube, validates the rendered chart with the
+Kubernetes API, installs the release, waits for rollout, verifies Service
+endpoints, and probes `/healthz` and `/readyz` through the Kubernetes Service:
+
+```sh
+DEEPSEEK_BRIDGE_RUN_K8S_SMOKE=1 \
+  python -m unittest tests.test_k8s_minikube_smoke -v
+```
+
+Run `scripts/k8s-minikube-smoke.sh` directly for the same check without the
+unittest wrapper. The script requires Docker, Helm, kubectl, Minikube, and curl.

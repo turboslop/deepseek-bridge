@@ -128,3 +128,67 @@ jobs:
         run: >-
           uv run --extra dev --python 3.14 python -m unittest discover
           -s tests/functional -v
+
+  k8s-minikube-smoke:
+    name: Kubernetes smoke (Minikube)
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - unit-test
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install Kubernetes tooling
+        env:
+          HELM_VERSION: v3.16.4
+          KUBECTL_VERSION: v1.31.4
+          MINIKUBE_VERSION: v1.34.0
+        run: |
+          set -euo pipefail
+          curl_retry=(curl --fail --silent --show-error --location \
+            --retry 5 --retry-delay 2 --retry-all-errors)
+
+          "${curl_retry[@]}" -o /tmp/helm.tar.gz \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          "${curl_retry[@]}" -o /tmp/helm.tar.gz.sha256sum \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
+          helm_sha="$(awk '{print $1}' /tmp/helm.tar.gz.sha256sum)"
+          echo "${helm_sha}  /tmp/helm.tar.gz" | sha256sum --check
+          tar -xzf /tmp/helm.tar.gz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+
+          "${curl_retry[@]}" -o /tmp/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          "${curl_retry[@]}" -o /tmp/kubectl.sha256 \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+          kubectl_sha="$(awk '{print $1}' /tmp/kubectl.sha256)"
+          echo "${kubectl_sha}  /tmp/kubectl" | sha256sum --check
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+
+          "${curl_retry[@]}" -o /tmp/minikube \
+            "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64"
+          "${curl_retry[@]}" -o /tmp/minikube.sha256 \
+            "https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64.sha256"
+          minikube_sha="$(awk '{print $1}' /tmp/minikube.sha256)"
+          echo "${minikube_sha}  /tmp/minikube" | sha256sum --check
+          sudo install -m 0755 /tmp/minikube /usr/local/bin/minikube
+
+          helm version
+          kubectl version --client=true
+          minikube version
+
+      - name: Run Minikube smoke test
+        env:
+          DEEPSEEK_BRIDGE_RUN_K8S_SMOKE: "1"
+          DEEPSEEK_BRIDGE_SMOKE_IMAGE_REPOSITORY: deepseek-bridge-smoke
+          DEEPSEEK_BRIDGE_SMOKE_IMAGE_TAG: ci-${{ github.sha }}-${{ github.run_id }}
+        run: python -m unittest tests.test_k8s_minikube_smoke -v
