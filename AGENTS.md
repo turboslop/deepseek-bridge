@@ -30,7 +30,7 @@ The console script is defined in `pyproject.toml` and points to `deepseek_bridge
 
 ## Repo-Level Skills
 
-Use `skills/issue-to-green-pr/SKILL.md` when picking up a GitHub issue or implementation task in this repository. It defines the expected local Gang of Four workflow: planning quorum, implementer, reviewer, QA, temp artifacts, local quality gates, PR creation, CI monitoring, return-to-implementer fix loops, and auto-merge.
+Use `skills/issue-to-green-pr/SKILL.md` when picking up a GitHub issue or implementation task in this repository. It defines the expected local Gang of Four workflow: quorum-routed planning, implementer, reviewer, QA, temp artifacts, local quality gates, PR creation, CI monitoring, fix/review/QA loops, and auto-merge.
 
 ## Development Commands
 

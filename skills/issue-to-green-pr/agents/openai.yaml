@@ -1,4 +1,4 @@
 interface:
   display_name: "Issue to Green PR"
-  short_description: "Local Gang of Four workflow for taking an issue through green PR checks."
-  default_prompt: "Take an issue from this repository through local Gang of Four planning, implementation, review, QA, PR creation, green CI, and auto-merge."
+  short_description: "Quorum-routed Local Gang of Four workflow for green PRs."
+  default_prompt: "Take an issue from this repository through a quorum-routed Local Gang of Four loop: plan, implement, review, QA, validate, create a PR, get CI green, and enable auto-merge."
