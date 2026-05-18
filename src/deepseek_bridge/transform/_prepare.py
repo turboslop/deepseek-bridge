@@ -12,7 +12,7 @@ from .._normalization import (
 )
 from ..config import ProxyConfig
 from ..logging import INTERNAL_LOG, LOG
-from ..reasoning_store import ReasoningStore, conversation_scope
+from ..reasoning_store import ReasoningStoreProtocol, conversation_scope
 from ._cache import (
     reasoning_cache_namespace,
     response_recording_contexts,
@@ -129,7 +129,7 @@ def _effective_thinking_payload(
 def prepare_upstream_request(
     payload: dict[str, Any],
     config: ProxyConfig,
-    store: ReasoningStore | None,
+    store: ReasoningStoreProtocol | None,
     authorization: str | None = None,
 ) -> PreparedRequest:
     original_model = str(payload.get("model") or config.upstream_model)

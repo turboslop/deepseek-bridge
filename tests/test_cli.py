@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from deepseek_bridge.config import ProxyConfig
+from deepseek_bridge.reasoning_store import ReasoningStoreStats
 from deepseek_bridge.server_infrastructure import BoundedThreadPoolHTTPServer
 
 
@@ -39,6 +40,23 @@ class CliImportTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("deepseek bridge", result.stdout.lower())
+
+    def test_storage_startup_logs_pathless_stats(self) -> None:
+        class _PathlessStore:
+            def stats(self) -> ReasoningStoreStats:
+                return ReasoningStoreStats(backend="valkey", entries=2)
+
+        from deepseek_bridge.cli import _log_storage_startup
+
+        with self.assertLogs("deepseek_bridge", level="INFO") as captured:
+            _log_storage_startup(
+                ProxyConfig(storage_backend="valkey"), _PathlessStore()
+            )
+
+        output = "\n".join(captured.output)
+        self.assertIn("Backend:      valkey", output)
+        self.assertIn("Entries:      2", output)
+        self.assertNotIn("Reasoning DB", output)
 
 
 # ---------------------------------------------------------------------------

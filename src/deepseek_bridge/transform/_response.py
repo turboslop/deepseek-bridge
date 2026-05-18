@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..reasoning_store import ReasoningStore, conversation_scope
+from ..reasoning_store import ReasoningStoreProtocol, conversation_scope
 from ..streaming._sse import SYSTEM_FINGERPRINT, fold_reasoning_into_content
 
 
 def record_response_reasoning(
     response_payload: dict[str, Any],
-    store: ReasoningStore | None,
+    store: ReasoningStoreProtocol | None,
     request_messages: list[dict[str, Any]],
     cache_namespace: str = "",
     scope: str | None = None,
@@ -50,7 +50,7 @@ def record_response_reasoning(
 def rewrite_response_body(
     body: bytes,
     original_model: str,
-    store: ReasoningStore | None,
+    store: ReasoningStoreProtocol | None,
     request_messages: list[dict[str, Any]],
     cache_namespace: str = "",
     content_prefix: str | None = None,

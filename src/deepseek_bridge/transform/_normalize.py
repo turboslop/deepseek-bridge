@@ -11,7 +11,7 @@ from .._normalization import (
 )
 from ..logging import INTERNAL_LOG
 from ..reasoning_store import (
-    ReasoningStore,
+    ReasoningStoreProtocol,
     conversation_scope,
     message_signature,
     tool_call_ids,
@@ -24,7 +24,7 @@ from ._cache import (
 
 def normalize_message(
     message: Any,
-    store: ReasoningStore | None,
+    store: ReasoningStoreProtocol | None,
     prior_messages: list[dict[str, Any]],
     cache_namespace: str,
     repair_reasoning: bool,
@@ -147,7 +147,7 @@ def normalize_message(
 
 def normalize_messages(
     messages: Any,
-    store: ReasoningStore | None,
+    store: ReasoningStoreProtocol | None,
     cache_namespace: str,
     repair_reasoning: bool,
     keep_reasoning: bool,

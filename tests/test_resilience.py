@@ -5,6 +5,7 @@ timeouts, and bounded thread pool (Wave 2).  All tests use unittest.mock
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -15,6 +16,7 @@ from deepseek_bridge.helpers import (
     _handle_shutdown_signal,
     _shutdown_requested,
 )
+from deepseek_bridge.reasoning_store import ReasoningStoreStats
 from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
@@ -148,6 +150,62 @@ class BoundedThreadPoolTests(unittest.TestCase):
             self.assertFalse(checks["storage"]["ok"])
             self.assertEqual(checks["storage"]["status"], "unavailable")
             self.assertFalse(server.is_ready())
+        finally:
+            server.server_close()
+
+    def test_readiness_uses_healthcheck_method(self) -> None:
+        class _HealthcheckOnlyStore:
+            def healthcheck(self) -> tuple[bool, str]:
+                return False, "unavailable"
+
+        server = self._make_server(max_workers=5)
+        server.config = ProxyConfig(max_queue_size=10)
+        server.reasoning_store = _HealthcheckOnlyStore()
+        server.upstream_pool = object()
+        _shutdown_requested.clear()
+        try:
+            checks = server.readiness_checks()
+
+            self.assertFalse(checks["storage"]["ok"])
+            self.assertEqual(checks["storage"]["status"], "unavailable")
+            self.assertFalse(server.is_ready())
+        finally:
+            server.server_close()
+
+    def test_heartbeat_logs_pathless_storage_stats(self) -> None:
+        class _PathlessStore:
+            def healthcheck(self) -> tuple[bool, str]:
+                return True, "ok"
+
+            def stats(self) -> ReasoningStoreStats:
+                return ReasoningStoreStats(backend="valkey", entries=2)
+
+        server = self._make_server(max_workers=5)
+        server.reasoning_store = _PathlessStore()
+        server.start_time = time.monotonic()
+        try:
+            with self.assertLogs("deepseek_bridge", level="INFO") as captured:
+                server._log_heartbeat()
+
+            output = "\n".join(captured.output)
+            self.assertIn("storage=valkey/2entries", output)
+            self.assertNotIn("db=?", output)
+        finally:
+            server.server_close()
+
+    def test_db_stats_logs_pathless_storage_stats(self) -> None:
+        class _PathlessStore:
+            def stats(self) -> ReasoningStoreStats:
+                return ReasoningStoreStats(backend="valkey", entries=2)
+
+        server = self._make_server(max_workers=5)
+        server.reasoning_store = _PathlessStore()
+        try:
+            with self.assertLogs("deepseek_bridge", level="INFO") as captured:
+                server._log_db_stats()
+
+            output = "\n".join(captured.output)
+            self.assertIn("storage stats: backend=valkey entries=2", output)
         finally:
             server.server_close()
 

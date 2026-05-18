@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import unittest
+from typing import Any
 
 from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.reasoning_store import (
     ReasoningStore,
+    ReasoningStoreBase,
     conversation_scope,
     message_signature,
 )
@@ -42,6 +44,35 @@ def _default_cache_namespace() -> str:
 
 def _cache_scope(messages: list[dict]) -> str:
     return conversation_scope(messages, _default_cache_namespace())
+
+
+class _MemoryReasoningStore(ReasoningStoreBase):
+    backend_name = "memory"
+
+    def __init__(self) -> None:
+        self._items: dict[str, tuple[str, dict[str, Any]]] = {}
+
+    def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
+        if not isinstance(reasoning, str):
+            return
+        self._items[key] = (reasoning, dict(message))
+
+    def get(self, key: str) -> str | None:
+        item = self._items.get(key)
+        if item is None:
+            return None
+        return item[0]
+
+    def clear(self) -> int:
+        count = len(self._items)
+        self._items.clear()
+        return count
+
+    def prune(self) -> int:
+        return 0
+
+    def healthcheck(self) -> tuple[bool, str]:
+        return True, "ok"
 
 
 class ContentHelpersTests(unittest.TestCase):
@@ -88,6 +119,56 @@ class ContentHelpersTests(unittest.TestCase):
         self.assertEqual(normalize_reasoning_effort("max"), "max")
         self.assertEqual(normalize_reasoning_effort("xhigh"), "max")
         self.assertEqual(normalize_reasoning_effort("nonsense"), "high")
+
+
+class NonSqliteTransformStoreTests(unittest.TestCase):
+    def test_prepare_upstream_request_restores_reasoning_from_fake_store(
+        self,
+    ) -> None:
+        store = _MemoryReasoningStore()
+        user_message = {"role": "user", "content": "look up the version"}
+        tool_call = {
+            "id": "call_lookup",
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        }
+        assistant_with_reasoning = {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Need the lookup result first.",
+            "tool_calls": [tool_call],
+        }
+        store.store_assistant_message(
+            assistant_with_reasoning,
+            _cache_scope([user_message]),
+        )
+
+        prepared = prepare_upstream_request(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [
+                    user_message,
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [tool_call],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_lookup",
+                        "content": "v1",
+                    },
+                ],
+            },
+            ProxyConfig(),
+            store,
+        )
+
+        self.assertEqual(prepared.patched_reasoning_messages, 1)
+        self.assertEqual(
+            prepared.payload["messages"][1]["reasoning_content"],
+            "Need the lookup result first.",
+        )
 
 
 class RequestPreparationTests(unittest.TestCase):

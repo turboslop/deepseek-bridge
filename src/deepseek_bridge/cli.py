@@ -29,7 +29,7 @@ from .helpers import (
     _shutdown_requested,
 )
 from .logging import LOG, configure_logging
-from .reasoning_store import ReasoningStore
+from .reasoning_store import ReasoningStore, ReasoningStoreProtocol
 from .server_infrastructure import (
     BoundedThreadPoolHTTPServer,
     UpstreamPool,
@@ -44,6 +44,41 @@ from .tunnel import (
     get_tunnel_choices,
     local_tunnel_target,
 )
+
+
+def create_reasoning_store(config: ProxyConfig) -> ReasoningStoreProtocol:
+    if config.storage_backend == "sqlite":
+        return ReasoningStore(
+            config.reasoning_content_path,
+            max_age_seconds=config.reasoning_cache_max_age_seconds,
+            max_rows=config.reasoning_cache_max_entries,
+        )
+    raise ValueError(f"storage backend {config.storage_backend!r} is invalid")
+
+
+def _log_storage_startup(
+    config: ProxyConfig, store: ReasoningStoreProtocol
+) -> None:
+    LOG.info("  Backend:      %s", config.storage_backend)
+    try:
+        stats = store.stats()
+    except Exception as exc:
+        LOG.warning("failed to read storage stats: %s", exc)
+        return
+    if stats.path:
+        label = "Reasoning DB" if stats.backend == "sqlite" else "Store path"
+        LOG.info("  %-12s %s", f"{label}:", stats.path)
+    if stats.entries is not None:
+        LOG.info("  Entries:      %s", stats.entries)
+
+
+def _check_reasoning_cache_bloat(store: ReasoningStoreProtocol) -> None:
+    check_bloat = getattr(store, "check_bloat", None)
+    if not callable(check_bloat):
+        return
+    bloat_warning, _ = check_bloat()
+    if bloat_warning:
+        LOG.warning("reasoning cache health: %s", bloat_warning)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -441,14 +476,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     warn_if_insecure_upstream(config.upstream_base_url)
-    store = ReasoningStore(
-        config.reasoning_content_path,
-        max_age_seconds=config.reasoning_cache_max_age_seconds,
-        max_rows=config.reasoning_cache_max_entries,
-    )
-    bloat_warning, _ = store.check_bloat()
-    if bloat_warning:
-        LOG.warning("reasoning DB health: %s", bloat_warning)
+    try:
+        store = create_reasoning_store(config)
+    except ValueError as exc:
+        LOG.error("%s", exc)
+        return 2
+    _check_reasoning_cache_bloat(store)
     store.start_periodic_maintenance()
     if args.clear_reasoning_cache:
         deleted = store.clear()
@@ -558,7 +591,7 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("  Ollama:    %s", "enabled" if config.ollama else "disabled")
     LOG.info("")
     LOG.info("Storage")
-    LOG.info("  Reasoning DB: %s", config.reasoning_content_path)
+    _log_storage_startup(config, store)
     if log_file_path:
         LOG.info("  Logs:         %s", log_file_path)
     else:

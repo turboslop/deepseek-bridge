@@ -14,7 +14,6 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
-from pathlib import Path
 from typing import Any, cast
 
 import urllib3
@@ -22,7 +21,7 @@ import urllib3
 from .config import ProxyConfig
 from .helpers import _shutdown_requested
 from .logging import LOG, format_count
-from .reasoning_store import ReasoningStore
+from .reasoning_store import ReasoningStoreProtocol, ReasoningStoreStats
 from .trace import TraceWriter
 
 
@@ -50,7 +49,7 @@ class UpstreamPool:
 
 class DeepSeekProxyServer(ThreadingHTTPServer):
     config: ProxyConfig
-    reasoning_store: ReasoningStore
+    reasoning_store: ReasoningStoreProtocol
     trace_writer: TraceWriter | None
     upstream_pool: UpstreamPool
 
@@ -93,7 +92,9 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
         }
 
         store = getattr(self, "reasoning_store", None)
-        health_check = getattr(store, "health_check", None)
+        health_check = getattr(store, "healthcheck", None)
+        if not callable(health_check):
+            health_check = getattr(store, "health_check", None)
         if callable(health_check):
             health_check_fn = cast(Callable[[], object], health_check)
             try:
@@ -138,6 +139,21 @@ class DeepSeekProxyServer(ThreadingHTTPServer):
     def is_ready(self) -> bool:
         checks = self.readiness_checks()
         return all(bool(check["ok"]) for check in checks.values())
+
+    def reasoning_store_stats(self) -> ReasoningStoreStats | None:
+        store = getattr(self, "reasoning_store", None)
+        stats_method = getattr(store, "stats", None)
+        if not callable(stats_method):
+            return None
+        stats_fn = cast(Callable[[], object], stats_method)
+        try:
+            result = stats_fn()  # pylint: disable=not-callable
+        except Exception as exc:
+            LOG.warning("failed to read storage stats: %s", exc)
+            return None
+        if isinstance(result, ReasoningStoreStats):
+            return result
+        return None
 
 
 class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
@@ -260,20 +276,18 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         )
 
     def _log_db_stats(self) -> None:
-        try:
-            store = self.reasoning_store
-            if not isinstance(store.reasoning_content_path, Path):
-                return
-            size_mb = store.get_db_size_mb()
-            row_count = store.get_row_count()
-            LOG.info(
-                "db stats: %s size=%.1fMB rows=%s",
-                store.reasoning_content_path,
-                size_mb,
-                format_count(row_count),
-            )
-        except Exception as exc:
-            LOG.warning("failed to log DB stats: %s", exc)
+        stats = self.reasoning_store_stats()
+        if stats is None:
+            return
+        details = [f"backend={stats.backend}"]
+        if stats.path:
+            details.append(f"path={stats.path}")
+        if stats.size_mb is not None:
+            details.append(f"size={stats.size_mb:.1f}MB")
+        if stats.entries is not None:
+            details.append(f"entries={format_count(stats.entries)}")
+        if len(details) > 1:
+            LOG.info("storage stats: %s", " ".join(details))
 
     def _log_heartbeat(self) -> None:
         parts = [f"heartbeat: req={format_count(self.request_count)}"]
@@ -282,17 +296,14 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         except Exception as exc:
             LOG.warning("failed to read pool stats: %s", exc)
             parts.append("pool=?")
-        try:
-            store = self.reasoning_store
-            if isinstance(store.reasoning_content_path, Path):
-                size_mb = store.get_db_size_mb()
-                row_count = store.get_row_count()
-                parts.append(
-                    f"db={size_mb:.0f}MB/{format_count(row_count)}rows"
-                )
-        except Exception as exc:
-            LOG.warning("failed to read db stats: %s", exc)
-            parts.append("db=?")
+        stats = self.reasoning_store_stats()
+        if stats is not None:
+            storage_parts = [stats.backend]
+            if stats.size_mb is not None:
+                storage_parts.append(f"{stats.size_mb:.0f}MB")
+            if stats.entries is not None:
+                storage_parts.append(f"{format_count(stats.entries)}entries")
+            parts.append(f"storage={'/'.join(storage_parts)}")
         uptime = int(time.monotonic() - self.start_time)
         parts.append(f"uptime={uptime // 60}m")
         LOG.info(" | ".join(parts))

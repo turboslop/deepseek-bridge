@@ -6,8 +6,9 @@ import json
 import sqlite3
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from ._normalization import normalize_tool_call
 from .logging import INTERNAL_LOG, LOG
@@ -168,7 +169,171 @@ def portable_reasoning_keys(
     return keys
 
 
-class ReasoningStore:
+@dataclass(frozen=True)
+class ReasoningStoreStats:
+    backend: str
+    entries: int | None = None
+    size_mb: float | None = None
+    path: str | None = None
+    max_age_seconds: int | None = None
+    max_rows: int | None = None
+
+
+@runtime_checkable
+class ReasoningStoreProtocol(Protocol):
+    def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def get(self, key: str) -> str | None:
+        raise NotImplementedError
+
+    def store_assistant_message(
+        self,
+        message: dict[str, Any],
+        scope: str,
+        cache_namespace: str = "",
+        prior_messages: list[dict[str, Any]] | None = None,
+    ) -> int:
+        raise NotImplementedError
+
+    def lookup_for_message(
+        self,
+        message: dict[str, Any],
+        scope: str,
+        cache_namespace: str = "",
+        prior_messages: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        raise NotImplementedError
+
+    def backfill_portable_aliases(
+        self,
+        message: dict[str, Any],
+        reasoning: str,
+        cache_namespace: str,
+        prior_messages: list[dict[str, Any]],
+    ) -> int:
+        raise NotImplementedError
+
+    def clear(self) -> int:
+        raise NotImplementedError
+
+    def prune(self) -> int:
+        raise NotImplementedError
+
+    def healthcheck(self) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    def stats(self) -> ReasoningStoreStats:
+        raise NotImplementedError
+
+    def start_periodic_maintenance(
+        self, interval_seconds: float = 1800.0
+    ) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+
+class ReasoningStoreBase:
+    backend_name = "unknown"
+
+    def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def get(self, key: str) -> str | None:
+        raise NotImplementedError
+
+    def store_assistant_message(
+        self,
+        message: dict[str, Any],
+        scope: str,
+        cache_namespace: str = "",
+        prior_messages: list[dict[str, Any]] | None = None,
+    ) -> int:
+        if message.get("role") != "assistant":
+            return 0
+        reasoning = message.get("reasoning_content")
+        if not isinstance(reasoning, str):
+            return 0
+
+        keys = scoped_reasoning_keys(message, scope)
+        if prior_messages is not None:
+            keys.extend(
+                portable_reasoning_keys(
+                    message, cache_namespace, prior_messages
+                )
+            )
+        keys = list(dict.fromkeys(keys))
+        for key in keys:
+            self.put(key, reasoning, message)
+        return len(keys)
+
+    def lookup_for_message(
+        self,
+        message: dict[str, Any],
+        scope: str,
+        cache_namespace: str = "",
+        prior_messages: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        keys = scoped_reasoning_keys(message, scope)
+        if prior_messages is not None:
+            keys.extend(
+                portable_reasoning_keys(
+                    message, cache_namespace, prior_messages
+                )
+            )
+        for key in keys:
+            reasoning = self.get(key)
+            if reasoning is not None:
+                return reasoning
+        return None
+
+    def backfill_portable_aliases(
+        self,
+        message: dict[str, Any],
+        reasoning: str,
+        cache_namespace: str,
+        prior_messages: list[dict[str, Any]],
+    ) -> int:
+        if not isinstance(reasoning, str):
+            return 0
+        keys = portable_reasoning_keys(message, cache_namespace, prior_messages)
+        if not keys:
+            return 0
+        message_with_reasoning = dict(message)
+        message_with_reasoning["reasoning_content"] = reasoning
+        for key in dict.fromkeys(keys):
+            self.put(key, reasoning, message_with_reasoning)
+        return len(keys)
+
+    def clear(self) -> int:
+        raise NotImplementedError
+
+    def prune(self) -> int:
+        raise NotImplementedError
+
+    def healthcheck(self) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    def health_check(self) -> tuple[bool, str]:
+        return self.healthcheck()
+
+    def stats(self) -> ReasoningStoreStats:
+        return ReasoningStoreStats(backend=self.backend_name)
+
+    def start_periodic_maintenance(
+        self, interval_seconds: float = 1800.0
+    ) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+class ReasoningStore(ReasoningStoreBase):
+    backend_name = "sqlite"
+
     def __init__(
         self,
         reasoning_content_path: str | Path,
@@ -301,7 +466,7 @@ class ReasoningStore:
         except Exception:
             return 0.0
 
-    def health_check(self) -> tuple[bool, str]:
+    def healthcheck(self) -> tuple[bool, str]:
         """Return whether the backing cache is usable for readiness checks."""
         with self._lock:
             if self._closed:
@@ -312,6 +477,19 @@ class ReasoningStore:
                 LOG.warning("SQLite health check failed: %s", exc)
                 return False, "unavailable"
         return True, "ok"
+
+    def stats(self) -> ReasoningStoreStats:
+        size_mb: float | None = None
+        if isinstance(self.reasoning_content_path, Path):
+            size_mb = self.get_db_size_mb()
+        return ReasoningStoreStats(
+            backend=self.backend_name,
+            entries=self.get_row_count(),
+            size_mb=size_mb,
+            path=str(self.reasoning_content_path),
+            max_age_seconds=self.max_age_seconds,
+            max_rows=self._max_rows,
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -412,69 +590,6 @@ class ReasoningStore:
             return None
         INTERNAL_LOG.debug("store.cache: key=%s..., hit=True", key[:32])
         return str(row[0])
-
-    def store_assistant_message(
-        self,
-        message: dict[str, Any],
-        scope: str,
-        cache_namespace: str = "",
-        prior_messages: list[dict[str, Any]] | None = None,
-    ) -> int:
-        if message.get("role") != "assistant":
-            return 0
-        reasoning = message.get("reasoning_content")
-        if not isinstance(reasoning, str):
-            return 0
-
-        keys = scoped_reasoning_keys(message, scope)
-        if prior_messages is not None:
-            keys.extend(
-                portable_reasoning_keys(
-                    message, cache_namespace, prior_messages
-                )
-            )
-        keys = list(dict.fromkeys(keys))
-        for key in keys:
-            self.put(key, reasoning, message)
-        return len(keys)
-
-    def lookup_for_message(
-        self,
-        message: dict[str, Any],
-        scope: str,
-        cache_namespace: str = "",
-        prior_messages: list[dict[str, Any]] | None = None,
-    ) -> str | None:
-        keys = scoped_reasoning_keys(message, scope)
-        if prior_messages is not None:
-            keys.extend(
-                portable_reasoning_keys(
-                    message, cache_namespace, prior_messages
-                )
-            )
-        for key in keys:
-            reasoning = self.get(key)
-            if reasoning is not None:
-                return reasoning
-        return None
-
-    def backfill_portable_aliases(
-        self,
-        message: dict[str, Any],
-        reasoning: str,
-        cache_namespace: str,
-        prior_messages: list[dict[str, Any]],
-    ) -> int:
-        if not isinstance(reasoning, str):
-            return 0
-        keys = portable_reasoning_keys(message, cache_namespace, prior_messages)
-        if not keys:
-            return 0
-        message_with_reasoning = dict(message)
-        message_with_reasoning["reasoning_content"] = reasoning
-        for key in dict.fromkeys(keys):
-            self.put(key, reasoning, message_with_reasoning)
-        return len(keys)
 
     def clear(self) -> int:
         with self._lock:

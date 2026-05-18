@@ -6,10 +6,150 @@ import stat
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from unittest.mock import patch
 
 from deepseek_bridge.config import _auto_cache_max_rows
-from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
+from deepseek_bridge.reasoning_store import (
+    ReasoningStore,
+    ReasoningStoreBase,
+    ReasoningStoreProtocol,
+    ReasoningStoreStats,
+    conversation_scope,
+)
+
+
+class _MemoryReasoningStore(ReasoningStoreBase):
+    backend_name = "memory"
+
+    def __init__(self) -> None:
+        self._items: dict[str, tuple[str, dict[str, object]]] = {}
+        self._closed = False
+
+    def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
+        if self._closed or not isinstance(reasoning, str):
+            return
+        self._items[key] = (reasoning, dict(message))
+
+    def get(self, key: str) -> str | None:
+        if self._closed:
+            return None
+        item = self._items.get(key)
+        if item is None:
+            return None
+        return item[0]
+
+    def clear(self) -> int:
+        count = len(self._items)
+        self._items.clear()
+        return count
+
+    def prune(self) -> int:
+        return 0
+
+    def healthcheck(self) -> tuple[bool, str]:
+        return (False, "closed") if self._closed else (True, "ok")
+
+    def stats(self) -> ReasoningStoreStats:
+        return ReasoningStoreStats(
+            backend=self.backend_name,
+            entries=len(self._items),
+        )
+
+    def close(self) -> None:
+        self._closed = True
+
+
+class ReasoningStoreContractTests(unittest.TestCase):
+    def test_fake_store_satisfies_protocol(self) -> None:
+        store = _MemoryReasoningStore()
+
+        self.assertIsInstance(store, ReasoningStoreProtocol)
+
+    def test_message_helpers_work_without_sqlite(self) -> None:
+        store = _MemoryReasoningStore()
+        scope = conversation_scope([{"role": "user", "content": "lookup"}])
+        tool_call = {
+            "id": "call_empty",
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        }
+        message = {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [tool_call],
+        }
+
+        stored = store.store_assistant_message(message, scope)
+
+        self.assertGreater(stored, 0)
+        self.assertEqual(store.get(f"scope:{scope}:tool_call:call_empty"), "")
+        self.assertEqual(
+            store.lookup_for_message(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [tool_call],
+                },
+                scope,
+            ),
+            "",
+        )
+        self.assertEqual(
+            store.store_assistant_message(
+                {"role": "user", "content": "not stored"}, scope
+            ),
+            0,
+        )
+
+    def test_portable_alias_backfill_uses_generic_put_get(self) -> None:
+        store = _MemoryReasoningStore()
+        prior_messages = [{"role": "user", "content": "find files"}]
+        message = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_find",
+                    "type": "function",
+                    "function": {"name": "find", "arguments": "{}"},
+                }
+            ],
+        }
+
+        stored = store.backfill_portable_aliases(
+            message, "portable reasoning", "namespace", prior_messages
+        )
+
+        self.assertGreater(stored, 0)
+        self.assertEqual(
+            store.lookup_for_message(
+                message,
+                "different-scope",
+                "namespace",
+                prior_messages,
+            ),
+            "portable reasoning",
+        )
+
+    def test_health_lifecycle_and_stats_are_generic(self) -> None:
+        store = _MemoryReasoningStore()
+        store.put("k", "v", {"role": "assistant"})
+
+        self.assertEqual(store.healthcheck(), (True, "ok"))
+        self.assertEqual(store.health_check(), (True, "ok"))
+        self.assertEqual(
+            store.stats(),
+            ReasoningStoreStats(backend="memory", entries=1),
+        )
+        self.assertEqual(store.clear(), 1)
+        self.assertEqual(store.prune(), 0)
+
+        store.close()
+
+        self.assertEqual(store.healthcheck(), (False, "closed"))
+        self.assertIsNone(store.get("k"))
 
 
 class ReasoningStoreTests(unittest.TestCase):
@@ -127,6 +267,22 @@ class ReasoningStoreTests(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertEqual(status, "closed")
+
+    def test_sqlite_stats_expose_generic_storage_fields(self) -> None:
+        store = ReasoningStore(":memory:", max_age_seconds=60, max_rows=10)
+        try:
+            store.put("k", "v", {"role": "assistant"})
+
+            stats = store.stats()
+        finally:
+            store.close()
+
+        self.assertEqual(stats.backend, "sqlite")
+        self.assertEqual(stats.entries, 1)
+        self.assertEqual(stats.path, ":memory:")
+        self.assertIsNone(stats.size_mb)
+        self.assertEqual(stats.max_age_seconds, 60)
+        self.assertEqual(stats.max_rows, 10)
 
     # ── Vacuum / Bloat tests ──────────────────────────────────────
 
