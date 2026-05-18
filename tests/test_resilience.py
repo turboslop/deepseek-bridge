@@ -115,6 +115,7 @@ class ConfigDefaultsTests(unittest.TestCase):
 
     def test_max_thread_pool_defaults(self) -> None:
         import os
+
         expected = max(os.cpu_count() or 4, 12)
         self.assertEqual(ProxyConfig().max_thread_pool, expected)
 

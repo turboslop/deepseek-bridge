@@ -23,9 +23,14 @@ class ProxyStartupTests(unittest.TestCase):
         cls.port = _find_free_port()
         cls.proc = subprocess.Popen(
             [
-                sys.executable, "-m", "deepseek_bridge",
-                "--headless", "--tunnel", "none",
-                "--port", str(cls.port),
+                sys.executable,
+                "-m",
+                "deepseek_bridge",
+                "--headless",
+                "--tunnel",
+                "none",
+                "--port",
+                str(cls.port),
                 "--no-log",
             ],
             stdout=subprocess.DEVNULL,

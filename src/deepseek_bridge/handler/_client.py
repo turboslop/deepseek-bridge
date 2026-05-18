@@ -17,6 +17,7 @@ class HandlerClient:
 
     def _check_client_alive(self) -> bool:
         import socket
+
         sock = getattr(self, "request", None)
         if sock is not None:
             if hasattr(socket, "SO_NOSIGPIPE"):

@@ -193,16 +193,14 @@ class ReasoningStore:
             self._conn.execute("PRAGMA mmap_size = 268435456")
             self._conn.execute("PRAGMA temp_store = MEMORY")
             self._conn.execute("PRAGMA wal_autocheckpoint=4000")
-        self._conn.execute(
-            """
+        self._conn.execute("""
             CREATE TABLE IF NOT EXISTS reasoning_cache (
                 key TEXT PRIMARY KEY,
                 reasoning TEXT NOT NULL,
                 message_json TEXT NOT NULL,
                 created_at REAL NOT NULL
             )
-            """
-        )
+            """)
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_reasoning_cache_created_at "
             "ON reasoning_cache(created_at)"
@@ -268,9 +266,7 @@ class ReasoningStore:
     def get_row_count(self) -> int:
         """Return the number of cached reasoning rows."""
         try:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM reasoning_cache"
-            ).fetchone()
+            row = self._conn.execute("SELECT COUNT(*) FROM reasoning_cache").fetchone()
             return int(row[0]) if row else 0
         except Exception:
             return 0
@@ -322,7 +318,8 @@ class ReasoningStore:
                         LOG.info("periodic DB check: %s", bloat)
                         if free_pct is not None and free_pct > 0.8:
                             LOG.warning(
-                                "DB severely bloated (%.0f%% free), clearing cache", free_pct * 100
+                                "DB severely bloated (%.0f%% free), clearing cache",
+                                free_pct * 100,
                             )
                             deleted = self._clear_locked()
                             LOG.info("cleared %s reasoning cache rows", deleted)

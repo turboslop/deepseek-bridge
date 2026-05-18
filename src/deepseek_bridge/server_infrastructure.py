@@ -149,9 +149,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
             LOG.warning("failed to count active threads: %s", exc)
             active = "?"
         try:
-            queue_size: int | str = (
-                self.queue_size
-            )
+            queue_size: int | str = self.queue_size
         except Exception as exc:
             LOG.warning("failed to check queue size: %s", exc)
             queue_size = "?"
@@ -181,9 +179,7 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
     def _log_heartbeat(self) -> None:
         parts = [f"heartbeat: req={format_count(self.request_count)}"]
         try:
-            parts.append(
-                f"pool={self.active_threads}/{self.max_workers}"
-            )
+            parts.append(f"pool={self.active_threads}/{self.max_workers}")
         except Exception as exc:
             LOG.warning("failed to read pool stats: %s", exc)
             parts.append("pool=?")

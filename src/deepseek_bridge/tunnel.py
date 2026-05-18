@@ -254,12 +254,22 @@ class CloudflaredTunnel(TunnelService):
                 "Install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
             )
         self.process = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", "--protocol", "http2", "--url", self.target_url, self.cfd_tunnel_name],
+            [
+                "cloudflared",
+                "tunnel",
+                "run",
+                "--protocol",
+                "http2",
+                "--url",
+                self.target_url,
+                self.cfd_tunnel_name,
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         # Give cloudflared time to establish connection
         import time as _time
+
         _time.sleep(15)
         assert self.process is not None
         if self.process.poll() is not None:

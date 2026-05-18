@@ -48,7 +48,7 @@ class SendSseErrorTests(unittest.TestCase):
         self.assertTrue(raw.startswith(b"data: "))
         self.assertTrue(raw.endswith(b"\n\n"))
         # Parse the JSON payload after "data: " prefix
-        payload = json.loads(raw[len(b"data: "):])
+        payload = json.loads(raw[len(b"data: ") :])
         self.assertIn("error", payload)
         error = payload["error"]
         self.assertEqual(error["message"], "Upstream returned 502")
@@ -62,14 +62,16 @@ class SendSseErrorTests(unittest.TestCase):
         handler = _make_handler_stub(wfile)
         handler._send_sse_error(500, "Upstream returned 500")
         raw = wfile.getvalue()
-        payload = json.loads(raw[len(b"data: "):].strip())
+        payload = json.loads(raw[len(b"data: ") :].strip())
         self.assertEqual(payload["error"]["message"], "Upstream returned 500")
 
     def test_handles_client_disconnect_gracefully(self) -> None:
         """Returns False when client disconnects."""
+
         class BrokenWfile:
             def write(self, _data: bytes) -> int:
                 raise BrokenPipeError("Client disconnected")
+
             def flush(self) -> None:
                 pass
 
@@ -79,9 +81,11 @@ class SendSseErrorTests(unittest.TestCase):
 
     def test_handles_connection_error_gracefully(self) -> None:
         """Returns False on ConnectionError."""
+
         class BrokenWfile:
             def write(self, _data: bytes) -> int:
                 raise ConnectionError("Connection reset")
+
             def flush(self) -> None:
                 pass
 

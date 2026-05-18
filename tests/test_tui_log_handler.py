@@ -37,8 +37,13 @@ class TestTuiLogHandler(unittest.TestCase):
     def test_handler_does_not_crash_on_format_error(self) -> None:
         # Bad format string with mismatched args
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="test.py",
-            lineno=1, msg="bad %s %d", args=("only_one",), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="bad %s %d",
+            args=("only_one",),
+            exc_info=None,
         )
         # Should not raise
         self.handler.emit(record)
@@ -56,10 +61,16 @@ class TestTuiLogHandler(unittest.TestCase):
 
     def test_pre_mount_handler_buffers_messages(self) -> None:
         """Verify PreMountLogHandler buffers messages into the deque."""
-        from deepseek_bridge.tui.log_handler import PreMountLogHandler, _pre_mount_buffer
+        from deepseek_bridge.tui.log_handler import (
+            PreMountLogHandler,
+            _pre_mount_buffer,
+        )
+
         _pre_mount_buffer.clear()
         handler = PreMountLogHandler(_pre_mount_buffer)
-        record = logging.LogRecord("test", logging.INFO, "test.py", 1, "buffered msg", (), None)
+        record = logging.LogRecord(
+            "test", logging.INFO, "test.py", 1, "buffered msg", (), None
+        )
         handler.emit(record)
         self.assertEqual(len(_pre_mount_buffer), 1)
         self.assertIn("buffered msg", _pre_mount_buffer[0])

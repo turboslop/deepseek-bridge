@@ -26,7 +26,6 @@ from ._recovery import (
     strip_recovery_notice_for_upstream,
 )
 
-
 SUPPORTED_REQUEST_FIELDS = {
     "model",
     "messages",
@@ -180,7 +179,11 @@ def prepare_upstream_request(
         patched_count,
         len(missing_indexes),
     )
-    if missing_indexes and thinking_enabled and config.missing_reasoning_strategy == "recover":
+    if (
+        missing_indexes
+        and thinking_enabled
+        and config.missing_reasoning_strategy == "recover"
+    ):
         boundary = active_messages_from_recovery_boundary(pre_repair_messages)
         if boundary is not None:
             INTERNAL_LOG.debug("transform.prepare: recovery boundary check - found")

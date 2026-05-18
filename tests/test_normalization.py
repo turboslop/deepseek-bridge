@@ -94,9 +94,7 @@ class StripCursorThinkingBlocksTests(unittest.TestCase):
         self.assertEqual(result, "visible")
 
     def test_strips_multiple_blocks(self) -> None:
-        result = strip_cursor_thinking_blocks(
-            "<think>a</think><think>b</think>final"
-        )
+        result = strip_cursor_thinking_blocks("<think>a</think><think>b</think>final")
         self.assertEqual(result, "final")
 
     def test_no_blocks_returns_unchanged(self) -> None:
@@ -228,8 +226,15 @@ class NormalizeToolChoiceTests(unittest.TestCase):
 
 class MessageFieldsTests(unittest.TestCase):
     def test_expected_message_fields(self) -> None:
-        for field in ("role", "content", "name", "tool_call_id",
-                       "tool_calls", "reasoning_content", "prefix"):
+        for field in (
+            "role",
+            "content",
+            "name",
+            "tool_call_id",
+            "tool_calls",
+            "reasoning_content",
+            "prefix",
+        ):
             self.assertIn(field, MESSAGE_FIELDS)
 
     def test_role_fields_have_expected_keys(self) -> None:

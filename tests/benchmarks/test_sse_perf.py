@@ -60,9 +60,7 @@ def generate_synthetic_lines() -> list[bytes]:
 
     for i in range(199):
         lines.append(sse_data(_chunk({"reasoning_content": f"thinking_{i} "})))
-    lines.append(
-        sse_data(_chunk({"reasoning_content": "done "}, finish_reason="stop"))
-    )
+    lines.append(sse_data(_chunk({"reasoning_content": "done "}, finish_reason="stop")))
     lines.append(b"data: [DONE]\n\n")
 
     lines.append(

@@ -78,7 +78,9 @@ def configure_logging(
         if debug:
             _purge_old_logs(log_path, prefix="debug", keep=5)
             debug_file = log_path / f"debug-{timestamp}.log"
-            debug_handler = stdlib_logging.FileHandler(str(debug_file), encoding="utf-8")
+            debug_handler = stdlib_logging.FileHandler(
+                str(debug_file), encoding="utf-8"
+            )
             debug_handler.setFormatter(stdlib_logging.Formatter(VERBOSE_LOG_FORMAT))
             INTERNAL_LOG.addHandler(debug_handler)
             INTERNAL_LOG.propagate = False
