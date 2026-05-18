@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -984,6 +984,23 @@ class HttpBoundaryTests(unittest.TestCase):
 class BoundedPoolTests(unittest.TestCase):
     """Tests for BoundedThreadPoolHTTPServer queue rejection."""
 
+    def _saturated_proxy(self) -> tuple[_Fixture, ReasoningStore]:
+        store = ReasoningStore(":memory:")
+        proxy = BoundedThreadPoolHTTPServer(
+            ("127.0.0.1", 0),
+            DeepSeekProxyHandler,
+            max_workers=1,
+        )
+        proxy.config = ProxyConfig(
+            upstream_base_url="http://127.0.0.1:1",
+            upstream_model="deepseek-v4-pro",
+            tunnel="none",
+            max_queue_size=1,
+        )
+        proxy.reasoning_store = store
+        proxy.upstream_pool = UpstreamPool()
+        return _Fixture(proxy), store
+
     def test_reject_connection_sends_503(self) -> None:
         """Verify _reject_connection sends HTTP 503 with JSON body."""
         import socket
@@ -1002,6 +1019,73 @@ class BoundedPoolTests(unittest.TestCase):
         finally:
             a.close()
             b.close()
+
+    def test_healthz_returns_ok_when_queue_is_saturated(self) -> None:
+        proxy, store = self._saturated_proxy()
+        try:
+            with (
+                patch.object(
+                    BoundedThreadPoolHTTPServer,
+                    "queue_size",
+                    new_callable=PropertyMock,
+                    return_value=1,
+                ),
+                urlopen(f"{proxy.url}/healthz", timeout=2) as response,
+            ):
+                self.assertEqual(response.status, 200)
+                body = json.loads(response.read().decode("utf-8"))
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["server"], "deepseek-bridge")
+        finally:
+            proxy.close()
+            store.close()
+
+    def test_readyz_returns_503_when_queue_is_saturated(self) -> None:
+        proxy, store = self._saturated_proxy()
+        try:
+            with (
+                patch.object(
+                    BoundedThreadPoolHTTPServer,
+                    "queue_size",
+                    new_callable=PropertyMock,
+                    return_value=1,
+                ),
+                self.assertRaises(HTTPError) as caught,
+            ):
+                urlopen(f"{proxy.url}/readyz", timeout=2)
+            try:
+                self.assertEqual(caught.exception.code, 503)
+                body = json.loads(caught.exception.read().decode("utf-8"))
+            finally:
+                caught.exception.close()
+            self.assertEqual(body["error"]["code"], "service_unavailable")
+        finally:
+            proxy.close()
+            store.close()
+
+    def test_application_request_rejected_when_queue_is_saturated(
+        self,
+    ) -> None:
+        proxy, store = self._saturated_proxy()
+        try:
+            with patch.object(
+                BoundedThreadPoolHTTPServer,
+                "queue_size",
+                new_callable=PropertyMock,
+                return_value=1,
+            ):
+                status, payload = _post(
+                    f"{proxy.url}/v1/chat/completions",
+                    {
+                        "model": "deepseek-v4-pro",
+                        "messages": [{"role": "user", "content": "hi"}],
+                    },
+                )
+            self.assertEqual(status, 503)
+            self.assertEqual(payload["error"]["code"], "service_unavailable")
+        finally:
+            proxy.close()
+            store.close()
 
 
 if __name__ == "__main__":
