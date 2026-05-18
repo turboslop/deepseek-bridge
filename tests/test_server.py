@@ -35,7 +35,8 @@ from deepseek_bridge.logging import (
     _truncate_message_content,
     configure_logging,
 )
-from deepseek_bridge.reasoning_store import ReasoningStore
+from deepseek_bridge.metrics import METRICS, PROMETHEUS_CONTENT_TYPE
+from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
 from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
@@ -44,6 +45,7 @@ from deepseek_bridge.server import (
     build_arg_parser,
     read_response_body,
 )
+from deepseek_bridge.transform import normalize_messages
 from deepseek_bridge.valkey_store import ValkeyReasoningStore
 from tests.test_reasoning_store import _FakeValkeyClient
 
@@ -625,6 +627,7 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
     auth_headers: list[str] = []
     delay_after_done: float = 0.0
     delay_before_response: float = 0.0
+    delay_before_stream_response: float = 0.0
     request_started = threading.Event()
     response_status: int = 200
     response: dict[str, object] = {}
@@ -642,6 +645,8 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
         self.__class__.request_started.set()
 
         if payload.get("stream"):
+            if self.__class__.delay_before_stream_response:
+                time.sleep(self.__class__.delay_before_stream_response)
             self.send_response(self.__class__.response_status)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
@@ -731,6 +736,39 @@ def _post(
             exc.close()
 
 
+def _get_text(url: str) -> tuple[int, str, str]:
+    try:
+        with urlopen(url, timeout=5) as response:
+            return (
+                response.status,
+                response.headers.get("Content-Type", ""),
+                response.read().decode("utf-8"),
+            )
+    except HTTPError as exc:
+        try:
+            return (
+                exc.code,
+                exc.headers.get("Content-Type", ""),
+                exc.read().decode("utf-8"),
+            )
+        finally:
+            exc.close()
+
+
+def _assert_prometheus_text(testcase: unittest.TestCase, body: str) -> None:
+    testcase.assertIn("# HELP ", body)
+    testcase.assertIn("# TYPE ", body)
+    sample_pattern = (
+        r"^[a-zA-Z_:][a-zA-Z0-9_:]*"
+        r"(\{[^{}]*\})? "
+        r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?$"
+    )
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        testcase.assertRegex(line, sample_pattern)
+
+
 class HttpBoundaryTests(unittest.TestCase):
     """Real-HTTP tests that don't fit the protocol suite: things the proxy
     must do at the HTTP boundary regardless of what DeepSeek answers."""
@@ -740,6 +778,7 @@ class HttpBoundaryTests(unittest.TestCase):
         _PlainFakeUpstream.auth_headers = []
         _PlainFakeUpstream.delay_after_done = 0.0
         _PlainFakeUpstream.delay_before_response = 0.0
+        _PlainFakeUpstream.delay_before_stream_response = 0.0
         _PlainFakeUpstream.request_started = threading.Event()
         _PlainFakeUpstream.response_status = 200
         _PlainFakeUpstream.response = dict(_BASE_RESPONSE)
@@ -756,8 +795,10 @@ class HttpBoundaryTests(unittest.TestCase):
         proxy.reasoning_store = self.store
         proxy.upstream_pool = UpstreamPool()
         self.proxy = _Fixture(proxy)
+        METRICS.reset()
 
     def tearDown(self) -> None:
+        METRICS.reset()
         self.proxy.close()
         self.upstream.close()
         self.store.close()
@@ -867,32 +908,50 @@ class HttpBoundaryTests(unittest.TestCase):
             def request(self, *_args: object, **_kwargs: object) -> object:
                 raise OSError("connection refused")
 
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
         self.proxy.server.upstream_pool = _FailingUpstreamPool()
 
         status, payload = _post(
             f"{self.proxy.url}/v1/embeddings",
             {"model": "deepseek-v4-pro", "input": "hello"},
         )
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
 
         self.assertEqual(status, 500)
         self.assertEqual(payload["error"]["code"], "upstream_failure")
         self.assertNotEqual(payload.get("object"), "list")
+        self.assertIn(
+            'deepseek_bridge_upstream_requests_total{model="deepseek-v4-pro",'
+            'status="500"} 1',
+            body,
+        )
 
     def test_embeddings_timeout_returns_gateway_timeout_error(self) -> None:
         class _TimeoutUpstreamPool:
             def request(self, *_args: object, **_kwargs: object) -> object:
                 raise urllib3.exceptions.TimeoutError("read timed out")
 
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
         self.proxy.server.upstream_pool = _TimeoutUpstreamPool()
 
         status, payload = _post(
             f"{self.proxy.url}/v1/embeddings",
             {"model": "deepseek-v4-pro", "input": "hello"},
         )
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
 
         self.assertEqual(status, 504)
         self.assertEqual(payload["error"]["code"], "upstream_timeout")
         self.assertNotEqual(payload.get("object"), "list")
+        self.assertIn(
+            'deepseek_bridge_upstream_requests_total{model="deepseek-v4-pro",'
+            'status="504"} 1',
+            body,
+        )
 
     def test_streaming_response_closes_after_done_when_upstream_lingers(
         self,
@@ -1284,6 +1343,287 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertEqual(result["inflight"][0], 200)
         self.assertEqual(len(_PlainFakeUpstream.requests), 1)
 
+    def test_metrics_endpoint_returns_404_when_disabled(self) -> None:
+        status, content_type, body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertEqual(status, 404)
+        self.assertIn("application/json", content_type)
+        self.assertEqual(
+            json.loads(body)["error"]["code"], "endpoint_not_found"
+        )
+
+    def test_metrics_endpoint_reports_http_and_upstream_success(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+
+        status, _ = _post(
+            f"{self.proxy.url}/v1/chat/completions", self._request()
+        )
+        self.assertEqual(status, 200)
+        scrape_status, content_type, body = _get_text(
+            f"{self.proxy.url}/metrics"
+        )
+
+        self.assertEqual(scrape_status, 200)
+        self.assertIn(PROMETHEUS_CONTENT_TYPE, content_type)
+        _assert_prometheus_text(self, body)
+        self.assertIn(
+            'deepseek_bridge_http_requests_total{method="POST",'
+            'path="/v1/chat/completions",status="200"} 1',
+            body,
+        )
+        self.assertIn(
+            'deepseek_bridge_upstream_requests_total{model="deepseek-v4-pro",'
+            'status="200"} 1',
+            body,
+        )
+        self.assertIn(
+            "deepseek_bridge_http_request_duration_seconds_count",
+            body,
+        )
+        self.assertNotIn("sk-test", body)
+
+    def test_metrics_normalizes_unknown_paths_and_models(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+
+        status, _, _ = _get_text(
+            f"{self.proxy.url}/tenant/request-123?request_id=abc"
+        )
+        METRICS.record_upstream_request(
+            model="deepseek-request-123",
+            status=200,
+            duration_seconds=0.01,
+        )
+        METRICS.record_upstream_request(
+            model="gpt-request-123",
+            status=200,
+            duration_seconds=0.01,
+        )
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertEqual(status, 404)
+        self.assertIn(
+            'deepseek_bridge_http_requests_total{method="GET",'
+            'path="unknown",status="404"} 1',
+            body,
+        )
+        self.assertIn(
+            "deepseek_bridge_upstream_requests_total"
+            '{model="deepseek-other",status="200"} 1',
+            body,
+        )
+        self.assertIn(
+            "deepseek_bridge_upstream_requests_total"
+            '{model="custom",status="200"} 1',
+            body,
+        )
+        self.assertNotIn("request-123", body)
+        self.assertNotIn("request_id", body)
+
+    def test_metrics_endpoint_reports_http_error_without_upstream(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(self._request()).encode("utf-8"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=5)
+        caught.exception.close()
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertIn(
+            'deepseek_bridge_http_requests_total{method="POST",'
+            'path="/v1/chat/completions",status="401"} 1',
+            body,
+        )
+        self.assertNotIn("deepseek_bridge_upstream_requests_total{", body)
+
+    def test_metrics_endpoint_reports_cache_hit_and_miss(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+        cache_namespace = "metrics-test"
+        user_message = {"role": "user", "content": "find files"}
+        tool_call = {
+            "id": "call_find",
+            "type": "function",
+            "function": {"name": "find", "arguments": "{}"},
+        }
+        assistant_with_reasoning = {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [tool_call],
+        }
+        self.store.store_assistant_message(
+            assistant_with_reasoning,
+            conversation_scope([user_message], cache_namespace),
+            cache_namespace,
+            [user_message],
+        )
+
+        hit_messages, patched_count, missing_indexes, _ = normalize_messages(
+            [
+                user_message,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [tool_call],
+                },
+            ],
+            self.store,
+            cache_namespace,
+            repair_reasoning=True,
+            keep_reasoning=True,
+        )
+        miss_messages, _, miss_indexes, _ = normalize_messages(
+            [
+                user_message,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_missing",
+                            "type": "function",
+                            "function": {
+                                "name": "missing",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+            ],
+            self.store,
+            cache_namespace,
+            repair_reasoning=True,
+            keep_reasoning=True,
+        )
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertEqual(patched_count, 1)
+        self.assertEqual(missing_indexes, [])
+        self.assertEqual(hit_messages[1].get("reasoning_content"), "")
+        self.assertEqual(miss_indexes, [1])
+        self.assertNotIn("reasoning_content", miss_messages[1])
+        self.assertIn(
+            'deepseek_bridge_cache_hits_total{backend="sqlite"} 1',
+            body,
+        )
+        self.assertIn(
+            'deepseek_bridge_cache_misses_total{backend="sqlite"} 1',
+            body,
+        )
+        self.assertIn(
+            'deepseek_bridge_cache_hit_ratio{backend="sqlite"} 0.5',
+            body,
+        )
+        self.assertIn(
+            "deepseek_bridge_storage_operation_duration_seconds_count"
+            '{backend="sqlite",operation="get"}',
+            body,
+        )
+
+    def test_metrics_endpoint_reports_streaming_gauge_after_close(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+
+        with urlopen(request, timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("data: [DONE]", response.read().decode("utf-8"))
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
+        self.assertIn("deepseek_bridge_streams_active 0", body)
+
+    def test_metrics_endpoint_reports_streaming_gauge_while_open(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+        _PlainFakeUpstream.delay_before_stream_response = 0.5
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+        result: dict[str, str] = {}
+
+        def send_stream_request() -> None:
+            with urlopen(request, timeout=3) as response:
+                result["body"] = response.read().decode("utf-8")
+
+        worker = threading.Thread(target=send_stream_request)
+        worker.start()
+        self.assertTrue(_PlainFakeUpstream.request_started.wait(timeout=2))
+
+        deadline = time.monotonic() + 2
+        active_body = ""
+        while time.monotonic() < deadline:
+            _, _, active_body = _get_text(f"{self.proxy.url}/metrics")
+            if "deepseek_bridge_streams_active 1" in active_body:
+                break
+            time.sleep(0.01)
+        worker.join(timeout=3)
+        _, _, closed_body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertIn("deepseek_bridge_streams_active 1", active_body)
+        self.assertIn("data: [DONE]", result["body"])
+        self.assertIn("deepseek_bridge_streams_active 0", closed_body)
+
+    def test_metrics_endpoint_reports_storage_errors(self) -> None:
+        class _BrokenConnection:
+            def execute(self, *_args: object, **_kwargs: object) -> object:
+                raise RuntimeError("database is unavailable")
+
+            def close(self) -> None:
+                return
+
+        self.proxy.server.config = replace(
+            self.proxy.server.config, metrics_enabled=True
+        )
+        self.store._conn = _BrokenConnection()
+
+        self.assertIsNone(self.store.get("boom"))
+        _, _, body = _get_text(f"{self.proxy.url}/metrics")
+
+        self.assertIn(
+            'deepseek_bridge_storage_errors_total{backend="sqlite",'
+            'operation="get"} 1',
+            body,
+        )
+
 
 class BoundedPoolTests(unittest.TestCase):
     """Tests for BoundedThreadPoolHTTPServer queue rejection."""
@@ -1378,13 +1718,8 @@ class BoundedPoolTests(unittest.TestCase):
                 new_callable=PropertyMock,
                 return_value=1,
             ):
-                status, payload = _post(
-                    f"{proxy.url}/v1/chat/completions",
-                    {
-                        "model": "deepseek-v4-pro",
-                        "messages": [{"role": "user", "content": "hi"}],
-                    },
-                )
+                status, _, body = _get_text(f"{proxy.url}/v1/models")
+            payload = json.loads(body)
             self.assertEqual(status, 503)
             self.assertEqual(payload["error"]["code"], "service_unavailable")
         finally:

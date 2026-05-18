@@ -214,6 +214,7 @@ class CliArgParserTests(unittest.TestCase):
                 "--debug",
                 "--compact",
                 "--headless",
+                "--metrics",
                 "--missing-reasoning-strategy",
                 "reject",
                 "--ollama",
@@ -226,6 +227,7 @@ class CliArgParserTests(unittest.TestCase):
         self.assertTrue(args.debug)
         self.assertTrue(args.compact)
         self.assertTrue(args.headless)
+        self.assertTrue(args.metrics)
         self.assertEqual(args.missing_reasoning_strategy, "reject")
         self.assertTrue(args.ollama)
         self.assertEqual(args.config_path, Path("/tmp/config.yaml"))
@@ -243,6 +245,7 @@ class CliArgParserTests(unittest.TestCase):
                 "--no-cors",
                 "--no-compact",
                 "--no-collapsible-reasoning",
+                "--no-metrics",
             ]
         )
         self.assertFalse(args.display_reasoning)
@@ -250,6 +253,7 @@ class CliArgParserTests(unittest.TestCase):
         self.assertFalse(args.cors)
         self.assertFalse(args.compact)
         self.assertFalse(args.collapsible_reasoning)
+        self.assertFalse(args.metrics)
 
     def test_version_action(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
@@ -503,6 +507,7 @@ class CliMainTests(unittest.TestCase):
                     "120",
                     "--max-thread-pool",
                     "20",
+                    "--metrics",
                     "--tunnel",
                     "none",
                 ]
@@ -518,6 +523,7 @@ class CliMainTests(unittest.TestCase):
             self.assertEqual(server.config.max_thread_pool, 20)
             self.assertEqual(server.config.max_pool_connections, 20)
             self.assertEqual(server.config.max_queue_size, 50)
+            self.assertTrue(server.config.metrics_enabled)
             self.assertEqual(server.config.tunnel, "none")
             self.assertEqual(mock_store_cls.call_args.kwargs["max_rows"], 42)
 

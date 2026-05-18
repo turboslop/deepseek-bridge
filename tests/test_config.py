@@ -567,6 +567,7 @@ class ConfigTests(unittest.TestCase):
                     "DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH": "env.sqlite3",
                     "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey://env.invalid/0",
                     "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "env-prefix:",
+                    "DEEPSEEK_BRIDGE_METRICS_ENABLED": "true",
                 },
             )
 
@@ -584,6 +585,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.valkey_url, "valkey://env.invalid/0")
         self.assertEqual(config.valkey_key_prefix, "env-prefix")
         self.assertIsNone(config.log_dir)
+        self.assertTrue(config.metrics_enabled)
 
     def test_environment_can_enable_json_logging(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -761,20 +763,17 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tunnel.mode"):
                 ProxyConfig.from_file(config_path=config_path, environ={})
 
-    def test_unsupported_future_config_knobs_raise_value_error(self) -> None:
-        cases = [
-            ("metrics:\n  enabled: true\n", "metrics.enabled"),
-        ]
-        for text, pattern in cases:
-            with (
-                self.subTest(pattern=pattern),
-                TemporaryDirectory() as temp_dir,
-            ):
-                config_path = Path(temp_dir) / "config.yaml"
-                config_path.write_text(text, encoding="utf-8")
+    def test_metrics_enabled_is_supported(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["metrics:", "  enabled: true"]),
+                encoding="utf-8",
+            )
 
-                with self.assertRaisesRegex(ValueError, pattern):
-                    ProxyConfig.from_file(config_path=config_path, environ={})
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertTrue(config.metrics_enabled)
 
     def test_version_is_valid_pep440(self) -> None:
         parts = __version__.split(".")

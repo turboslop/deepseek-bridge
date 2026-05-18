@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import patch
 
 from deepseek_bridge.config import _auto_cache_max_rows
+from deepseek_bridge.metrics import METRICS
 from deepseek_bridge.reasoning_store import (
     ReasoningStore,
     ReasoningStoreBase,
@@ -661,15 +662,27 @@ class ValkeyReasoningStoreTests(unittest.TestCase):
         )
 
     def test_connection_failures_are_sanitized_and_do_not_raise(self) -> None:
+        METRICS.reset()
+        self.addCleanup(METRICS.reset)
         client = _FakeValkeyClient()
         store = self._store(client)
-        client.fail_ops.update({"set", "get", "ping", "scan_iter", "zcard"})
+        client.fail_ops.update(
+            {
+                "set",
+                "get",
+                "ping",
+                "scan_iter",
+                "zcard",
+                "zremrangebyscore",
+            }
+        )
 
         with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
             store.put("k", "reasoning", {"role": "assistant"})
             self.assertIsNone(store.get("k"))
             self.assertEqual(store.healthcheck(), (False, "unavailable"))
             self.assertEqual(store.clear(), 0)
+            self.assertEqual(store.prune(), 0)
             self.assertEqual(store.stats().entries, None)
 
         output = "\n".join(captured.output)
@@ -677,6 +690,22 @@ class ValkeyReasoningStoreTests(unittest.TestCase):
         self.assertNotIn("secret", output)
         self.assertNotIn("example.invalid", output)
         self.assertNotIn("valkey://", output)
+        metrics = METRICS.render_prometheus()
+        self.assertIn(
+            'deepseek_bridge_storage_errors_total{backend="valkey",'
+            'operation="put"} 1',
+            metrics,
+        )
+        self.assertIn(
+            'deepseek_bridge_storage_errors_total{backend="valkey",'
+            'operation="stats"} 1',
+            metrics,
+        )
+        self.assertIn(
+            "deepseek_bridge_storage_operation_duration_seconds_count"
+            '{backend="valkey",operation="get"} 1',
+            metrics,
+        )
 
     def test_close_prevents_later_cache_operations(self) -> None:
         client = _FakeValkeyClient()

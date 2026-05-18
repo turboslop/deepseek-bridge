@@ -305,6 +305,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     group_other.add_argument(
+        "--metrics",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Expose Prometheus metrics on /metrics",
+    )
+    group_other.add_argument(
         "--missing-reasoning-strategy",
         choices=["recover", "reject"],
         help=(
@@ -435,6 +441,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["compact"] = args.compact
     if args.headless:
         updates["compact"] = True
+    if args.metrics is not None:
+        updates["metrics_enabled"] = args.metrics
     if args.trace_dir is not None:
         updates["trace_dir"] = args.trace_dir
     if args.display_reasoning is not None:

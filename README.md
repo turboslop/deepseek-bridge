@@ -215,8 +215,8 @@ are relative to the process working directory unless absolute.
 `storage.backend` must be `sqlite` or `valkey`; Valkey storage requires
 `storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`. `logging.format` supports
 `text` and `json`; use `DEEPSEEK_BRIDGE_LOG_FORMAT=json` for one-line
-structured records in container logging stacks. `metrics.enabled` must be
-`false` until that runtime feature is implemented.
+structured records in container logging stacks. Set `metrics.enabled` to
+`true` to expose Prometheus metrics on `/metrics`.
 
 Supported environment variables:
 

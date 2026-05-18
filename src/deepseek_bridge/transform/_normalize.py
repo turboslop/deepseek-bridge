@@ -10,6 +10,7 @@ from .._normalization import (
     strip_cursor_thinking_blocks,
 )
 from ..logging import INTERNAL_LOG
+from ..metrics import METRICS
 from ..reasoning_store import (
     ReasoningStoreProtocol,
     conversation_scope,
@@ -103,6 +104,12 @@ def normalize_message(
                             break
                 if needs_reasoning and not patched:
                     missing = True
+                if needs_reasoning and store is not None:
+                    backend = str(getattr(store, "backend_name", "unknown"))
+                    if patched:
+                        METRICS.record_cache_hit(backend)
+                    elif missing:
+                        METRICS.record_cache_miss(backend)
                 if needs_reasoning:
                     diagnostic = {
                         "message_index": len(prior_messages),

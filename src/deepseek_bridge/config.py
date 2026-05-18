@@ -955,14 +955,6 @@ def validate_runtime_settings(settings: Mapping[str, Any]) -> None:
                 "storage.valkey.key_prefix"
             )
 
-    metrics_enabled = as_bool(
-        setting_value(settings, "metrics_enabled"), DEFAULT_METRICS_ENABLED
-    )
-    if metrics_enabled:
-        raise ValueError(
-            "metrics.enabled is not implemented yet; leave it false"
-        )
-
 
 def settings_from_config(
     config_path: str | Path | None,
