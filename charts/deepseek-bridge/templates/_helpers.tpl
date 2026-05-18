@@ -114,6 +114,9 @@ misconfiguration.
 {{- if and .Values.serviceMonitor.enabled (not .Values.metrics.enabled) -}}
 {{- fail "serviceMonitor.enabled requires metrics.enabled=true so /metrics is served" -}}
 {{- end -}}
+{{- if and .Values.grafanaDashboard.enabled (not .Values.metrics.enabled) -}}
+{{- fail "grafanaDashboard.enabled requires metrics.enabled=true so dashboard application panels have metrics" -}}
+{{- end -}}
 {{- if and .Values.autoscaling.enabled .Values.autoscaling.targetCPUUtilizationPercentage (not .Values.resources.requests.cpu) -}}
 {{- fail "autoscaling with targetCPUUtilizationPercentage requires resources.requests.cpu" -}}
 {{- end -}}

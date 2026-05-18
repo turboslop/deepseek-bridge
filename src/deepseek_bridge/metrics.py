@@ -3,19 +3,39 @@ from __future__ import annotations
 import math
 import threading
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 LabelSet = tuple[tuple[str, str], ...]
 MetricKey = tuple[str, LabelSet]
+HISTOGRAM_BUCKETS = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+    300.0,
+)
 
 
 @dataclass
-class _Summary:
+class _Histogram:
     count: int = 0
     total: float = 0.0
+    buckets: dict[float, int] = field(
+        default_factory=lambda: dict.fromkeys(HISTOGRAM_BUCKETS, 0)
+    )
 
 
 def _labels(values: Mapping[str, object] | None = None) -> LabelSet:
@@ -87,13 +107,13 @@ class MetricsRegistry:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._counters: dict[MetricKey, float] = {}
-        self._summaries: dict[MetricKey, _Summary] = {}
+        self._histograms: dict[MetricKey, _Histogram] = {}
         self._streams_active = 0
 
     def reset(self) -> None:
         with self._lock:
             self._counters.clear()
-            self._summaries.clear()
+            self._histograms.clear()
             self._streams_active = 0
 
     def inc_counter(
@@ -115,9 +135,12 @@ class MetricsRegistry:
         key = (name, _labels(labels))
         safe_value = value if math.isfinite(value) and value >= 0 else 0.0
         with self._lock:
-            summary = self._summaries.setdefault(key, _Summary())
-            summary.count += 1
-            summary.total += safe_value
+            histogram = self._histograms.setdefault(key, _Histogram())
+            histogram.count += 1
+            histogram.total += safe_value
+            for bucket in HISTOGRAM_BUCKETS:
+                if safe_value <= bucket:
+                    histogram.buckets[bucket] += 1
 
     def record_http_request(
         self,
@@ -195,9 +218,13 @@ class MetricsRegistry:
     def render_prometheus(self, server: Any | None = None) -> str:
         with self._lock:
             counters = dict(self._counters)
-            summaries = {
-                key: _Summary(value.count, value.total)
-                for key, value in self._summaries.items()
+            histograms = {
+                key: _Histogram(
+                    count=value.count,
+                    total=value.total,
+                    buckets=dict(value.buckets),
+                )
+                for key, value in self._histograms.items()
             }
             streams_active = self._streams_active
 
@@ -208,9 +235,9 @@ class MetricsRegistry:
             "deepseek_bridge_http_requests_total",
             "Inbound HTTP requests by method, normalized path, and status.",
         )
-        self._emit_summary(
+        self._emit_histogram(
             lines,
-            summaries,
+            histograms,
             "deepseek_bridge_http_request_duration_seconds",
             "Inbound HTTP request duration in seconds.",
         )
@@ -220,9 +247,9 @@ class MetricsRegistry:
             "deepseek_bridge_upstream_requests_total",
             "Upstream DeepSeek requests by model and status.",
         )
-        self._emit_summary(
+        self._emit_histogram(
             lines,
-            summaries,
+            histograms,
             "deepseek_bridge_upstream_request_duration_seconds",
             "Upstream DeepSeek request duration in seconds.",
         )
@@ -246,9 +273,9 @@ class MetricsRegistry:
             "Reasoning cache lookup misses by backend.",
         )
         self._emit_cache_hit_ratio(lines, counters)
-        self._emit_summary(
+        self._emit_histogram(
             lines,
-            summaries,
+            histograms,
             "deepseek_bridge_storage_operation_duration_seconds",
             "Reasoning storage operation duration in seconds.",
         )
@@ -280,21 +307,34 @@ class MetricsRegistry:
             )
 
     @staticmethod
-    def _emit_summary(
+    def _emit_histogram(
         lines: list[str],
-        summaries: dict[MetricKey, _Summary],
+        histograms: dict[MetricKey, _Histogram],
         name: str,
         help_text: str,
     ) -> None:
         lines.append(f"# HELP {name} {help_text}")
-        lines.append(f"# TYPE {name} summary")
+        lines.append(f"# TYPE {name} histogram")
         samples = [
             (labels, value)
-            for (metric_name, labels), value in summaries.items()
+            for (metric_name, labels), value in histograms.items()
             if metric_name == name
         ]
         for labels, value in sorted(samples):
             label_text = _format_labels(labels)
+            for bucket in HISTOGRAM_BUCKETS:
+                bucket_labels = dict(labels)
+                bucket_labels["le"] = _format_number(bucket)
+                lines.append(
+                    f"{name}_bucket{_format_labels(_labels(bucket_labels))} "
+                    f"{value.buckets.get(bucket, 0)}"
+                )
+            inf_labels = dict(labels)
+            inf_labels["le"] = "+Inf"
+            lines.append(
+                f"{name}_bucket{_format_labels(_labels(inf_labels))} "
+                f"{value.count}"
+            )
             lines.append(f"{name}_count{label_text} {value.count}")
             lines.append(
                 f"{name}_sum{label_text} {_format_number(value.total)}"

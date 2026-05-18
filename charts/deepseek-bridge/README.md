@@ -48,3 +48,22 @@ helm install deepseek-bridge ./charts/deepseek-bridge \
 ```
 
 Metrics are served on `/metrics` through the `http` service port.
+
+## Grafana dashboard
+
+The chart can package the bundled Kubernetes dashboard as a ConfigMap for
+Grafana sidecar importers:
+
+```sh
+helm install deepseek-bridge ./charts/deepseek-bridge \
+  --set metrics.enabled=true \
+  --set grafanaDashboard.enabled=true
+```
+
+The dashboard includes namespace, service, and pod variables, Prometheus panels
+for application and pod metrics, and a Loki logs panel. The Loki panel is useful
+when a Loki datasource exists; Prometheus-only Grafana installs can still import
+the dashboard, but that panel will remain empty until Loki is configured.
+
+For Prometheus Operator users, set `serviceMonitor.enabled=true` as well so the
+application metrics are scraped by the cluster Prometheus.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import unittest
@@ -19,6 +20,100 @@ def _non_empty_docs(rendered: str) -> list[dict[str, Any]]:
     return [
         doc for doc in yaml.safe_load_all(rendered) if isinstance(doc, dict)
     ]
+
+
+class GrafanaDashboardTests(unittest.TestCase):
+    def setUp(self) -> None:
+        dashboard_path = CHART_DIR / "dashboards" / "deepseek-bridge.json"
+        self.dashboard = json.loads(dashboard_path.read_text())
+
+    def _target_exprs(self) -> list[str]:
+        exprs: list[str] = []
+        for panel in self.dashboard["panels"]:
+            for target in panel.get("targets", []):
+                expr = target.get("expr")
+                if isinstance(expr, str):
+                    exprs.append(expr)
+        return exprs
+
+    def test_dashboard_defines_kubernetes_variables(self) -> None:
+        variables = {
+            item["name"]: item for item in self.dashboard["templating"]["list"]
+        }
+
+        self.assertIn("DS_PROMETHEUS", variables)
+        self.assertIn("DS_LOKI", variables)
+        self.assertIn("namespace", variables)
+        self.assertIn("service", variables)
+        self.assertIn("pod", variables)
+        self.assertTrue(variables["namespace"]["includeAll"])
+        self.assertTrue(variables["service"]["includeAll"])
+        self.assertTrue(variables["pod"]["includeAll"])
+        self.assertIn(
+            "label_values(deepseek_bridge_streams_active, namespace)",
+            variables["namespace"]["query"],
+        )
+        self.assertIn(
+            "label_values(deepseek_bridge_streams_active",
+            variables["service"]["query"],
+        )
+        self.assertIn('namespace=~"$namespace"', variables["service"]["query"])
+        self.assertIn(
+            "deepseek_bridge_streams_active",
+            variables["pod"]["query"],
+        )
+        self.assertIn('service=~"$service"', variables["pod"]["query"])
+        self.assertNotIn("allValue", variables["pod"])
+
+    def test_dashboard_covers_issue_observability_panels(self) -> None:
+        panel_titles = {panel["title"] for panel in self.dashboard["panels"]}
+
+        self.assertIn("HTTP request rate", panel_titles)
+        self.assertIn("HTTP error rate", panel_titles)
+        self.assertIn("HTTP latency", panel_titles)
+        self.assertIn("Upstream request rate", panel_titles)
+        self.assertIn("Upstream latency", panel_titles)
+        self.assertIn("Upstream error rate", panel_titles)
+        self.assertIn("Active streaming responses", panel_titles)
+        self.assertIn("Thread pool workers and queue", panel_titles)
+        self.assertIn("Cache hit ratio", panel_titles)
+        self.assertIn("Cache hits and misses", panel_titles)
+        self.assertIn("Valkey operation latency", panel_titles)
+        self.assertIn("Valkey storage errors", panel_titles)
+        self.assertIn("Pod CPU usage", panel_titles)
+        self.assertIn("Pod memory usage", panel_titles)
+        self.assertIn("Pod restarts", panel_titles)
+        self.assertIn("Pod logs (Loki)", panel_titles)
+
+    def test_dashboard_uses_exported_metric_names(self) -> None:
+        joined_exprs = "\n".join(self._target_exprs())
+
+        self.assertIn("deepseek_bridge_http_requests_total", joined_exprs)
+        self.assertIn(
+            "deepseek_bridge_http_request_duration_seconds_bucket",
+            joined_exprs,
+        )
+        self.assertIn("deepseek_bridge_upstream_requests_total", joined_exprs)
+        self.assertIn(
+            "deepseek_bridge_upstream_request_duration_seconds_bucket",
+            joined_exprs,
+        )
+        self.assertIn("deepseek_bridge_streams_active", joined_exprs)
+        self.assertIn("deepseek_bridge_thread_pool_active", joined_exprs)
+        self.assertIn("deepseek_bridge_thread_pool_queue", joined_exprs)
+        self.assertIn("deepseek_bridge_cache_hit_ratio", joined_exprs)
+        self.assertIn("deepseek_bridge_cache_hits_total", joined_exprs)
+        self.assertIn("deepseek_bridge_cache_misses_total", joined_exprs)
+        self.assertIn(
+            "deepseek_bridge_storage_operation_duration_seconds_bucket",
+            joined_exprs,
+        )
+        self.assertIn("deepseek_bridge_storage_errors_total", joined_exprs)
+        self.assertIn("histogram_quantile(0.95", joined_exprs)
+        self.assertIn("$__rate_interval", joined_exprs)
+        self.assertIn('namespace=~"$namespace"', joined_exprs)
+        self.assertIn('service=~"$service"', joined_exprs)
+        self.assertIn('pod=~"$pod"', joined_exprs)
 
 
 @unittest.skipUnless(HELM, "helm is not installed")
@@ -229,10 +324,31 @@ class HelmChartTests(unittest.TestCase):
         self.assertEqual(
             service_monitor["spec"]["endpoints"][0]["path"], "/metrics"
         )
+        rendered_dashboard = json.loads(
+            dashboard["data"]["deepseek-bridge.json"]
+        )
+        self.assertEqual(rendered_dashboard["uid"], "deepseek-bridge")
+        self.assertEqual(
+            rendered_dashboard["title"], "DeepSeek Bridge Kubernetes"
+        )
+        self.assertTrue(rendered_dashboard["panels"])
+        self.assertIn("templating", rendered_dashboard)
         self.assertIn(
             "deepseek_bridge_cache_hit_ratio",
             dashboard["data"]["deepseek-bridge.json"],
         )
+
+    def test_grafana_dashboard_requires_metrics_endpoint(self) -> None:
+        result = self._helm(
+            "template",
+            "deepseek-bridge",
+            str(CHART_DIR),
+            "--set",
+            "grafanaDashboard.enabled=true",
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("grafanaDashboard.enabled requires", result.stderr)
 
     def test_ingress_and_httproute_render(self) -> None:
         docs = self._render(
