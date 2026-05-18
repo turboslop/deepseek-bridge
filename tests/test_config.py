@@ -350,6 +350,60 @@ class ConfigTests(unittest.TestCase):
             config.reasoning_content_path, Path(temp_dir) / "custom.sqlite3"
         )
 
+    def test_structured_valkey_config_loads_url_and_prefix(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "storage:",
+                        "  backend: valkey",
+                        "  valkey:",
+                        "    url: valkey://:secret@example.invalid/0",
+                        "    key_prefix: 'team-a:'",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(config.storage_backend, "valkey")
+        self.assertEqual(
+            config.valkey_url, "valkey://:secret@example.invalid/0"
+        )
+        self.assertEqual(config.valkey_key_prefix, "team-a")
+
+    def test_valkey_storage_requires_url(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["storage:", "  backend: valkey"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "VALKEY_URL"):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
+    def test_valkey_storage_rejects_empty_prefix(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "storage:",
+                        "  backend: valkey",
+                        "  valkey:",
+                        "    url: valkey://example.invalid/0",
+                        "    key_prefix: ':'",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "key_prefix"):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
     def test_structured_tunnel_url_without_mode_uses_default_mode(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
@@ -509,6 +563,8 @@ class ConfigTests(unittest.TestCase):
                     "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS": "120",
                     "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_ENTRIES": "10001",
                     "DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH": "env.sqlite3",
+                    "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey://env.invalid/0",
+                    "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "env-prefix:",
                 },
             )
 
@@ -523,7 +579,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config.reasoning_content_path, Path.cwd() / "env.sqlite3"
         )
+        self.assertEqual(config.valkey_url, "valkey://env.invalid/0")
+        self.assertEqual(config.valkey_key_prefix, "env-prefix")
         self.assertIsNone(config.log_dir)
+
+    def test_environment_can_select_valkey_storage(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text("", encoding="utf-8")
+
+            config = ProxyConfig.from_file(
+                config_path=config_path,
+                environ={
+                    "DEEPSEEK_BRIDGE_STORAGE_BACKEND": "valkey",
+                    "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey://env.invalid/0",
+                },
+            )
+
+        self.assertEqual(config.storage_backend, "valkey")
+        self.assertEqual(config.valkey_url, "valkey://env.invalid/0")
 
     def test_memory_reasoning_path_is_not_resolved_relative_to_config(
         self,
@@ -663,7 +737,6 @@ class ConfigTests(unittest.TestCase):
 
     def test_unsupported_future_config_knobs_raise_value_error(self) -> None:
         cases = [
-            ("storage:\n  backend: valkey\n", "storage backend 'valkey'"),
             ("metrics:\n  enabled: true\n", "metrics.enabled"),
             ("logging:\n  format: json\n", "logging format 'json'"),
         ]

@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: deepseek-bridge
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: deepseek-bridge
@@ -35,8 +35,16 @@ spec:
             - "9000"
             - --tunnel
             - none
-            - --reasoning-content-path
-            - /var/lib/deepseek-bridge/reasoning_content.sqlite3
+          env:
+            - name: DEEPSEEK_BRIDGE_STORAGE_BACKEND
+              value: valkey
+            - name: DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX
+              value: deepseek-bridge
+            - name: DEEPSEEK_BRIDGE_VALKEY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: deepseek-bridge-valkey
+                  key: url
           ports:
             - name: http
               containerPort: 9000
@@ -58,12 +66,6 @@ spec:
             capabilities:
               drop:
                 - ALL
-          volumeMounts:
-            - name: reasoning-cache
-              mountPath: /var/lib/deepseek-bridge
-      volumes:
-        - name: reasoning-cache
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

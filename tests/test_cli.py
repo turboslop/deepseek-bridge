@@ -58,6 +58,32 @@ class CliImportTests(unittest.TestCase):
         self.assertIn("Entries:      2", output)
         self.assertNotIn("Reasoning DB", output)
 
+    def test_create_reasoning_store_supports_valkey_backend(self) -> None:
+        from deepseek_bridge.cli import create_reasoning_store
+
+        config = ProxyConfig(
+            storage_backend="valkey",
+            valkey_url="valkey://example.invalid/0",
+            valkey_key_prefix="team-a",
+            reasoning_cache_max_age_seconds=60,
+            reasoning_cache_max_entries=10,
+            max_thread_pool=12,
+        )
+
+        with patch(
+            "deepseek_bridge.valkey_store.ValkeyReasoningStore"
+        ) as mock_store_cls:
+            store = create_reasoning_store(config)
+
+        self.assertIs(store, mock_store_cls.return_value)
+        mock_store_cls.assert_called_once_with(
+            "valkey://example.invalid/0",
+            key_prefix="team-a",
+            max_age_seconds=60,
+            max_rows=10,
+            max_connections=12,
+        )
+
 
 # ---------------------------------------------------------------------------
 # build_arg_parser – verify every flag parses correctly
