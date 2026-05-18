@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue to Green PR"
+  short_description: "Repo workflow for taking an issue through PR checks."
+  default_prompt: "Take an issue from this repository through branch, implementation, validation, PR creation, and green CI."
