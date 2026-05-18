@@ -32,7 +32,7 @@ DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mod
 - `x-request-id` UUID header on every response.
 - OpenAI-standard error format.
 - CORS headers enabled by default.
-- `/v1/embeddings`, `/v1/health`, and `/v1/models` endpoints.
+- `/healthz` liveness, `/readyz` readiness, `/v1/embeddings`, `/v1/health`, and `/v1/models` endpoints.
 - `/v1/completions` legacy endpoint (auto-converts `prompt` to `messages`).
 - Multimodal content arrays preserved.
 - DeepSeek V4 thinking parameter support (`thinking`, `reasoning_effort`, `response_format`, `logprobs`).
@@ -69,6 +69,9 @@ deepseek-bridge
 
 # Run without tunnel (localhost only)
 deepseek-bridge --tunnel none --port 9000
+
+# Run as a Kubernetes workload
+deepseek-bridge --runtime-mode kubernetes --host 0.0.0.0 --port 9000 --tunnel none
 
 # Debug output with trace dumps
 deepseek-bridge --debug --trace-dir ./dumps
@@ -126,6 +129,7 @@ ownership setting.
 All settings are configurable via `~/.deepseek-bridge/config.yaml` or command-line overrides. Example configuration:
 
 ```yaml
+runtime_mode: local
 model: deepseek-v4-pro
 base_url: https://api.deepseek.com
 thinking: enabled
@@ -150,10 +154,45 @@ stream_read_timeout: 180
 request_timeout: 300
 ```
 
+Settings can also come from environment variables named with the
+`DEEPSEEK_BRIDGE_` prefix, for example `DEEPSEEK_BRIDGE_RUNTIME_MODE`,
+`DEEPSEEK_BRIDGE_HOST`, `DEEPSEEK_BRIDGE_PORT`,
+`DEEPSEEK_BRIDGE_TUNNEL`, `DEEPSEEK_BRIDGE_BASE_URL`, and
+`DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH`. Precedence is config file,
+then environment, then command-line flags.
+
 For browser clients served from a public tunnel or custom domain, add that
 exact origin to `cors_allowed_origins`. Setting `cors_allowed_origins: ["*"]`
 is supported, but credentialed responses echo the request origin instead of
 combining credentials with wildcard `*`.
+
+## Kubernetes
+
+Use Kubernetes mode for headless container execution:
+
+```bash
+deepseek-bridge --runtime-mode kubernetes --host 0.0.0.0 --port 9000 --tunnel none
+```
+
+In Kubernetes mode, the proxy defaults to `0.0.0.0:9000`, disables tunnels,
+logs only to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`,
+and uses an in-memory reasoning cache unless `reasoning_content_path` is set.
+That allows a read-only root filesystem by default. If you want the SQLite
+reasoning cache to survive process restarts, mount a writable directory and set
+`--reasoning-content-path` or `DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH` to a file
+inside that mount.
+
+Use distinct probes:
+
+- `/healthz` is a lightweight liveness check and returns 200 while the process is serving.
+- `/readyz` returns 200 only when the server is accepting traffic, storage is usable, and shutdown is not draining.
+
+An example Deployment and Service live in
+[`examples/kubernetes/deployment.yaml`](examples/kubernetes/deployment.yaml).
+The example sets `readOnlyRootFilesystem: true`, disables tunnels, binds to
+`0.0.0.0`, uses separate liveness/readiness probes, and gives SQLite one
+explicit writable `emptyDir` mount. Set `terminationGracePeriodSeconds` longer
+than your expected request or stream duration so SIGTERM can drain active work.
 
 ## Client Setup
 
@@ -274,6 +313,7 @@ uv run --extra dev --python 3.14 coverage report
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model` | `deepseek-v4-pro` | Fallback model when request omits it |
+| `--runtime-mode` | `local` | Runtime profile (`local`, `kubernetes`) |
 | `--thinking` | `enabled` | DeepSeek thinking mode |
 | `--reasoning-effort` | `max` | Reasoning effort level |
 | `--display-reasoning` | on | Show reasoning content in client UI |

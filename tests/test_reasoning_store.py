@@ -95,6 +95,25 @@ class ReasoningStoreTests(unittest.TestCase):
         finally:
             store.close()
 
+    def test_health_check_reports_ok_for_open_store(self) -> None:
+        store = ReasoningStore(":memory:")
+        try:
+            ok, status = store.health_check()
+        finally:
+            store.close()
+
+        self.assertTrue(ok)
+        self.assertEqual(status, "ok")
+
+    def test_health_check_reports_closed_store(self) -> None:
+        store = ReasoningStore(":memory:")
+        store.close()
+
+        ok, status = store.health_check()
+
+        self.assertFalse(ok)
+        self.assertEqual(status, "closed")
+
     # ── Vacuum / Bloat tests ──────────────────────────────────────
 
     def test_auto_vacuum_on_new_file_db(self) -> None:

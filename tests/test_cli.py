@@ -99,12 +99,12 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.cors_allowed_origins, ["https://app.example.com"])
         self.assertFalse(args.cors_allow_credentials)
 
-    def test_tunnel_default_is_cloudflared(self) -> None:
+    def test_tunnel_default_is_loaded_from_config(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
 
         parser = build_arg_parser()
         args = parser.parse_args([])
-        self.assertEqual(args.tunnel, "cloudflared")
+        self.assertIsNone(args.tunnel)
 
     def test_storage_flags(self) -> None:
         from deepseek_bridge.cli import build_arg_parser
@@ -169,6 +169,8 @@ class CliArgParserTests(unittest.TestCase):
                 "--ollama",
                 "--config",
                 "/tmp/config.yaml",
+                "--runtime-mode",
+                "kubernetes",
             ]
         )
         self.assertTrue(args.debug)
@@ -177,6 +179,7 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.missing_reasoning_strategy, "reject")
         self.assertTrue(args.ollama)
         self.assertEqual(args.config_path, Path("/tmp/config.yaml"))
+        self.assertEqual(args.runtime_mode, "kubernetes")
 
     def test_negative_boolean_flags(self) -> None:
         """--no-* flags (BooleanOptionalAction) set to False."""
@@ -306,6 +309,76 @@ class CliMainTests(unittest.TestCase):
             result = main(["--tunnel", "none"])
 
             self.assertEqual(result, 0)
+            mock_create.assert_not_called()
+
+    def test_main_kubernetes_runtime_skips_tunnel_and_file_logs(self) -> None:
+        """Kubernetes runtime can start without tunnel or persistent logs."""
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch("deepseek_bridge.cli.create_tunnel") as mock_create,
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging") as mock_log,
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(
+                runtime_mode="kubernetes",
+                host="0.0.0.0",
+                tunnel="none",
+                log_dir=None,
+                reasoning_content_path=":memory:",
+            )
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main(["--runtime-mode", "kubernetes"])
+
+            self.assertEqual(result, 0)
+            mock_cfg_cls.from_file.assert_called_once_with(
+                config_path=None,
+                runtime_mode="kubernetes",
+            )
+            mock_log.assert_called_once()
+            self.assertIsNone(mock_log.call_args.kwargs["log_dir"])
+            mock_store_cls.assert_called_once_with(
+                ":memory:", max_age_seconds=ANY
+            )
+            mock_create.assert_not_called()
+
+    def test_main_rejects_tunnel_in_kubernetes_runtime(self) -> None:
+        """Kubernetes runtime must not start cloudflared or ngrok."""
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch("deepseek_bridge.cli.create_tunnel") as mock_create,
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging"),
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(
+                runtime_mode="kubernetes",
+                host="0.0.0.0",
+                tunnel="cloudflared",
+                log_dir=None,
+                reasoning_content_path=":memory:",
+            )
+
+            from deepseek_bridge.cli import main
+
+            result = main(["--runtime-mode", "kubernetes"])
+
+            self.assertEqual(result, 2)
+            mock_store_cls.assert_not_called()
             mock_create.assert_not_called()
 
     def test_main_runs_http_server(self) -> None:

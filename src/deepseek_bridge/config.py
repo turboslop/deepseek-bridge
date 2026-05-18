@@ -66,6 +66,56 @@ DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_DISK_MB = 500
 DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
+DEFAULT_RUNTIME_MODE = "local"
+KUBERNETES_RUNTIME_MODE = "kubernetes"
+KUBERNETES_HOST = "0.0.0.0"
+KUBERNETES_TUNNEL = "none"
+KUBERNETES_REASONING_CONTENT_PATH = ":memory:"
+
+ENV_SETTING_KEYS: dict[str, tuple[str, ...]] = {
+    "runtime_mode": (
+        "DEEPSEEK_BRIDGE_RUNTIME_MODE",
+        "DEEPSEEK_BRIDGE_RUNTIME",
+    ),
+    "host": ("DEEPSEEK_BRIDGE_HOST",),
+    "port": ("DEEPSEEK_BRIDGE_PORT",),
+    "base_url": (
+        "DEEPSEEK_BRIDGE_BASE_URL",
+        "DEEPSEEK_BRIDGE_UPSTREAM_BASE_URL",
+    ),
+    "model": (
+        "DEEPSEEK_BRIDGE_MODEL",
+        "DEEPSEEK_BRIDGE_UPSTREAM_MODEL",
+    ),
+    "thinking": ("DEEPSEEK_BRIDGE_THINKING",),
+    "reasoning_effort": ("DEEPSEEK_BRIDGE_REASONING_EFFORT",),
+    "display_reasoning": ("DEEPSEEK_BRIDGE_DISPLAY_REASONING",),
+    "collapsible_reasoning": ("DEEPSEEK_BRIDGE_COLLAPSIBLE_REASONING",),
+    "request_timeout": ("DEEPSEEK_BRIDGE_REQUEST_TIMEOUT",),
+    "stream_read_timeout": ("DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT",),
+    "max_request_body_bytes": ("DEEPSEEK_BRIDGE_MAX_REQUEST_BODY_BYTES",),
+    "reasoning_content_path": ("DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH",),
+    "missing_reasoning_strategy": (
+        "DEEPSEEK_BRIDGE_MISSING_REASONING_STRATEGY",
+    ),
+    "reasoning_cache_max_age_seconds": (
+        "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS",
+    ),
+    "cors": ("DEEPSEEK_BRIDGE_CORS",),
+    "cors_allowed_origins": ("DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS",),
+    "cors_allow_credentials": ("DEEPSEEK_BRIDGE_CORS_ALLOW_CREDENTIALS",),
+    "ollama": ("DEEPSEEK_BRIDGE_OLLAMA",),
+    "compact": ("DEEPSEEK_BRIDGE_COMPACT",),
+    "debug": ("DEEPSEEK_BRIDGE_DEBUG",),
+    "tunnel": ("DEEPSEEK_BRIDGE_TUNNEL",),
+    "cf_url": ("DEEPSEEK_BRIDGE_CF_URL",),
+    "cfd_tunnel_name": ("DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME",),
+    "ngrok_url": ("DEEPSEEK_BRIDGE_NGROK_URL",),
+    "max_pool_connections": ("DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS",),
+    "max_thread_pool": ("DEEPSEEK_BRIDGE_MAX_THREAD_POOL",),
+    "log_dir": ("DEEPSEEK_BRIDGE_LOG_DIR",),
+    "trace_dir": ("DEEPSEEK_BRIDGE_TRACE_DIR",),
+}
 
 CORS_ALLOWED_ORIGINS_TEXT = "\n".join(
     f"  - {origin}" for origin in DEFAULT_CORS_ALLOWED_ORIGINS
@@ -77,6 +127,7 @@ DEFAULT_CONFIG_TEXT = f"""{DEFAULT_CONFIG_HEADER}
 # API keys are read from Cursor's Authorization header and forwarded upstream.
 
 # Essential settings — these are the ones you'll most likely customize
+runtime_mode: {DEFAULT_RUNTIME_MODE}
 model: {DEFAULT_UPSTREAM_MODEL}
 base_url: {DEFAULT_UPSTREAM_BASE_URL}
 thinking: {DEFAULT_THINKING}
@@ -225,20 +276,49 @@ def as_str_tuple(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
     return origins or default
 
 
-def as_path(value: Any, default_path: Path, relative_base: Path) -> Path:
+def _is_disabled_path(value: Any) -> bool:
+    return str(value).strip().lower() in {"none", "null", "false"}
+
+
+def as_path(
+    value: Any, default_path: Path | str, relative_base: Path
+) -> Path | str:
     if value is MISSING or value is None or value == "":
         return default_path
+    if str(value) == ":memory:":
+        return ":memory:"
     candidate_path = Path(str(value)).expanduser()
     if candidate_path.is_absolute():
         return candidate_path
     return relative_base / candidate_path
 
 
+def as_optional_path(
+    value: Any,
+    default_path: Path | None,
+    relative_base: Path | None = None,
+) -> Path | None:
+    if value is MISSING or value is None or value == "":
+        return default_path
+    if _is_disabled_path(value):
+        return None
+    candidate_path = Path(str(value)).expanduser()
+    if candidate_path.is_absolute() or relative_base is None:
+        return candidate_path
+    return relative_base / candidate_path
+
+
 def settings_from_config(
     config_path: str | Path | None,
+    *,
+    populate_default: bool = True,
 ) -> tuple[dict[str, Any], Path]:
     resolved_config_path = resolve_config_path(config_path)
-    if config_path is None and not resolved_config_path.exists():
+    if (
+        populate_default
+        and config_path is None
+        and not resolved_config_path.exists()
+    ):
         populate_default_config_file(resolved_config_path)
     return load_config_file(resolved_config_path), resolved_config_path
 
@@ -255,6 +335,13 @@ def normalize_missing_reasoning_strategy(value: Any) -> str:
     if strategy in {"recover", "reject"}:
         return strategy
     return DEFAULT_MISSING_REASONING_STRATEGY
+
+
+def normalize_runtime_mode(value: Any) -> str:
+    runtime_mode = as_str(value, DEFAULT_RUNTIME_MODE).strip().lower()
+    if runtime_mode in {DEFAULT_RUNTIME_MODE, KUBERNETES_RUNTIME_MODE}:
+        return runtime_mode
+    return DEFAULT_RUNTIME_MODE
 
 
 def _auto_stream_timeout(request_timeout: float, explicit: Any = None) -> float:
@@ -296,8 +383,44 @@ def _auto_cache_max_rows(
     return max(int((budget_mb * 1024 * 1024) / est_row_bytes), 10000)
 
 
+def _settings_from_environment(
+    environ: Mapping[str, str],
+) -> dict[str, str]:
+    settings: dict[str, str] = {}
+    for config_key, env_keys in ENV_SETTING_KEYS.items():
+        for env_key in env_keys:
+            if env_key in environ:
+                settings[config_key] = environ[env_key]
+                break
+    return settings
+
+
+def _runtime_mode_from_environment(
+    environ: Mapping[str, str],
+) -> str | None:
+    for env_key in ENV_SETTING_KEYS["runtime_mode"]:
+        if env_key in environ:
+            return environ[env_key]
+    return None
+
+
+def _merged_settings(
+    settings: Mapping[str, Any],
+    environ: Mapping[str, str],
+    cli_runtime_mode: str | None,
+) -> tuple[dict[str, Any], str]:
+    merged: dict[str, Any] = dict(settings)
+    merged.update(_settings_from_environment(environ))
+    if cli_runtime_mode is not None:
+        merged["runtime_mode"] = cli_runtime_mode
+    runtime_mode = normalize_runtime_mode(setting_value(merged, "runtime_mode"))
+    merged["runtime_mode"] = runtime_mode
+    return merged, runtime_mode
+
+
 @dataclass(frozen=True)
 class ProxyConfig:
+    runtime_mode: str = DEFAULT_RUNTIME_MODE
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     upstream_base_url: str = DEFAULT_UPSTREAM_BASE_URL
@@ -307,7 +430,7 @@ class ProxyConfig:
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT
     stream_read_timeout: float = DEFAULT_STREAM_READ_TIMEOUT
     max_request_body_bytes: int = DEFAULT_MAX_REQUEST_BODY_BYTES
-    reasoning_content_path: Path = field(
+    reasoning_content_path: Path | str = field(
         default_factory=default_reasoning_content_path
     )
     missing_reasoning_strategy: str = DEFAULT_MISSING_REASONING_STRATEGY
@@ -338,14 +461,39 @@ class ProxyConfig:
     def from_file(
         cls: type[ProxyConfig],
         config_path: str | Path | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+        runtime_mode: str | None = None,
     ) -> ProxyConfig:
-        settings, resolved_config_path = settings_from_config(config_path)
+        env = os.environ if environ is None else environ
+        initial_runtime_mode = normalize_runtime_mode(
+            runtime_mode
+            if runtime_mode is not None
+            else _runtime_mode_from_environment(env)
+        )
+        settings, resolved_config_path = settings_from_config(
+            config_path,
+            populate_default=initial_runtime_mode != KUBERNETES_RUNTIME_MODE,
+        )
         config_dir = resolved_config_path.parent
+        settings, normalized_runtime_mode = _merged_settings(
+            settings, env, runtime_mode
+        )
+        kubernetes_mode = normalized_runtime_mode == KUBERNETES_RUNTIME_MODE
+        host_default = KUBERNETES_HOST if kubernetes_mode else DEFAULT_HOST
+        tunnel_default = KUBERNETES_TUNNEL if kubernetes_mode else "cloudflared"
+        reasoning_content_default: Path | str = (
+            KUBERNETES_REASONING_CONTENT_PATH
+            if kubernetes_mode
+            else default_reasoning_content_path()
+        )
+        log_dir_default = None if kubernetes_mode else default_log_dir()
 
         return cls(
+            runtime_mode=normalized_runtime_mode,
             host=as_str(
                 setting_value(settings, "host"),
-                DEFAULT_HOST,
+                host_default,
             ),
             port=as_int(
                 setting_value(settings, "port"),
@@ -386,7 +534,7 @@ class ProxyConfig:
             ),
             reasoning_content_path=as_path(
                 setting_value(settings, "reasoning_content_path"),
-                default_reasoning_content_path(),
+                reasoning_content_default,
                 config_dir,
             ),
             missing_reasoning_strategy=normalize_missing_reasoning_strategy(
@@ -428,7 +576,7 @@ class ProxyConfig:
                 setting_value(settings, "debug"),
                 False,
             ),
-            tunnel=as_str(setting_value(settings, "tunnel"), "cloudflared"),
+            tunnel=as_str(setting_value(settings, "tunnel"), tunnel_default),
             cf_url=as_str(setting_value(settings, "cf_url"), ""),
             cfd_tunnel_name=as_str(
                 setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"
@@ -456,10 +604,13 @@ class ProxyConfig:
                     DEFAULT_MAX_THREAD_POOL,
                 )
             ),
-            log_dir=(
-                Path(v)
-                if (v := setting_value(settings, "log_dir")) is not MISSING
-                and v
-                else default_log_dir()
+            log_dir=as_optional_path(
+                setting_value(settings, "log_dir"),
+                log_dir_default,
+            ),
+            trace_dir=as_optional_path(
+                setting_value(settings, "trace_dir"),
+                None,
+                config_dir,
             ),
         )

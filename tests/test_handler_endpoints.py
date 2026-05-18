@@ -23,7 +23,8 @@ def _make_handler_stub(wfile, **config_overrides):
     )
     handler.wfile = wfile
     handler.close_connection = False
-    handler.send_response = lambda status: None
+    handler._status = None
+    handler.send_response = lambda status: setattr(handler, "_status", status)
     handler.send_header = lambda name, value: None
     handler.end_headers = lambda: None
     handler._request_id = "req-test-123"
@@ -64,6 +65,51 @@ class SendHealthTests(unittest.TestCase):
         body = json.loads(wfile.getvalue())
         self.assertTrue(body["ok"])
         self.assertEqual(body["uptime_seconds"], 0)
+
+
+class SendReadyTests(unittest.TestCase):
+    def test_returns_ok_when_all_checks_pass(self) -> None:
+        wfile = io.BytesIO()
+        handler = _make_handler_stub(wfile)
+        handler.server.readiness_checks = lambda: {
+            "storage": {"ok": True, "status": "ok"},
+            "shutdown": {"ok": True, "status": "ok"},
+        }
+
+        handler._send_ready()
+
+        body = json.loads(wfile.getvalue())
+        self.assertEqual(handler._status, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "ok")
+
+    def test_returns_503_when_a_check_fails(self) -> None:
+        wfile = io.BytesIO()
+        handler = _make_handler_stub(wfile)
+        handler.server.readiness_checks = lambda: {
+            "storage": {"ok": False, "status": "closed"},
+            "shutdown": {"ok": True, "status": "ok"},
+        }
+
+        handler._send_ready()
+
+        body = json.loads(wfile.getvalue())
+        self.assertEqual(handler._status, 503)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "closed")
+
+    def test_health_stays_ok_when_readiness_would_fail(self) -> None:
+        wfile = io.BytesIO()
+        handler = _make_handler_stub(wfile)
+        handler.server.readiness_checks = lambda: {
+            "storage": {"ok": False, "status": "closed"}
+        }
+
+        handler._send_health()
+
+        body = json.loads(wfile.getvalue())
+        self.assertEqual(handler._status, 200)
+        self.assertTrue(body["ok"])
 
 
 class HandleApiVersionTests(unittest.TestCase):

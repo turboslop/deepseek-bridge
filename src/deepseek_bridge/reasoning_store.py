@@ -298,6 +298,18 @@ class ReasoningStore:
         except Exception:
             return 0.0
 
+    def health_check(self) -> tuple[bool, str]:
+        """Return whether the backing cache is usable for readiness checks."""
+        with self._lock:
+            if self._closed:
+                return False, "closed"
+            try:
+                self._conn.execute("SELECT 1").fetchone()
+            except Exception as exc:
+                LOG.warning("SQLite health check failed: %s", exc)
+                return False, "unavailable"
+        return True, "ok"
+
     def close(self) -> None:
         with self._lock:
             self._closed = True

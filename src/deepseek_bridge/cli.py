@@ -94,8 +94,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_net.add_argument(
         "--tunnel",
         choices=["none", *get_tunnel_choices()],
-        default="cloudflared",
-        help="Tunnel service for public URL exposure (default: cloudflared)",
+        default=None,
+        help=(
+            "Tunnel service for public URL exposure, default from config or "
+            "cloudflared in local mode"
+        ),
     )
     group_net.add_argument(
         "--cf-url",
@@ -210,6 +213,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     group_other = parser.add_argument_group("Other")
+    group_other.add_argument(
+        "--runtime-mode",
+        "--runtime",
+        choices=["local", "kubernetes"],
+        dest="runtime_mode",
+        help=(
+            "Runtime profile, default local. Kubernetes mode defaults to "
+            "0.0.0.0, no tunnel, stdout logs, and in-memory cache."
+        ),
+    )
     group_other.add_argument(
         "--config",
         dest="config_path",
@@ -327,8 +340,12 @@ def _run_server(server: BoundedThreadPoolHTTPServer) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    _shutdown_requested.clear()
     try:
-        config = ProxyConfig.from_file(config_path=args.config_path)
+        config = ProxyConfig.from_file(
+            config_path=args.config_path,
+            runtime_mode=args.runtime_mode,
+        )
     except ValueError as exc:
         configure_logging(debug=bool(args.debug))
         LOG.error("%s", exc)
@@ -396,9 +413,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_log:
         config = replace(config, log_dir=None)
 
-    log_file_path = configure_logging(
-        debug=config.debug, log_dir=args.log_dir or config.log_dir
-    )
+    log_dir = None if args.no_log else (args.log_dir or config.log_dir)
+    log_file_path = configure_logging(debug=config.debug, log_dir=log_dir)
+    if config.runtime_mode == "kubernetes" and config.tunnel != "none":
+        LOG.error(
+            "kubernetes runtime requires tunnel=none; got %s", config.tunnel
+        )
+        return 2
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,
@@ -507,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("Network")
     LOG.info("  Local:     %s", local_base_url)
     LOG.info("  API Base:  %s", api_base_url)
+    if config.runtime_mode != "local":
+        LOG.info("  Runtime:   %s", config.runtime_mode)
     if public_url is not None:
         LOG.info("  Tunnel:    %s", public_url)
     elif config.tunnel == "none":
@@ -544,14 +567,12 @@ def main(argv: list[str] | None = None) -> int:
             LOG.info("graceful shutdown: stopping new connections...")
             server.server_close()
         _shutdown_requested.set()
-        if isinstance(server, BoundedThreadPoolHTTPServer):
-            LOG.info("graceful shutdown: draining active requests...")
-            server.executor.shutdown(wait=True, cancel_futures=False)
         if tunnel is not None:
             tunnel.stop()
         store.prune()
         store.close()
         LOG.info("graceful shutdown: complete")
+        _shutdown_requested.clear()
     return 0
 
 

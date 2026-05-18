@@ -14,8 +14,13 @@ from deepseek_bridge.config import (
     DEFAULT_MISSING_REASONING_STRATEGY,
     DEFAULT_PORT,
     DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
+    DEFAULT_RUNTIME_MODE,
     DEFAULT_THINKING,
     DEFAULT_UPSTREAM_MODEL,
+    KUBERNETES_HOST,
+    KUBERNETES_REASONING_CONTENT_PATH,
+    KUBERNETES_RUNTIME_MODE,
+    KUBERNETES_TUNNEL,
     ProxyConfig,
     _auto_cache_max_rows,
     default_config_path,
@@ -40,6 +45,7 @@ class ConfigTests(unittest.TestCase):
                 home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
             self.assertEqual(ProxyConfig().tunnel, "cloudflared")
+            self.assertEqual(ProxyConfig().runtime_mode, DEFAULT_RUNTIME_MODE)
             self.assertEqual(
                 ProxyConfig().collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -58,6 +64,7 @@ class ConfigTests(unittest.TestCase):
 
             self.assertTrue(config_path.exists())
             self.assertIn(f"model: {DEFAULT_UPSTREAM_MODEL}", config_text)
+            self.assertIn(f"runtime_mode: {DEFAULT_RUNTIME_MODE}", config_text)
             self.assertIn(
                 (
                     "# missing_reasoning_strategy: "
@@ -84,6 +91,7 @@ class ConfigTests(unittest.TestCase):
                     stat.S_IMODE(config_path.stat().st_mode), 0o600
                 )
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
+            self.assertEqual(config.runtime_mode, DEFAULT_RUNTIME_MODE)
             self.assertEqual(
                 config.collapsible_reasoning,
                 DEFAULT_COLLAPSIBLE_REASONING,
@@ -304,6 +312,74 @@ class ConfigTests(unittest.TestCase):
                 )
 
         self.assertEqual(config.tunnel, "ngrok")
+
+    def test_kubernetes_runtime_defaults_are_read_only_friendly(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+
+            with patch("deepseek_bridge.config.Path.home", return_value=home):
+                config = ProxyConfig.from_file(
+                    config_path=None,
+                    environ={
+                        "DEEPSEEK_BRIDGE_RUNTIME_MODE": KUBERNETES_RUNTIME_MODE
+                    },
+                )
+                config_path = default_config_path()
+
+            self.assertFalse(config_path.exists())
+            self.assertEqual(config.runtime_mode, KUBERNETES_RUNTIME_MODE)
+            self.assertEqual(config.host, KUBERNETES_HOST)
+            self.assertEqual(config.port, DEFAULT_PORT)
+            self.assertEqual(config.tunnel, KUBERNETES_TUNNEL)
+            self.assertEqual(
+                config.reasoning_content_path,
+                KUBERNETES_REASONING_CONTENT_PATH,
+            )
+            self.assertIsNone(config.log_dir)
+
+    def test_environment_overrides_config_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "host: 127.0.0.1",
+                        "port: 9000",
+                        "tunnel: cloudflared",
+                        "model: deepseek-v4-pro",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(
+                config_path=config_path,
+                environ={
+                    "DEEPSEEK_BRIDGE_HOST": "0.0.0.0",
+                    "DEEPSEEK_BRIDGE_PORT": "9100",
+                    "DEEPSEEK_BRIDGE_TUNNEL": "none",
+                    "DEEPSEEK_BRIDGE_MODEL": "deepseek-v4-flash",
+                },
+            )
+
+        self.assertEqual(config.host, "0.0.0.0")
+        self.assertEqual(config.port, 9100)
+        self.assertEqual(config.tunnel, "none")
+        self.assertEqual(config.upstream_model, "deepseek-v4-flash")
+
+    def test_memory_reasoning_path_is_not_resolved_relative_to_config(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                'reasoning_content_path: ":memory:"\n',
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path)
+
+        self.assertEqual(config.reasoning_content_path, ":memory:")
 
     def test_version_is_valid_pep440(self) -> None:
         parts = __version__.split(".")

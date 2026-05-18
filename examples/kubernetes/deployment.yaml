@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepseek-bridge
+  labels:
+    app.kubernetes.io/name: deepseek-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: deepseek-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: deepseek-bridge
+    spec:
+      terminationGracePeriodSeconds: 360
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: deepseek-bridge
+          image: ghcr.io/turboslop/deepseek-bridge:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --runtime-mode
+            - kubernetes
+            - --host
+            - 0.0.0.0
+            - --port
+            - "9000"
+            - --tunnel
+            - none
+            - --reasoning-content-path
+            - /var/lib/deepseek-bridge/reasoning_content.sqlite3
+          ports:
+            - name: http
+              containerPort: 9000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: reasoning-cache
+              mountPath: /var/lib/deepseek-bridge
+      volumes:
+        - name: reasoning-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepseek-bridge
+  labels:
+    app.kubernetes.io/name: deepseek-bridge
+spec:
+  selector:
+    app.kubernetes.io/name: deepseek-bridge
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
