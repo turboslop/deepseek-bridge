@@ -6,6 +6,7 @@ import stat
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from deepseek_bridge.config import _auto_cache_max_rows
 from deepseek_bridge.reasoning_store import ReasoningStore, conversation_scope
@@ -26,6 +27,22 @@ class ReasoningStoreTests(unittest.TestCase):
                 self.assertEqual(
                     stat.S_IMODE(reasoning_content_path.stat().st_mode), 0o600
                 )
+
+    def test_file_store_sizes_row_budget_from_database_parent(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            reasoning_content_path = (
+                Path(temp_dir) / "nested" / "reasoning_content.sqlite3"
+            )
+            with patch(
+                "deepseek_bridge.config._auto_cache_max_rows",
+                return_value=12345,
+            ) as mock_auto_rows:
+                store = ReasoningStore(reasoning_content_path)
+                store.close()
+
+            mock_auto_rows.assert_called_once_with(
+                disk_usage_path=reasoning_content_path.parent
+            )
 
     def test_store_prunes_by_age_and_can_clear(self) -> None:
         store = ReasoningStore(":memory:", max_age_seconds=3600)

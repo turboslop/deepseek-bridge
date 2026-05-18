@@ -163,6 +163,7 @@ class CliArgParserTests(unittest.TestCase):
             [
                 "--debug",
                 "--compact",
+                "--headless",
                 "--missing-reasoning-strategy",
                 "reject",
                 "--ollama",
@@ -172,6 +173,7 @@ class CliArgParserTests(unittest.TestCase):
         )
         self.assertTrue(args.debug)
         self.assertTrue(args.compact)
+        self.assertTrue(args.headless)
         self.assertEqual(args.missing_reasoning_strategy, "reject")
         self.assertTrue(args.ollama)
         self.assertEqual(args.config_path, Path("/tmp/config.yaml"))
@@ -211,6 +213,16 @@ class CliArgParserTests(unittest.TestCase):
 
 class CliMainTests(unittest.TestCase):
     """Verify main() behaviour without starting a real server."""
+
+    def setUp(self) -> None:
+        from deepseek_bridge.helpers import _shutdown_requested
+
+        _shutdown_requested.clear()
+
+    def tearDown(self) -> None:
+        from deepseek_bridge.helpers import _shutdown_requested
+
+        _shutdown_requested.clear()
 
     def _mock_config(self) -> ProxyConfig:
         return ProxyConfig(tunnel="none")
@@ -360,6 +372,33 @@ class CliMainTests(unittest.TestCase):
                 call_kwargs["debug"],
                 "configure_logging should receive debug=True",
             )
+
+    def test_main_headless_enables_compact_mode(self) -> None:
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ) as mock_run,
+            patch("deepseek_bridge.cli.create_tunnel"),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging"),
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = self._mock_config()
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main(["--headless", "--tunnel", "none"])
+
+            self.assertEqual(result, 0)
+            server = mock_run.call_args.args[0]
+            self.assertTrue(server.config.compact)
 
     def test_main_config_loading_error_returns_2(self) -> None:
         """Invalid YAML config file → main returns exit code 2."""

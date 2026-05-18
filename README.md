@@ -87,6 +87,40 @@ On first run, DeepSeek Bridge creates:
 - `~/.deepseek-bridge/config.yaml` — configuration file
 - `~/.deepseek-bridge/reasoning_content.sqlite3` — reasoning cache
 
+### Container Image
+
+Build a local image from the repository root:
+
+```bash
+docker build --build-arg PACKAGE_VERSION=0.0.0+local -t deepseek-bridge:local .
+```
+
+Run it with Kubernetes-friendly defaults:
+
+```bash
+docker run --rm -d --name deepseek-bridge -p 9000:9000 deepseek-bridge:local
+curl -fsS http://127.0.0.1:9000/healthz
+docker exec deepseek-bridge id -u
+docker stop deepseek-bridge
+```
+
+The image runs as UID `10001` and starts:
+
+```bash
+deepseek-bridge --headless --tunnel none --host 0.0.0.0 --port 9000 \
+  --config /etc/deepseek-bridge/config.yaml \
+  --no-log \
+  --reasoning-content-path /data/reasoning_content.sqlite3
+```
+
+Container defaults avoid local tunnels, bind port `9000` on all interfaces,
+disable file logs, and do not require a writable home directory. The SQLite
+reasoning cache uses `/data`; mount that path as an `emptyDir` or persistent
+volume in Kubernetes if the root filesystem is read-only or cache persistence
+is required. For read-only-root deployments, make the mounted `/data` volume
+writable by UID/GID `10001`, for example with a pod `fsGroup` or volume
+ownership setting.
+
 ## Configuration
 
 All settings are configurable via `~/.deepseek-bridge/config.yaml` or command-line overrides. Example configuration:
@@ -261,6 +295,7 @@ uv run --extra dev --python 3.14 coverage report
 | `--trace-dir` | none | Directory for request trace dumps |
 | `--debug` | off | Enable DEBUG-level log output |
 | `--compact` | off | One-line-per-request output |
+| `--headless` | off | Disable interactive terminal UI affordances |
 | `--config` | ~/.deepseek-bridge/config.yaml | Config file path |
 | `--no-log` | off | Disable all log file output |
 | `--reasoning-content-path` | ~/.deepseek-bridge/reasoning_content.sqlite3 | Reasoning cache path |
