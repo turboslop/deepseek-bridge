@@ -61,6 +61,20 @@ class ReasoningStoreTests(unittest.TestCase):
         finally:
             store.close()
 
+    def test_store_prunes_to_configured_max_rows_on_put(self) -> None:
+        store = ReasoningStore(":memory:", max_rows=2)
+        try:
+            store.put("a", "reasoning a", {"role": "assistant"})
+            store.put("b", "reasoning b", {"role": "assistant"})
+            store.put("c", "reasoning c", {"role": "assistant"})
+
+            self.assertIsNone(store.get("a"))
+            self.assertEqual(store.get("b"), "reasoning b")
+            self.assertEqual(store.get("c"), "reasoning c")
+            self.assertEqual(store.get_row_count(), 2)
+        finally:
+            store.close()
+
     def test_empty_reasoning_content_is_stored_as_present_value(self) -> None:
         store = ReasoningStore(":memory:")
         try:

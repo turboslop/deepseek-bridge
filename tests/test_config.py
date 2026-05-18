@@ -17,6 +17,7 @@ from deepseek_bridge.config import (
     DEFAULT_RUNTIME_MODE,
     DEFAULT_THINKING,
     DEFAULT_UPSTREAM_MODEL,
+    ENV_CONFIG_PATH,
     KUBERNETES_HOST,
     KUBERNETES_REASONING_CONTENT_PATH,
     KUBERNETES_RUNTIME_MODE,
@@ -29,6 +30,13 @@ from deepseek_bridge.config import (
 
 
 class ConfigTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._env_patch = patch.dict(os.environ, {}, clear=True)
+        self._env_patch.start()
+
+    def tearDown(self) -> None:
+        self._env_patch.stop()
+
     def test_default_paths_live_in_visible_user_app_directory(self) -> None:
         home = Path("/tmp/home")
 
@@ -63,29 +71,32 @@ class ConfigTests(unittest.TestCase):
             config_text = config_path.read_text(encoding="utf-8")
 
             self.assertTrue(config_path.exists())
-            self.assertIn(f"model: {DEFAULT_UPSTREAM_MODEL}", config_text)
-            self.assertIn(f"runtime_mode: {DEFAULT_RUNTIME_MODE}", config_text)
+            self.assertIn("version: 1", config_text)
+            self.assertIn("runtime:", config_text)
+            self.assertIn(f"  mode: {DEFAULT_RUNTIME_MODE}", config_text)
+            self.assertIn("server:", config_text)
+            self.assertIn(f"  model: {DEFAULT_UPSTREAM_MODEL}", config_text)
             self.assertIn(
                 (
-                    "# missing_reasoning_strategy: "
+                    "  missing_reasoning_strategy: "
                     f"{DEFAULT_MISSING_REASONING_STRATEGY}"
                 ),
                 config_text,
             )
             self.assertIn(
-                "# reasoning_cache_max_age_seconds: "
+                "  max_age_seconds: "
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
                 config_text,
             )
-            self.assertIn("tunnel: cloudflared", config_text)
+            self.assertIn("  mode: cloudflared", config_text)
             self.assertIn(
-                "collapsible_reasoning: "
+                "  collapsible: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
                 config_text,
             )
-            self.assertIn("cors_allowed_origins:", config_text)
-            self.assertIn("  - http://localhost:*", config_text)
-            self.assertIn("cors_allow_credentials: true", config_text)
+            self.assertIn("  allowed_origins:", config_text)
+            self.assertIn("    - http://localhost:*", config_text)
+            self.assertIn("  allow_credentials: true", config_text)
             if os.name != "nt":
                 self.assertEqual(
                     stat.S_IMODE(config_path.stat().st_mode), 0o600
@@ -105,7 +116,7 @@ class ConfigTests(unittest.TestCase):
                 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
             )
             self.assertIn(
-                "# log_dir: null  # auto: ~/.deepseek-bridge/logs",
+                "    path: null  # auto: ~/.deepseek-bridge/logs",
                 config_text,
             )
             self.assertEqual(config.log_dir, home / ".deepseek-bridge" / "logs")
@@ -179,6 +190,96 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.missing_reasoning_strategy, "reject")
         self.assertEqual(config.reasoning_cache_max_age_seconds, 60)
 
+    def test_loads_structured_config_from_yaml_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "version: 1",
+                        "server:",
+                        "  host: 0.0.0.0",
+                        "  port: 9100",
+                        "upstream:",
+                        "  base_url: https://example.com/v1/",
+                        "  model: deepseek-v4-flash",
+                        "  thinking:",
+                        "    mode: disabled",
+                        "    reasoning_effort: low",
+                        "storage:",
+                        "  backend: sqlite",
+                        "  sqlite:",
+                        "    path: data/reasoning.sqlite3",
+                        "reasoning_cache:",
+                        "  max_age_seconds: 60",
+                        "  max_entries: 12345",
+                        "  missing_reasoning_strategy: reject",
+                        "reasoning_display:",
+                        "  enabled: false",
+                        "  collapsible: false",
+                        "logging:",
+                        "  level: debug",
+                        "  format: text",
+                        "  compact: true",
+                        "  trace_dir: traces",
+                        "  file:",
+                        "    enabled: false",
+                        "metrics:",
+                        "  enabled: false",
+                        "tunnel:",
+                        "  mode: none",
+                        "cors:",
+                        "  enabled: false",
+                        "  allowed_origins:",
+                        "    - https://app.example.com",
+                        "  allow_credentials: false",
+                        "ollama:",
+                        "  enabled: false",
+                        "performance:",
+                        "  request_timeout: 123.5",
+                        "  stream_read_timeout: 90",
+                        "  max_request_body_bytes: 1234",
+                        "  max_pool_connections: 7",
+                        "  max_thread_pool: 9",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(config.host, "0.0.0.0")
+        self.assertEqual(config.port, 9100)
+        self.assertEqual(config.upstream_base_url, "https://example.com/v1")
+        self.assertEqual(config.upstream_model, "deepseek-v4-flash")
+        self.assertEqual(config.thinking, "disabled")
+        self.assertEqual(config.reasoning_effort, "low")
+        self.assertEqual(
+            config.reasoning_content_path,
+            Path(temp_dir) / "data" / "reasoning.sqlite3",
+        )
+        self.assertEqual(config.reasoning_cache_max_age_seconds, 60)
+        self.assertEqual(config.reasoning_cache_max_entries, 12345)
+        self.assertEqual(config.missing_reasoning_strategy, "reject")
+        self.assertFalse(config.display_reasoning)
+        self.assertFalse(config.collapsible_reasoning)
+        self.assertTrue(config.debug)
+        self.assertTrue(config.compact)
+        self.assertEqual(config.trace_dir, Path(temp_dir) / "traces")
+        self.assertIsNone(config.log_dir)
+        self.assertFalse(config.cors)
+        self.assertEqual(
+            config.cors_allowed_origins, ("https://app.example.com",)
+        )
+        self.assertFalse(config.cors_allow_credentials)
+        self.assertFalse(config.ollama)
+        self.assertEqual(config.request_timeout, 123.5)
+        self.assertEqual(config.stream_read_timeout, 90.0)
+        self.assertEqual(config.max_request_body_bytes, 1234)
+        self.assertEqual(config.max_pool_connections, 7)
+        self.assertEqual(config.max_thread_pool, 9)
+        self.assertEqual(config.tunnel, "none")
+
     def test_invalid_config_values_fall_back_to_defaults(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
@@ -226,6 +327,46 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config.reasoning_content_path, Path(temp_dir) / "custom.sqlite3"
         )
+
+    def test_relative_structured_sqlite_path_is_relative_to_config_file(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "storage:",
+                        "  sqlite:",
+                        "    path: custom.sqlite3",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(
+            config.reasoning_content_path, Path(temp_dir) / "custom.sqlite3"
+        )
+
+    def test_structured_tunnel_url_without_mode_uses_default_mode(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "tunnel:",
+                        "  cf_url: https://app.example.com",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = ProxyConfig.from_file(config_path=config_path, environ={})
+
+        self.assertEqual(config.tunnel, "cloudflared")
+        self.assertEqual(config.cf_url, "https://app.example.com")
 
     def test_cursor_reasoning_display_can_be_disabled_from_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -291,7 +432,7 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ProxyConfig.from_file(config_path=config_path)
 
-    def test_process_environment_does_not_override_config(self) -> None:
+    def test_legacy_process_environment_does_not_override_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
             config_path.write_text("tunnel: ngrok\n", encoding="utf-8")
@@ -345,8 +486,11 @@ class ConfigTests(unittest.TestCase):
                     [
                         "host: 127.0.0.1",
                         "port: 9000",
-                        "tunnel: cloudflared",
                         "model: deepseek-v4-pro",
+                        "thinking: enabled",
+                        "reasoning_effort: max",
+                        "tunnel: cloudflared",
+                        "reasoning_cache_max_age_seconds: 60",
                     ]
                 ),
                 encoding="utf-8",
@@ -357,15 +501,29 @@ class ConfigTests(unittest.TestCase):
                 environ={
                     "DEEPSEEK_BRIDGE_HOST": "0.0.0.0",
                     "DEEPSEEK_BRIDGE_PORT": "9100",
-                    "DEEPSEEK_BRIDGE_TUNNEL": "none",
                     "DEEPSEEK_BRIDGE_MODEL": "deepseek-v4-flash",
+                    "DEEPSEEK_BRIDGE_THINKING": "disabled",
+                    "DEEPSEEK_BRIDGE_REASONING_EFFORT": "low",
+                    "DEEPSEEK_BRIDGE_TUNNEL_MODE": "none",
+                    "DEEPSEEK_BRIDGE_LOG_FILE_ENABLED": "false",
+                    "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS": "120",
+                    "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_ENTRIES": "10001",
+                    "DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH": "env.sqlite3",
                 },
             )
 
         self.assertEqual(config.host, "0.0.0.0")
         self.assertEqual(config.port, 9100)
-        self.assertEqual(config.tunnel, "none")
         self.assertEqual(config.upstream_model, "deepseek-v4-flash")
+        self.assertEqual(config.thinking, "disabled")
+        self.assertEqual(config.reasoning_effort, "low")
+        self.assertEqual(config.tunnel, "none")
+        self.assertEqual(config.reasoning_cache_max_age_seconds, 120)
+        self.assertEqual(config.reasoning_cache_max_entries, 10001)
+        self.assertEqual(
+            config.reasoning_content_path, Path.cwd() / "env.sqlite3"
+        )
+        self.assertIsNone(config.log_dir)
 
     def test_memory_reasoning_path_is_not_resolved_relative_to_config(
         self,
@@ -380,6 +538,111 @@ class ConfigTests(unittest.TestCase):
             config = ProxyConfig.from_file(config_path=config_path)
 
         self.assertEqual(config.reasoning_content_path, ":memory:")
+
+    def test_config_path_can_come_from_environment(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "env-config.yaml"
+            config_path.write_text("port: 9191\n", encoding="utf-8")
+
+            with patch.dict(
+                os.environ,
+                {ENV_CONFIG_PATH: str(config_path)},
+                clear=True,
+            ):
+                config = ProxyConfig.from_file(config_path=None)
+
+        self.assertEqual(config.port, 9191)
+
+    def test_invalid_environment_value_raises_value_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text("", encoding="utf-8")
+            with (
+                patch.dict(
+                    os.environ,
+                    {"DEEPSEEK_BRIDGE_PORT": "not-a-port"},
+                    clear=True,
+                ),
+                self.assertRaisesRegex(ValueError, "DEEPSEEK_BRIDGE_PORT"),
+            ):
+                ProxyConfig.from_file(config_path=config_path)
+
+    def test_invalid_structured_config_value_raises_value_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["server:", "  port: not-a-port"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "server.port"):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
+    def test_structured_port_must_be_in_tcp_port_range(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["server:", "  port: 70000"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "server.port"):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
+    def test_environment_port_must_be_in_tcp_port_range(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text("", encoding="utf-8")
+            with (
+                patch.dict(
+                    os.environ,
+                    {"DEEPSEEK_BRIDGE_PORT": "70000"},
+                    clear=True,
+                ),
+                self.assertRaisesRegex(ValueError, "DEEPSEEK_BRIDGE_PORT"),
+            ):
+                ProxyConfig.from_file(config_path=config_path)
+
+    def test_invalid_structured_boolean_raises_value_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["reasoning_display:", "  enabled: maybe"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "reasoning_display.enabled"
+            ):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
+    def test_invalid_structured_tunnel_mode_raises_value_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["tunnel:", "  mode: invalid"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "tunnel.mode"):
+                ProxyConfig.from_file(config_path=config_path, environ={})
+
+    def test_unsupported_future_config_knobs_raise_value_error(self) -> None:
+        cases = [
+            ("storage:\n  backend: valkey\n", "storage backend 'valkey'"),
+            ("metrics:\n  enabled: true\n", "metrics.enabled"),
+            ("logging:\n  format: json\n", "logging format 'json'"),
+        ]
+        for text, pattern in cases:
+            with (
+                self.subTest(pattern=pattern),
+                TemporaryDirectory() as temp_dir,
+            ):
+                config_path = Path(temp_dir) / "config.yaml"
+                config_path.write_text(text, encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, pattern):
+                    ProxyConfig.from_file(config_path=config_path, environ={})
 
     def test_version_is_valid_pep440(self) -> None:
         parts = __version__.split(".")
