@@ -1,9 +1,9 @@
 ---
-name: issue-to-green-pr
-description: Multi-agent repository workflow for taking a GitHub issue or implementation task in turboslop/deepseek-bridge from current main through planning quorum, branch creation, implementation, local validation, review, QA, pull request creation, CI monitoring, iterative fixes, and auto-merge. Use when asked to pick up an issue, work an issue, implement a GitHub task, create a PR, get checks green, or follow the repo's standard task-to-PR flow.
+name: gof
+description: GoF (local Gang of Four) multi-agent repository workflow for taking a GitHub issue or implementation task in turboslop/deepseek-bridge from current main through planning quorum, branch creation, implementation, local validation, review, QA, pull request creation, CI monitoring, iterative fixes, and auto-merge. Use when asked to pick up an issue, work an issue, implement a GitHub task, create a PR, get checks green, or follow the repo's standard task-to-PR flow.
 ---
 
-# Issue To Green PR
+# GoF
 
 ## Local Gang Of Four
 
