@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -585,6 +586,35 @@ class CliMainTests(unittest.TestCase):
                 "configure_logging should receive debug=True",
             )
 
+    def test_main_passes_log_format_to_configure_logging(self) -> None:
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            patch("deepseek_bridge.cli.create_tunnel") as mock_create,
+            patch(
+                "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
+            ),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging") as mock_log,
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(
+                tunnel="none", log_format="json"
+            )
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main([])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(mock_log.call_args.kwargs["log_format"], "json")
+            mock_create.assert_not_called()
+
     def test_main_headless_enables_compact_mode(self) -> None:
         srv_bind, srv_activate = self._server_bind_patches()
         with (
@@ -624,10 +654,31 @@ class CliMainTests(unittest.TestCase):
             try:
                 from deepseek_bridge.cli import main
 
-                result = main(["--config", config_path])
+                with patch.dict(os.environ, {}, clear=True):
+                    result = main(["--config", config_path])
                 self.assertEqual(result, 2)
-                mock_log.assert_called_once_with(debug=False)
+                mock_log.assert_called_once_with(debug=False, log_format="text")
             finally:
-                import os
+                os.unlink(config_path)
 
+    def test_main_config_loading_error_honors_json_log_format_env(self) -> None:
+        with patch("deepseek_bridge.cli.configure_logging") as mock_log:
+            invalid_yaml = "not: [valid: yaml:"
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False
+            ) as fp:
+                fp.write(invalid_yaml)
+                config_path = fp.name
+            try:
+                from deepseek_bridge.cli import main
+
+                with patch.dict(
+                    os.environ,
+                    {"DEEPSEEK_BRIDGE_LOG_FORMAT": "json"},
+                    clear=False,
+                ):
+                    result = main(["--config", config_path])
+                self.assertEqual(result, 2)
+                mock_log.assert_called_once_with(debug=False, log_format="json")
+            finally:
                 os.unlink(config_path)

@@ -955,17 +955,6 @@ def validate_runtime_settings(settings: Mapping[str, Any]) -> None:
                 "storage.valkey.key_prefix"
             )
 
-    log_format = (
-        as_str(setting_value(settings, "log_format"), DEFAULT_LOG_FORMAT)
-        .strip()
-        .lower()
-    )
-    if log_format != "text":
-        raise ValueError(
-            "logging format 'json' is not implemented yet; "
-            "set logging.format or DEEPSEEK_BRIDGE_LOG_FORMAT to 'text'"
-        )
-
     metrics_enabled = as_bool(
         setting_value(settings, "metrics_enabled"), DEFAULT_METRICS_ENABLED
     )

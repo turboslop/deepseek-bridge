@@ -16,7 +16,7 @@ import time
 import unittest
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -30,6 +30,7 @@ from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.helpers import _shutdown_requested
 from deepseek_bridge.logging import (
     ConsoleLogFormatter,
+    JsonLogFormatter,
     TerminalSpinner,
     _truncate_message_content,
     configure_logging,
@@ -214,6 +215,80 @@ class CliAndHelperTests(unittest.TestCase):
             "listening on http://127.0.0.1:9000/v1",
         )
 
+    def test_json_logging_format_is_valid_one_line_json(self) -> None:
+        formatter = JsonLogFormatter()
+        record = logging.LogRecord(
+            "deepseek_bridge",
+            logging.INFO,
+            __file__,
+            1,
+            "request complete\nmodel=%s",
+            ("deepseek-v4-pro",),
+            None,
+        )
+        record.request_id = "req-test-123"
+        record.method = "POST"
+        record.path = "/v1/chat/completions"
+        record.status = 200
+        record.duration_ms = 42
+        record.model = "deepseek-v4-pro"
+        record.upstream_status = 200
+        record.cache_hit = "60.0%"
+        record.storage_backend = "sqlite"
+
+        formatted = formatter.format(record)
+        payload = json.loads(formatted)
+
+        self.assertNotIn("\n", formatted)
+        self.assertEqual(payload["level"], "INFO")
+        self.assertEqual(payload["logger"], "deepseek_bridge")
+        self.assertEqual(
+            payload["message"], "request complete\nmodel=deepseek-v4-pro"
+        )
+        self.assertEqual(payload["request_id"], "req-test-123")
+        self.assertEqual(payload["method"], "POST")
+        self.assertEqual(payload["path"], "/v1/chat/completions")
+        self.assertEqual(payload["status"], 200)
+        self.assertEqual(payload["duration_ms"], 42)
+        self.assertEqual(payload["model"], "deepseek-v4-pro")
+        self.assertEqual(payload["upstream_status"], 200)
+        self.assertEqual(payload["cache_hit"], "60.0%")
+        self.assertEqual(payload["storage_backend"], "sqlite")
+        self.assertIn("timestamp", payload)
+
+    def test_json_logging_omits_unapproved_extra_fields(self) -> None:
+        formatter = JsonLogFormatter()
+        record = logging.LogRecord(
+            "deepseek_bridge",
+            logging.INFO,
+            __file__,
+            1,
+            "request summary",
+            (),
+            None,
+        )
+        record.authorization = "Bearer sk-secret"
+        record.api_key = "sk-secret"
+        record.payload = {"messages": [{"content": "secret prompt"}]}
+        record.body = "secret response"
+        record.trace_payload = {"request": "secret trace"}
+        record.messages = ["secret prompt"]
+
+        formatted = formatter.format(record)
+        payload = json.loads(formatted)
+
+        self.assertEqual(payload["message"], "request summary")
+        self.assertNotIn("authorization", payload)
+        self.assertNotIn("api_key", payload)
+        self.assertNotIn("payload", payload)
+        self.assertNotIn("body", payload)
+        self.assertNotIn("trace_payload", payload)
+        self.assertNotIn("messages", payload)
+        self.assertNotIn("sk-secret", formatted)
+        self.assertNotIn("secret prompt", formatted)
+        self.assertNotIn("secret response", formatted)
+        self.assertNotIn("secret trace", formatted)
+
     def test_terminal_spinner_animates_only_for_tty(self) -> None:
         tty = _FakeConsole(tty=True)
         spinner = TerminalSpinner(
@@ -262,6 +337,20 @@ class CliAndHelperTests(unittest.TestCase):
         self.assertIsNone(
             result, "configure_logging should return None when no log_dir"
         )
+
+    def test_configure_logging_can_install_json_formatter(self) -> None:
+        root = logging.getLogger()
+        handlers_before = root.handlers[:]
+        result = configure_logging(log_format="json")
+        try:
+            self.assertIsNone(result)
+            self.assertIsInstance(root.handlers[0].formatter, JsonLogFormatter)
+        finally:
+            for handler in root.handlers[:]:
+                handler.close()
+                root.removeHandler(handler)
+            for handler in handlers_before:
+                root.addHandler(handler)
 
     def test_db_heartbeat_method_exists(self) -> None:
         self.assertTrue(
@@ -553,9 +642,14 @@ class _PlainFakeUpstream(BaseHTTPRequestHandler):
         self.__class__.request_started.set()
 
         if payload.get("stream"):
-            self.send_response(200)
+            self.send_response(self.__class__.response_status)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
+            if self.__class__.response_status >= 400:
+                self.wfile.write(
+                    json.dumps(self.__class__.response).encode("utf-8")
+                )
+                return
             self.wfile.write(
                 b'data: {"choices":[{"index":0,"delta":{"content":"x"}}]}\n\n'
             )
@@ -711,6 +805,44 @@ class HttpBoundaryTests(unittest.TestCase):
             _PlainFakeUpstream.auth_headers[0], "Bearer sk-from-cursor"
         )
 
+    def test_json_stats_log_uses_success_status_from_upstream(self) -> None:
+        _PlainFakeUpstream.response_status = 201
+        stream = StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonLogFormatter())
+        logger = logging.getLogger("deepseek_bridge")
+        old_level = logger.level
+        logger.setLevel(logging.INFO)
+        logger.addHandler(handler)
+        try:
+            status, _ = _post(
+                f"{self.proxy.url}/v1/chat/completions",
+                self._request(),
+            )
+            deadline = time.monotonic() + 2
+            while (
+                time.monotonic() < deadline
+                and "└ stats" not in stream.getvalue()
+            ):
+                time.sleep(0.01)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+
+        records = [
+            json.loads(line) for line in stream.getvalue().splitlines() if line
+        ]
+        stats_records = [
+            record
+            for record in records
+            if str(record.get("message", "")).startswith("└ stats")
+        ]
+
+        self.assertEqual(status, 201)
+        self.assertTrue(stats_records)
+        self.assertEqual(stats_records[-1]["status"], 201)
+        self.assertEqual(stats_records[-1]["upstream_status"], 201)
+
     def test_embeddings_forward_upstream_http_error(self) -> None:
         _PlainFakeUpstream.response_status = 401
         _PlainFakeUpstream.response = {
@@ -789,9 +921,80 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1.0)
         self.assertIn("data: [DONE]", body)
 
+    def test_streaming_upstream_error_logs_without_body_or_key(self) -> None:
+        _PlainFakeUpstream.response_status = 502
+        _PlainFakeUpstream.response = {
+            "error": {"message": "stream-upstream-secret"}
+        }
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [
+                        {"role": "user", "content": "stream-user-secret"}
+                    ],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-stream-secret",
+                "Content-Type": "application/json",
+            },
+        )
+
+        with (
+            self.assertLogs("deepseek_bridge", level="INFO") as captured,
+            urlopen(request, timeout=2) as response,
+        ):
+            body = response.read().decode("utf-8")
+
+        output = "\n".join(captured.output)
+        self.assertEqual(response.status, 200)
+        self.assertIn("Upstream returned 502", body)
+        self.assertIn("request failed upstream_status=502", output)
+        self.assertNotIn("stream-upstream-secret", output)
+        self.assertNotIn("stream-user-secret", output)
+        self.assertNotIn("sk-stream-secret", output)
+
     def test_kubernetes_streaming_runtime_disables_spinner(self) -> None:
         self.proxy.server.config = replace(
             self.proxy.server.config, runtime_mode="kubernetes"
+        )
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+        spinner = MagicMock()
+        spinner.start.return_value = spinner
+        with (
+            patch(
+                "deepseek_bridge.handler._routes.TerminalSpinner",
+                return_value=spinner,
+            ) as spinner_cls,
+            urlopen(request, timeout=2) as response,
+        ):
+            body = response.read().decode("utf-8")
+
+        self.assertIn("data: [DONE]", body)
+        spinner_cls.assert_called_once()
+        self.assertFalse(spinner_cls.call_args.kwargs["enabled"])
+
+    def test_json_logging_disables_streaming_spinner(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, log_format="json"
         )
         request = Request(
             f"{self.proxy.url}/v1/chat/completions",
@@ -861,6 +1064,73 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("cursor request body", output)
         self.assertIn("upstream request body", output)
         self.assertNotIn("sk-from-cursor", output)
+
+    def test_normal_json_logging_summarizes_without_bodies_or_keys(
+        self,
+    ) -> None:
+        stream = StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonLogFormatter())
+        logger = logging.getLogger("deepseek_bridge")
+        old_level = logger.level
+        logger.setLevel(logging.INFO)
+        logger.addHandler(handler)
+        request_payload = {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {"role": "user", "content": "super-secret-user-prompt"}
+            ],
+        }
+        _PlainFakeUpstream.response = {
+            **_BASE_RESPONSE,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "assistant-secret-output",
+                    },
+                }
+            ],
+        }
+        try:
+            status, _ = _post(
+                f"{self.proxy.url}/v1/chat/completions",
+                request_payload,
+                api_key="sk-json-secret",
+            )
+            deadline = time.monotonic() + 2
+            while (
+                time.monotonic() < deadline
+                and "└ stats" not in stream.getvalue()
+            ):
+                time.sleep(0.01)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+
+        lines = [line for line in stream.getvalue().splitlines() if line]
+        records = [json.loads(line) for line in lines]
+        stats_records = [
+            record
+            for record in records
+            if str(record.get("message", "")).startswith("└ stats")
+        ]
+        serialized = "\n".join(lines)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(stats_records)
+        self.assertTrue(stats_records[-1]["request_id"].startswith("dcp-"))
+        self.assertEqual(stats_records[-1]["method"], "POST")
+        self.assertEqual(stats_records[-1]["path"], "/v1/chat/completions")
+        self.assertEqual(stats_records[-1]["status"], 200)
+        self.assertEqual(stats_records[-1]["model"], "deepseek-v4-pro")
+        self.assertEqual(stats_records[-1]["upstream_status"], 200)
+        self.assertEqual(stats_records[-1]["storage_backend"], "sqlite")
+        self.assertNotIn("sk-json-secret", serialized)
+        self.assertNotIn("super-secret-user-prompt", serialized)
+        self.assertNotIn("assistant-secret-output", serialized)
 
     def test_healthz_returns_ok(self) -> None:
         with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:

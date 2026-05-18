@@ -36,6 +36,8 @@ spec:
             - --tunnel
             - none
           env:
+            - name: DEEPSEEK_BRIDGE_LOG_FORMAT
+              value: json
             - name: DEEPSEEK_BRIDGE_STORAGE_BACKEND
               value: valkey
             - name: DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX
