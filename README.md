@@ -105,10 +105,21 @@ tunnel: cloudflared
 # ngrok_url: https://my-tunnel.ngrok.app  # optional: fixed ngrok endpoint
 debug: false
 cors: true
+cors_allowed_origins:
+  - http://localhost
+  - http://localhost:*
+  - http://127.0.0.1
+  - http://127.0.0.1:*
+cors_allow_credentials: true
 ollama: true
 stream_read_timeout: 180
 request_timeout: 300
 ```
+
+For browser clients served from a public tunnel or custom domain, add that
+exact origin to `cors_allowed_origins`. Setting `cors_allowed_origins: ["*"]`
+is supported, but credentialed responses echo the request origin instead of
+combining credentials with wildcard `*`.
 
 ## Client Setup
 
@@ -240,6 +251,8 @@ uv run --extra dev --python 3.14 coverage report
 | `--ngrok-url` | none | Fixed ngrok endpoint URL |
 | `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
 | `--cors` | on | Send CORS headers |
+| `--cors-allowed-origin` | loopback origins | Allowed browser Origin; repeat for multiple origins |
+| `--cors-allow-credentials` | on | Allow browser credentials for matching CORS origins |
 | `--stream-read-timeout` | `180` | SSE read timeout in seconds |
 | `--max-thread-pool` | `20` | Max concurrent request threads |
 | `--max-pool-connections` | `10` | Max upstream connections |

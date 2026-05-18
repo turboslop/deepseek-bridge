@@ -86,6 +86,9 @@ class CliArgParserTests(unittest.TestCase):
                 "--base-url",
                 "http://api.example.com",
                 "--cors",
+                "--cors-allowed-origin",
+                "https://app.example.com",
+                "--no-cors-allow-credentials",
             ]
         )
         self.assertEqual(args.host, "0.0.0.0")
@@ -93,6 +96,8 @@ class CliArgParserTests(unittest.TestCase):
         self.assertEqual(args.tunnel, "none")
         self.assertEqual(args.base_url, "http://api.example.com")
         self.assertTrue(args.cors)
+        self.assertEqual(args.cors_allowed_origins, ["https://app.example.com"])
+        self.assertFalse(args.cors_allow_credentials)
 
     def test_tunnel_default_is_cloudflared(self) -> None:
         from deepseek_bridge.cli import build_arg_parser

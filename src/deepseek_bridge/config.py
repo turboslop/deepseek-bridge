@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,11 +47,29 @@ DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 DEFAULT_MAX_THREAD_POOL = max(os.cpu_count() or 4, 12)
 DEFAULT_CORS = True
+DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "http://localhost",
+    "http://localhost:*",
+    "https://localhost",
+    "https://localhost:*",
+    "http://127.0.0.1",
+    "http://127.0.0.1:*",
+    "https://127.0.0.1",
+    "https://127.0.0.1:*",
+    "http://[::1]",
+    "http://[::1]:*",
+    "https://[::1]",
+    "https://[::1]:*",
+)
+DEFAULT_CORS_ALLOW_CREDENTIALS = True
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_DISK_MB = 500
 DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 
+CORS_ALLOWED_ORIGINS_TEXT = "\n".join(
+    f"  - {origin}" for origin in DEFAULT_CORS_ALLOWED_ORIGINS
+)
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-bridge/config.yaml."
 )
@@ -72,6 +90,9 @@ tunnel: cloudflared
 # cf_url: https://app.example.com  # required for cloudflared tunnel
 debug: false
 cors: {str(DEFAULT_CORS).lower()}
+cors_allowed_origins:
+{CORS_ALLOWED_ORIGINS_TEXT}
+cors_allow_credentials: {str(DEFAULT_CORS_ALLOW_CREDENTIALS).lower()}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
 max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
 
@@ -182,6 +203,28 @@ def as_float(value: Any, default: float) -> float:
         return default
 
 
+def _normalize_config_origin(value: object) -> str:
+    origin = str(value).strip()
+    if origin not in {"*", "null"}:
+        origin = origin.rstrip("/")
+    return origin
+
+
+def as_str_tuple(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is MISSING or value is None:
+        return default
+    if isinstance(value, str):
+        raw_items: Sequence[object] = value.split(",")
+    elif isinstance(value, list | tuple):
+        raw_items = list(value)
+    else:
+        return default
+    origins = tuple(
+        origin for raw in raw_items if (origin := _normalize_config_origin(raw))
+    )
+    return origins or default
+
+
 def as_path(value: Any, default_path: Path, relative_base: Path) -> Path:
     if value is MISSING or value is None or value == "":
         return default_path
@@ -275,6 +318,8 @@ class ProxyConfig:
         default_factory=lambda: _auto_queue_size(DEFAULT_MAX_THREAD_POOL)
     )
     cors: bool = DEFAULT_CORS
+    cors_allowed_origins: tuple[str, ...] = DEFAULT_CORS_ALLOWED_ORIGINS
+    cors_allow_credentials: bool = DEFAULT_CORS_ALLOW_CREDENTIALS
     ollama: bool = True
     debug: bool = False
     tunnel: str = "cloudflared"
@@ -358,6 +403,14 @@ class ProxyConfig:
             cors=as_bool(
                 setting_value(settings, "cors"),
                 DEFAULT_CORS,
+            ),
+            cors_allowed_origins=as_str_tuple(
+                setting_value(settings, "cors_allowed_origins"),
+                DEFAULT_CORS_ALLOWED_ORIGINS,
+            ),
+            cors_allow_credentials=as_bool(
+                setting_value(settings, "cors_allow_credentials"),
+                DEFAULT_CORS_ALLOW_CREDENTIALS,
             ),
             ollama=as_bool(
                 setting_value(settings, "ollama"),

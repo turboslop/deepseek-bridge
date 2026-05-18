@@ -115,7 +115,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--cors",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Send permissive CORS headers",
+        help="Send CORS headers",
+    )
+    group_net.add_argument(
+        "--cors-allowed-origin",
+        action="append",
+        dest="cors_allowed_origins",
+        help=(
+            "Allowed browser Origin for CORS; repeat for multiple origins. "
+            "Use '*' only with --no-cors-allow-credentials for wildcard CORS."
+        ),
+    )
+    group_net.add_argument(
+        "--cors-allow-credentials",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Allow browser credentials for matching CORS origins",
     )
 
     group_storage = parser.add_argument_group("Storage")
@@ -343,6 +358,10 @@ def main(argv: list[str] | None = None) -> int:
         updates["collapsible_reasoning"] = args.collapsible_reasoning
     if args.cors is not None:
         updates["cors"] = args.cors
+    if args.cors_allowed_origins is not None:
+        updates["cors_allowed_origins"] = tuple(args.cors_allowed_origins)
+    if args.cors_allow_credentials is not None:
+        updates["cors_allow_credentials"] = args.cors_allow_credentials
     if args.ollama is not None:
         updates["ollama"] = args.ollama
     if args.request_timeout is not None:
