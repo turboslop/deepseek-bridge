@@ -8,6 +8,7 @@ from contextlib import suppress
 from typing import Any, Protocol, cast, runtime_checkable
 
 from .logging import INTERNAL_LOG, LOG
+from .metrics import METRICS
 from .reasoning_store import ReasoningStoreBase, ReasoningStoreStats
 
 
@@ -170,131 +171,219 @@ class ValkeyReasoningStore(ReasoningStoreBase):
         return len(stale_keys)
 
     def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
-        if self._closed or not isinstance(reasoning, str):
-            return
-        storage_key = self._storage_key(key)
-        created_at = time.time()
-        value = json.dumps(
-            {
-                "reasoning": reasoning,
-                "message_json": json.dumps(
-                    message, ensure_ascii=False, sort_keys=True
-                ),
-                "created_at": created_at,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        ttl = (
-            self.max_age_seconds
-            if self.max_age_seconds is not None and self.max_age_seconds > 0
-            else None
-        )
+        started = time.monotonic()
         try:
-            self._client.set(storage_key, value, ex=ttl)
-            self._client.zadd(self._index_key, {storage_key: created_at})
-            self._prune_index_by_age(created_at)
-            self._prune_index_by_rows()
-        except Exception as exc:
-            LOG.warning(
-                "Valkey write failed for key=%s: %s",
-                key[:32],
-                _safe_exception_name(exc),
+            if self._closed or not isinstance(reasoning, str):
+                return
+            storage_key = self._storage_key(key)
+            created_at = time.time()
+            value = json.dumps(
+                {
+                    "reasoning": reasoning,
+                    "message_json": json.dumps(
+                        message, ensure_ascii=False, sort_keys=True
+                    ),
+                    "created_at": created_at,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            ttl = (
+                self.max_age_seconds
+                if self.max_age_seconds is not None
+                and self.max_age_seconds > 0
+                else None
+            )
+            try:
+                self._client.set(storage_key, value, ex=ttl)
+                self._client.zadd(self._index_key, {storage_key: created_at})
+                self._prune_index_by_age(created_at)
+                self._prune_index_by_rows()
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="put",
+                )
+                LOG.warning(
+                    "Valkey write failed for key=%s: %s",
+                    key[:32],
+                    _safe_exception_name(exc),
+                )
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="put",
+                duration_seconds=time.monotonic() - started,
             )
 
     def get(self, key: str) -> str | None:
-        if self._closed:
-            return None
-        storage_key = self._storage_key(key)
+        started = time.monotonic()
         try:
-            raw_value = self._client.get(storage_key)
-        except Exception as exc:
-            LOG.warning(
-                "Valkey read failed for key=%s: %s",
-                key[:32],
-                _safe_exception_name(exc),
-            )
-            return None
-        if raw_value is None:
+            if self._closed:
+                return None
+            storage_key = self._storage_key(key)
+            try:
+                raw_value = self._client.get(storage_key)
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="get",
+                )
+                LOG.warning(
+                    "Valkey read failed for key=%s: %s",
+                    key[:32],
+                    _safe_exception_name(exc),
+                )
+                return None
+            if raw_value is None:
+                with suppress(Exception):
+                    self._client.zrem(self._index_key, storage_key)
+                INTERNAL_LOG.debug(
+                    "store.cache: key=%s..., hit=False", key[:32]
+                )
+                return None
+            try:
+                if isinstance(raw_value, bytes):
+                    raw_value = raw_value.decode("utf-8")
+                payload = json.loads(str(raw_value))
+                reasoning = payload.get("reasoning")
+                if isinstance(reasoning, str):
+                    INTERNAL_LOG.debug(
+                        "store.cache: key=%s..., hit=True", key[:32]
+                    )
+                    return reasoning
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="get",
+                )
+                LOG.warning(
+                    "Valkey value decode failed for key=%s: %s",
+                    key[:32],
+                    _safe_exception_name(exc),
+                )
             with suppress(Exception):
+                self._client.delete(storage_key)
                 self._client.zrem(self._index_key, storage_key)
-            INTERNAL_LOG.debug("store.cache: key=%s..., hit=False", key[:32])
-            return None
-        try:
-            if isinstance(raw_value, bytes):
-                raw_value = raw_value.decode("utf-8")
-            payload = json.loads(str(raw_value))
-            reasoning = payload.get("reasoning")
-            if isinstance(reasoning, str):
-                INTERNAL_LOG.debug("store.cache: key=%s..., hit=True", key[:32])
-                return reasoning
-        except Exception as exc:
-            LOG.warning(
-                "Valkey value decode failed for key=%s: %s",
-                key[:32],
-                _safe_exception_name(exc),
+            INTERNAL_LOG.debug(
+                "store.cache: key=%s..., hit=False", key[:32]
             )
-        with suppress(Exception):
-            self._client.delete(storage_key)
-            self._client.zrem(self._index_key, storage_key)
-        INTERNAL_LOG.debug("store.cache: key=%s..., hit=False", key[:32])
-        return None
+            return None
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="get",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def clear(self) -> int:
-        if self._closed:
-            return 0
+        started = time.monotonic()
         try:
-            keys = [
-                _to_key(key)
-                for key in self._client.scan_iter(
-                    match=self._cache_key_match(), count=500
+            if self._closed:
+                return 0
+            try:
+                keys = [
+                    _to_key(key)
+                    for key in self._client.scan_iter(
+                        match=self._cache_key_match(), count=500
+                    )
+                ]
+                deleted = self._delete_keys(keys)
+                if self._index_key not in keys:
+                    self._client.delete(self._index_key)
+                return max(0, deleted - (1 if self._index_key in keys else 0))
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="clear",
                 )
-            ]
-            deleted = self._delete_keys(keys)
-            if self._index_key not in keys:
-                self._client.delete(self._index_key)
-            return max(0, deleted - (1 if self._index_key in keys else 0))
-        except Exception as exc:
-            LOG.warning("Valkey clear failed: %s", _safe_exception_name(exc))
-            return 0
+                LOG.warning(
+                    "Valkey clear failed: %s", _safe_exception_name(exc)
+                )
+                return 0
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="clear",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def prune(self) -> int:
-        if self._closed:
-            return 0
+        started = time.monotonic()
         try:
-            return self._prune_index_by_age() + self._prune_index_by_rows()
-        except Exception as exc:
-            LOG.warning("Valkey prune failed: %s", _safe_exception_name(exc))
-            return 0
+            if self._closed:
+                return 0
+            try:
+                return self._prune_index_by_age() + self._prune_index_by_rows()
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="prune",
+                )
+                LOG.warning(
+                    "Valkey prune failed: %s", _safe_exception_name(exc)
+                )
+                return 0
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="prune",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def healthcheck(self) -> tuple[bool, str]:
-        if self._closed:
-            return False, "closed"
+        started = time.monotonic()
         try:
-            self._client.ping()
-        except Exception as exc:
-            LOG.warning(
-                "Valkey health check failed: %s", _safe_exception_name(exc)
+            if self._closed:
+                return False, "closed"
+            try:
+                self._client.ping()
+            except Exception as exc:
+                METRICS.record_storage_error(
+                    backend=self.backend_name,
+                    operation="healthcheck",
+                )
+                LOG.warning(
+                    "Valkey health check failed: %s",
+                    _safe_exception_name(exc),
+                )
+                return False, "unavailable"
+            return True, "ok"
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="healthcheck",
+                duration_seconds=time.monotonic() - started,
             )
-            return False, "unavailable"
-        return True, "ok"
 
     def stats(self) -> ReasoningStoreStats:
+        started = time.monotonic()
         entries: int | None = None
-        if not self._closed:
-            try:
-                self._prune_index_by_age()
-                entries = _to_int(self._client.zcard(self._index_key))
-            except Exception as exc:
-                LOG.warning(
-                    "Valkey stats failed: %s", _safe_exception_name(exc)
-                )
-        return ReasoningStoreStats(
-            backend=self.backend_name,
-            entries=entries,
-            max_age_seconds=self.max_age_seconds,
-            max_rows=self._max_rows,
-        )
+        try:
+            if not self._closed:
+                try:
+                    self._prune_index_by_age()
+                    entries = _to_int(self._client.zcard(self._index_key))
+                except Exception as exc:
+                    METRICS.record_storage_error(
+                        backend=self.backend_name,
+                        operation="stats",
+                    )
+                    LOG.warning(
+                        "Valkey stats failed: %s", _safe_exception_name(exc)
+                    )
+            return ReasoningStoreStats(
+                backend=self.backend_name,
+                entries=entries,
+                max_age_seconds=self.max_age_seconds,
+                max_rows=self._max_rows,
+            )
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="stats",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def close(self) -> None:
         self._closed = True

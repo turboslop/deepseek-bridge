@@ -16,6 +16,7 @@ from deepseek_bridge.helpers import (
     _handle_shutdown_signal,
     _shutdown_requested,
 )
+from deepseek_bridge.metrics import METRICS
 from deepseek_bridge.reasoning_store import ReasoningStoreStats
 from deepseek_bridge.server import (
     BoundedThreadPoolHTTPServer,
@@ -51,6 +52,24 @@ class UpstreamPoolTests(unittest.TestCase):
             _args, kwargs = mock_pool_mgr.call_args
             self.assertEqual(kwargs["retries"].read, 0)
 
+    def test_upstream_pool_ignores_metrics_model_kwarg(self) -> None:
+        with patch.object(urllib3, "PoolManager") as mock_pool_mgr:
+            response = MagicMock()
+            mock_pool_mgr.return_value.request.return_value = response
+            pool = UpstreamPool()
+
+            self.assertIs(
+                pool.request(
+                    "POST",
+                    "https://api.example.test/chat/completions",
+                    metrics_model="deepseek-v4-pro",
+                ),
+                response,
+            )
+
+        _args, kwargs = mock_pool_mgr.return_value.request.call_args
+        self.assertNotIn("metrics_model", kwargs)
+
 
 # ---------------------------------------------------------------------------
 # BoundedThreadPoolHTTPServer
@@ -80,11 +99,30 @@ class BoundedThreadPoolTests(unittest.TestCase):
             with patch.object(server.executor, "submit") as mock_submit:
                 server.process_request("fake_request", ("127.0.0.1", 12345))
                 mock_submit.assert_called_once_with(
-                    server.process_request_thread,
+                    server._process_request_thread_tracked,
                     "fake_request",
                     ("127.0.0.1", 12345),
                 )
         finally:
+            server.server_close()
+
+    def test_thread_pool_metrics_report_active_workers_and_queue(self) -> None:
+        server = self._make_server(max_workers=5)
+        METRICS.reset()
+        try:
+            server._active_worker_count = 2
+            with patch.object(
+                BoundedThreadPoolHTTPServer,
+                "queue_size",
+                new_callable=PropertyMock,
+                return_value=3,
+            ):
+                body = METRICS.render_prometheus(server=server)
+
+            self.assertIn("deepseek_bridge_thread_pool_active 2", body)
+            self.assertIn("deepseek_bridge_thread_pool_queue 3", body)
+        finally:
+            METRICS.reset()
             server.server_close()
 
     def test_queue_at_limit_rejects_new_request(self) -> None:

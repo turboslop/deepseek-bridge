@@ -21,6 +21,7 @@ from ..config import (
 )
 from ..helpers import _generate_request_id
 from ..logging import LOG
+from ..metrics import METRICS, PROMETHEUS_CONTENT_TYPE
 
 
 class HandlerEndpoints:
@@ -53,6 +54,8 @@ class HandlerEndpoints:
             payload, ensure_ascii=False, separators=(",", ":")
         ).encode("utf-8")
         upstream_url = f"{self.config.upstream_base_url}/embeddings"
+        upstream_model = str(payload.get("model") or self.config.upstream_model)
+        upstream_started = time.monotonic()
 
         try:
             response = self.upstream_pool.request(
@@ -69,6 +72,11 @@ class HandlerEndpoints:
                 ),
             )
             if response.status < 400:
+                METRICS.record_upstream_request(
+                    model=upstream_model,
+                    status=response.status,
+                    duration_seconds=time.monotonic() - upstream_started,
+                )
                 body = response.data
                 headers = [
                     ("Content-Type", "application/json"),
@@ -88,6 +96,11 @@ class HandlerEndpoints:
                 response.status,
             )
             self._send_upstream_error(response)
+            METRICS.record_upstream_request(
+                model=upstream_model,
+                status=response.status,
+                duration_seconds=time.monotonic() - upstream_started,
+            )
         except urllib3.exceptions.TimeoutError:
             LOG.warning("embeddings request timed out")
             self._send_upstream_failure(
@@ -97,6 +110,11 @@ class HandlerEndpoints:
                 trace=None,
                 headers_sent=False,
             )
+            METRICS.record_upstream_request(
+                model=upstream_model,
+                status=504,
+                duration_seconds=time.monotonic() - upstream_started,
+            )
         except (urllib3.exceptions.HTTPError, OSError, ValueError) as exc:
             LOG.warning("embeddings request failed: %s", exc)
             self._send_upstream_failure(
@@ -105,6 +123,11 @@ class HandlerEndpoints:
                 "upstream_failure",
                 trace=None,
                 headers_sent=False,
+            )
+            METRICS.record_upstream_request(
+                model=upstream_model,
+                status=500,
+                duration_seconds=time.monotonic() - upstream_started,
             )
 
     def _send_models(self) -> None:
@@ -154,6 +177,19 @@ class HandlerEndpoints:
                 "checks": checks,
             },
         )
+
+    def _send_metrics(self) -> None:
+        body = METRICS.render_prometheus(server=self.server).encode("utf-8")
+        sent_headers = self._send_response_headers(
+            200,
+            [
+                ("Content-Type", PROMETHEUS_CONTENT_TYPE),
+                ("Content-Length", str(len(body))),
+            ],
+            "sending metrics response headers",
+        )
+        if sent_headers:
+            self._write_to_client(body, "sending metrics response body")
 
     def _handle_api_version(self) -> None:
         self._request_id = _generate_request_id()

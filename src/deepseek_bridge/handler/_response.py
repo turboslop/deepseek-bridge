@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from http.client import IncompleteRead
 from typing import Any
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from ..logging import (
     log_bytes,
     read_response_body,
 )
+from ..metrics import METRICS
 from ..trace import TraceRequest
 
 
@@ -196,7 +198,26 @@ class HandlerResponse:
             )
             self.close_connection = True
             return False
+        self._metrics_http_status = status
         return True
+
+    def _record_http_metrics(self) -> None:
+        if getattr(self, "_metrics_http_recorded", False):
+            return
+        status = getattr(self, "_metrics_http_status", None)
+        if not isinstance(status, int):
+            return
+        self._metrics_http_recorded = True
+        started = getattr(self, "_request_started_monotonic", None)
+        if not isinstance(started, int | float):
+            started = time.monotonic()
+        path = urlparse(str(getattr(self, "path", "unknown"))).path
+        METRICS.record_http_request(
+            method=str(getattr(self, "command", "UNKNOWN")),
+            path=path or "unknown",
+            status=status,
+            duration_seconds=time.monotonic() - float(started),
+        )
 
     def _write_to_client(
         self,

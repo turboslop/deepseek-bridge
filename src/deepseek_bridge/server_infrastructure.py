@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import socket
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,7 @@ import urllib3
 from .config import ProxyConfig
 from .helpers import _shutdown_requested
 from .logging import LOG, format_count
+from .metrics import METRICS
 from .reasoning_store import ReasoningStoreProtocol, ReasoningStoreStats
 from .trace import TraceWriter
 
@@ -51,6 +53,7 @@ class UpstreamPool:
         **kwargs: Any,
     ) -> urllib3.BaseHTTPResponse:
         """Forward an HTTP request through the upstream connection pool."""
+        kwargs.pop("metrics_model", None)
         return self._pool.request(method, url, **kwargs)
 
 
@@ -170,6 +173,8 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         self, *args: Any, max_workers: int = 20, **kwargs: Any
     ) -> None:
         super().__init__(*args, **kwargs)
+        self._active_worker_count = 0
+        self._active_worker_lock = threading.Lock()
         self.executor = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="proxy",
@@ -211,10 +216,18 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
                 queue_size,
             )
             self._reject_connection(request)
+            METRICS.record_http_request(
+                method="UNKNOWN",
+                path="queue_rejected",
+                status=503,
+                duration_seconds=0.0,
+            )
             return
         with contextlib.suppress(RuntimeError):
             self.executor.submit(
-                self.process_request_thread, request, client_address
+                self._process_request_thread_tracked,
+                request,
+                client_address,
             )
 
     def _serve_liveness_probe_when_saturated(self, request: Any) -> bool:
@@ -274,6 +287,21 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         target = parts[1].decode("latin-1", errors="replace")
         return urlparse(target).path
 
+    def _process_request_thread_tracked(
+        self,
+        request: socket.socket | tuple[bytes, socket.socket],
+        client_address: Any,
+    ) -> None:
+        with self._active_worker_lock:
+            self._active_worker_count += 1
+        try:
+            self.process_request_thread(request, client_address)
+        finally:
+            with self._active_worker_lock:
+                self._active_worker_count = max(
+                    0, self._active_worker_count - 1
+                )
+
     @staticmethod
     def _reject_connection(request: Any) -> None:
         try:
@@ -307,6 +335,15 @@ class BoundedThreadPoolHTTPServer(DeepSeekProxyServer):
         """Current number of active worker threads."""
         try:
             return len(self.executor._threads)
+        except Exception:
+            return 0
+
+    @property
+    def active_worker_count(self) -> int:
+        """Current number of workers processing accepted requests."""
+        try:
+            with self._active_worker_lock:
+                return self._active_worker_count
         except Exception:
             return 0
 

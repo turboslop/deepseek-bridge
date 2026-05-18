@@ -12,6 +12,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from ._normalization import normalize_tool_call
 from .logging import INTERNAL_LOG, LOG
+from .metrics import METRICS
 
 
 def tool_call_signature(tool_call: dict[str, Any]) -> str:
@@ -468,28 +469,54 @@ class ReasoningStore(ReasoningStoreBase):
 
     def healthcheck(self) -> tuple[bool, str]:
         """Return whether the backing cache is usable for readiness checks."""
-        with self._lock:
-            if self._closed:
-                return False, "closed"
-            try:
-                self._conn.execute("SELECT 1").fetchone()
-            except Exception as exc:
-                LOG.warning("SQLite health check failed: %s", exc)
-                return False, "unavailable"
-        return True, "ok"
+        started = time.monotonic()
+        try:
+            with self._lock:
+                if self._closed:
+                    return False, "closed"
+                try:
+                    self._conn.execute("SELECT 1").fetchone()
+                except Exception as exc:
+                    METRICS.record_storage_error(
+                        backend=self.backend_name,
+                        operation="healthcheck",
+                    )
+                    LOG.warning("SQLite health check failed: %s", exc)
+                    return False, "unavailable"
+            return True, "ok"
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="healthcheck",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def stats(self) -> ReasoningStoreStats:
-        size_mb: float | None = None
-        if isinstance(self.reasoning_content_path, Path):
-            size_mb = self.get_db_size_mb()
-        return ReasoningStoreStats(
-            backend=self.backend_name,
-            entries=self.get_row_count(),
-            size_mb=size_mb,
-            path=str(self.reasoning_content_path),
-            max_age_seconds=self.max_age_seconds,
-            max_rows=self._max_rows,
-        )
+        started = time.monotonic()
+        try:
+            size_mb: float | None = None
+            if isinstance(self.reasoning_content_path, Path):
+                size_mb = self.get_db_size_mb()
+            return ReasoningStoreStats(
+                backend=self.backend_name,
+                entries=self.get_row_count(),
+                size_mb=size_mb,
+                path=str(self.reasoning_content_path),
+                max_age_seconds=self.max_age_seconds,
+                max_rows=self._max_rows,
+            )
+        except Exception:
+            METRICS.record_storage_error(
+                backend=self.backend_name,
+                operation="stats",
+            )
+            raise
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="stats",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -551,40 +578,71 @@ class ReasoningStore(ReasoningStoreBase):
         return count
 
     def put(self, key: str, reasoning: str, message: dict[str, Any]) -> None:
+        started = time.monotonic()
         if not isinstance(reasoning, str):
             return
-        message_json = json.dumps(message, ensure_ascii=False, sort_keys=True)
-        with self._lock:
-            if self._closed:
-                return
-            try:
-                self._conn.execute(
-                    "INSERT INTO reasoning_cache("
-                    "key, reasoning, message_json, created_at) "
-                    "VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
-                    "reasoning = excluded.reasoning, "
-                    "message_json = excluded.message_json, "
-                    "created_at = excluded.created_at",
-                    (key, reasoning, message_json, time.time()),
-                )
-                if self._max_rows is not None and self._max_rows > 0:
-                    self._prune_locked()
-                self._conn.commit()
-            except Exception as exc:
-                LOG.warning("SQLite write failed for key=%s: %s", key[:32], exc)
+        try:
+            message_json = json.dumps(
+                message, ensure_ascii=False, sort_keys=True
+            )
+            with self._lock:
+                if self._closed:
+                    return
+                try:
+                    self._conn.execute(
+                        "INSERT INTO reasoning_cache("
+                        "key, reasoning, message_json, created_at) "
+                        "VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                        "reasoning = excluded.reasoning, "
+                        "message_json = excluded.message_json, "
+                        "created_at = excluded.created_at",
+                        (key, reasoning, message_json, time.time()),
+                    )
+                    if self._max_rows is not None and self._max_rows > 0:
+                        self._prune_locked()
+                    self._conn.commit()
+                except Exception as exc:
+                    METRICS.record_storage_error(
+                        backend=self.backend_name,
+                        operation="put",
+                    )
+                    LOG.warning(
+                        "SQLite write failed for key=%s: %s", key[:32], exc
+                    )
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="put",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def get(self, key: str) -> str | None:
-        with self._lock:
-            if self._closed:
-                return None
-            try:
-                row = self._conn.execute(
-                    "SELECT reasoning FROM reasoning_cache WHERE key = ?",
-                    (key,),
-                ).fetchone()
-            except Exception as exc:
-                LOG.warning("SQLite read failed for key=%s: %s", key[:32], exc)
-                return None
+        started = time.monotonic()
+        row: Any | None = None
+        try:
+            with self._lock:
+                if self._closed:
+                    return None
+                try:
+                    row = self._conn.execute(
+                        "SELECT reasoning FROM reasoning_cache WHERE key = ?",
+                        (key,),
+                    ).fetchone()
+                except Exception as exc:
+                    METRICS.record_storage_error(
+                        backend=self.backend_name,
+                        operation="get",
+                    )
+                    LOG.warning(
+                        "SQLite read failed for key=%s: %s", key[:32], exc
+                    )
+                    return None
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="get",
+                duration_seconds=time.monotonic() - started,
+            )
         if row is None:
             INTERNAL_LOG.debug("store.cache: key=%s..., hit=False", key[:32])
             return None
@@ -592,20 +650,48 @@ class ReasoningStore(ReasoningStoreBase):
         return str(row[0])
 
     def clear(self) -> int:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) FROM reasoning_cache"
-            ).fetchone()
-            count = int(row[0] if row else 0)
-            self._conn.execute("DELETE FROM reasoning_cache")
-            self._conn.commit()
-        return count
+        started = time.monotonic()
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT COUNT(*) FROM reasoning_cache"
+                ).fetchone()
+                count = int(row[0] if row else 0)
+                self._conn.execute("DELETE FROM reasoning_cache")
+                self._conn.commit()
+            return count
+        except Exception:
+            METRICS.record_storage_error(
+                backend=self.backend_name,
+                operation="clear",
+            )
+            raise
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="clear",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def prune(self) -> int:
-        with self._lock:
-            deleted = self._prune_locked()
-            self._conn.commit()
-        return deleted
+        started = time.monotonic()
+        try:
+            with self._lock:
+                deleted = self._prune_locked()
+                self._conn.commit()
+            return deleted
+        except Exception:
+            METRICS.record_storage_error(
+                backend=self.backend_name,
+                operation="prune",
+            )
+            raise
+        finally:
+            METRICS.observe_storage_operation(
+                backend=self.backend_name,
+                operation="prune",
+                duration_seconds=time.monotonic() - started,
+            )
 
     def _prune_locked(self) -> int:
         deleted = 0

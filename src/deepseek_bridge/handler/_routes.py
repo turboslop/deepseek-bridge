@@ -28,6 +28,7 @@ from ..logging import (
     read_response_body,
     summarize_chat_payload,
 )
+from ..metrics import METRICS
 from ..transform import prepare_upstream_request
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ _track_usage_lock = threading.Lock()
 class HandlerRoutes:
     def do_OPTIONS(self) -> None:
         self._request_id = _generate_request_id()
+        self._request_started_monotonic = time.monotonic()
         request_path = urlparse(self.path).path
         if self.config.debug:
             LOG.info(
@@ -51,6 +53,7 @@ class HandlerRoutes:
 
     def do_GET(self) -> None:
         self._request_id = _generate_request_id()
+        self._request_started_monotonic = time.monotonic()
         request_path = urlparse(self.path).path
         if self.config.debug:
             LOG.info(
@@ -68,6 +71,17 @@ class HandlerRoutes:
         if request_path in {"/healthz", "/v1/healthz", "/health", "/v1/health"}:
             self._send_health()
             return
+        if request_path in {"/metrics", "/v1/metrics"}:
+            if self.config.metrics_enabled:
+                self._send_metrics()
+                return
+            self._send_json(
+                404,
+                _error_body(
+                    "Not found", "invalid_request_error", "endpoint_not_found"
+                ),
+            )
+            return
         if request_path in {"/models", "/v1/models"}:
             self._send_models()
             return
@@ -84,6 +98,7 @@ class HandlerRoutes:
         if self.server.request_count % 100 == 0:
             self.server._log_heartbeat()
         started = time.monotonic()
+        self._request_started_monotonic = started
         request_path = urlparse(self.path).path
 
         LOG.info(
@@ -186,6 +201,7 @@ class HandlerRoutes:
         ).start()
 
         headers_sent = False
+        stream_metric_active = False
         if stream:
             sent = self._send_response_headers(
                 200,
@@ -202,6 +218,8 @@ class HandlerRoutes:
                 return
             self.close_connection = True
             headers_sent = True
+            METRICS.stream_started()
+            stream_metric_active = True
             if trace is not None:
                 trace.record_cursor_response(
                     status=200,
@@ -218,28 +236,36 @@ class HandlerRoutes:
             stream,
         )
 
-        response = self._send_upstream_with_retry(
-            upstream_url,
-            upstream_body,
-            upstream_headers,
-            stream,
-            trace,
-            started,
-            spinner,
-            headers_sent=headers_sent,
-        )
-        if response is None:
-            return
+        upstream_started = time.monotonic()
+        try:
+            response = self._send_upstream_with_retry(
+                upstream_url,
+                upstream_body,
+                upstream_headers,
+                stream,
+                trace,
+                started,
+                spinner,
+                headers_sent=headers_sent,
+                upstream_model=prepared.upstream_model,
+                upstream_started=upstream_started,
+            )
+            if response is None:
+                return
 
-        self._dispatch_response(
-            response,
-            prepared,
-            stream,
-            trace,
-            started,
-            spinner,
-            headers_sent=headers_sent,
-        )
+            self._dispatch_response(
+                response,
+                prepared,
+                stream,
+                trace,
+                started,
+                spinner,
+                headers_sent=headers_sent,
+                upstream_started=upstream_started,
+            )
+        finally:
+            if stream_metric_active:
+                METRICS.stream_finished()
 
     def _validate_chat_request(
         self, request_path: str
@@ -529,7 +555,10 @@ class HandlerRoutes:
         started: float,
         spinner: TerminalSpinner,
         headers_sent: bool = False,
+        upstream_model: str = "unknown",
+        upstream_started: float | None = None,
     ) -> urllib3.BaseHTTPResponse | None:
+        upstream_started = upstream_started or time.monotonic()
         try:
             if self.config.debug:
                 LOG.info("forwarding to %s", upstream_url)
@@ -610,6 +639,9 @@ class HandlerRoutes:
                         trace=trace,
                         headers_sent=headers_sent,
                     )
+                    self._record_upstream_metrics(
+                        upstream_model, 500, upstream_started
+                    )
                     self._finish_trace(trace, "upstream_error", http_status=500)
                     return None
         except urllib3.exceptions.MaxRetryError as exc:
@@ -634,6 +666,7 @@ class HandlerRoutes:
                 trace=trace,
                 headers_sent=headers_sent,
             )
+            self._record_upstream_metrics(upstream_model, 500, upstream_started)
             self._finish_trace(trace, "upstream_error", http_status=500)
             return None
         except urllib3.exceptions.TimeoutError:
@@ -657,6 +690,7 @@ class HandlerRoutes:
                 trace=trace,
                 headers_sent=headers_sent,
             )
+            self._record_upstream_metrics(upstream_model, 504, upstream_started)
             self._finish_trace(trace, "upstream_error", http_status=504)
             return None
         except urllib3.exceptions.HTTPError as exc:
@@ -681,6 +715,7 @@ class HandlerRoutes:
                 trace=trace,
                 headers_sent=headers_sent,
             )
+            self._record_upstream_metrics(upstream_model, 500, upstream_started)
             self._finish_trace(trace, "upstream_error", http_status=500)
             return None
         except Exception:
@@ -706,6 +741,16 @@ class HandlerRoutes:
             trace=trace,
         )
 
+    @staticmethod
+    def _record_upstream_metrics(
+        model: str, status: int | str, upstream_started: float
+    ) -> None:
+        METRICS.record_upstream_request(
+            model=model,
+            status=status,
+            duration_seconds=time.monotonic() - upstream_started,
+        )
+
     def _dispatch_response(
         self,
         response: urllib3.BaseHTTPResponse,
@@ -715,7 +760,9 @@ class HandlerRoutes:
         started: float,
         spinner: TerminalSpinner,
         headers_sent: bool = False,
+        upstream_started: float | None = None,
     ) -> None:
+        upstream_started = upstream_started or time.monotonic()
         try:
             upstream_status = response.status
             if self.config.debug:
@@ -765,6 +812,9 @@ class HandlerRoutes:
                     http_status=upstream_status,
                     stream=stream,
                 )
+                self._record_upstream_metrics(
+                    prepared.upstream_model, upstream_status, upstream_started
+                )
                 return
             if stream:
                 include_usage = bool(
@@ -797,6 +847,9 @@ class HandlerRoutes:
                     record_response_messages=prepared.record_response_messages,
                     record_response_contexts=prepared.record_response_contexts,
                 )
+            self._record_upstream_metrics(
+                prepared.upstream_model, upstream_status, upstream_started
+            )
             if not sent_response.sent:
                 spinner.stop()
                 self._finish_trace(
