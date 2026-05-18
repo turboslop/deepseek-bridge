@@ -53,6 +53,16 @@ def create_reasoning_store(config: ProxyConfig) -> ReasoningStoreProtocol:
             max_age_seconds=config.reasoning_cache_max_age_seconds,
             max_rows=config.reasoning_cache_max_entries,
         )
+    if config.storage_backend == "valkey":
+        from .valkey_store import ValkeyReasoningStore
+
+        return ValkeyReasoningStore(
+            config.valkey_url,
+            key_prefix=config.valkey_key_prefix,
+            max_age_seconds=config.reasoning_cache_max_age_seconds,
+            max_rows=config.reasoning_cache_max_entries,
+            max_connections=config.max_thread_pool,
+        )
     raise ValueError(f"storage backend {config.storage_backend!r} is invalid")
 
 
@@ -209,7 +219,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_storage.add_argument(
         "--clear-reasoning-cache",
         action="store_true",
-        help="Clear the local reasoning_content SQLite cache and exit",
+        help="Clear the configured reasoning_content cache and exit",
     )
 
     group_perf = parser.add_argument_group("Performance")

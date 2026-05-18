@@ -43,6 +43,8 @@ from deepseek_bridge.server import (
     build_arg_parser,
     read_response_body,
 )
+from deepseek_bridge.valkey_store import ValkeyReasoningStore
+from tests.test_reasoning_store import _FakeValkeyClient
 
 # ---------------------------------------------------------------------------
 # Stubs for fast in-process tests of internal handler methods
@@ -894,6 +896,38 @@ class HttpBoundaryTests(unittest.TestCase):
             caught.exception.close()
         self.assertFalse(body["ok"])
         self.assertEqual(body["checks"]["storage"]["status"], "unavailable")
+
+        with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(json.loads(response.read())["ok"])
+
+    def test_readyz_uses_valkey_healthcheck_without_leaking_url(self) -> None:
+        client = _FakeValkeyClient()
+        client.fail_ops.add("ping")
+        self.proxy.server.reasoning_store = ValkeyReasoningStore(
+            "valkey://:secret@example.invalid/0",
+            key_prefix="tests",
+            max_age_seconds=30,
+            client=client,
+        )
+
+        with (
+            self.assertLogs("deepseek_bridge", level="WARNING") as captured,
+            self.assertRaises(HTTPError) as caught,
+        ):
+            urlopen(f"{self.proxy.url}/readyz", timeout=2)
+        try:
+            self.assertEqual(caught.exception.code, 503)
+            body = json.loads(caught.exception.read())
+        finally:
+            caught.exception.close()
+        output = "\n".join(captured.output)
+        body_text = json.dumps(body)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["checks"]["storage"]["status"], "unavailable")
+        self.assertNotIn("secret", output + body_text)
+        self.assertNotIn("example.invalid", output + body_text)
+        self.assertNotIn("valkey://", output + body_text)
 
         with urlopen(f"{self.proxy.url}/healthz", timeout=2) as response:
             self.assertEqual(response.status, 200)

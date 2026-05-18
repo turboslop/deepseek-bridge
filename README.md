@@ -156,6 +156,9 @@ storage:
   backend: sqlite
   sqlite:
     path: reasoning_content.sqlite3
+  # valkey:
+  #   url: valkey://localhost:6379/0
+  #   key_prefix: deepseek-bridge
 
 reasoning_cache:
   max_age_seconds: 604800
@@ -208,9 +211,11 @@ supported, but credentialed responses echo the request origin instead of
 combining credentials with wildcard `*`.
 
 YAML paths are relative to the config file. Environment-variable and CLI paths
-are relative to the process working directory unless absolute. `storage.backend`
-must be `sqlite`, `logging.format` must be `text`, and `metrics.enabled` must
-be `false` until those runtime features are implemented.
+are relative to the process working directory unless absolute.
+`storage.backend` must be `sqlite` or `valkey`; Valkey storage requires
+`storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`. `logging.format` must be
+`text`, and `metrics.enabled` must be `false` until those runtime features are
+implemented.
 
 Supported environment variables:
 
@@ -265,9 +270,9 @@ docker run --rm -p 9000:9000 \
   deepseek-bridge:local
 ```
 
-In Kubernetes, mount the YAML as a ConfigMap, put sensitive URLs or future
-backend credentials in Secrets-backed env vars, and keep `/data` writable for
-the SQLite cache.
+In Kubernetes, mount the YAML as a ConfigMap and put sensitive backend URLs in
+Secrets-backed env vars. Use `storage.backend=valkey` for multi-replica shared
+reasoning caches, or keep a writable mount when using SQLite.
 
 ## Kubernetes
 
@@ -279,11 +284,12 @@ deepseek-bridge --runtime-mode kubernetes
 
 In Kubernetes mode, the proxy defaults to `0.0.0.0:9000`, disables tunnels,
 logs only to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`,
-and uses an in-memory reasoning cache unless `storage.sqlite.path`,
-`reasoning_content_path`, or `DEEPSEEK_BRIDGE_REASONING_CONTENT_PATH` is set.
-That allows a read-only root filesystem by default. If you want the SQLite
-reasoning cache to survive process restarts, mount a writable directory and set
-the cache path to a file inside that mount.
+and uses an in-memory SQLite reasoning cache unless Valkey or a SQLite file path
+is configured. That allows a read-only root filesystem by default. For multiple
+replicas, set `DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey` and
+`DEEPSEEK_BRIDGE_VALKEY_URL` so all pods share the same reasoning cache. If you
+want the SQLite reasoning cache to survive process restarts, mount a writable
+directory and set the cache path to a file inside that mount.
 
 The published container image already sets `runtime.mode: kubernetes` in its
 baked config. Workload manifests may still pass `--runtime-mode kubernetes`
@@ -298,11 +304,10 @@ Use distinct probes:
 An example Deployment and Service live in
 [`examples/kubernetes/deployment.yaml`](examples/kubernetes/deployment.yaml).
 The example sets `readOnlyRootFilesystem: true`, disables tunnels, binds to
-`0.0.0.0`, uses separate liveness/readiness probes, and gives SQLite one
-explicit writable `emptyDir` mount. Set `terminationGracePeriodSeconds` longer
-than your expected request or stream duration so SIGTERM can drain active work.
-Because that SQLite cache is pod-local, keep this example at one replica for
-development until a shared backend such as Valkey is implemented and configured.
+`0.0.0.0`, uses separate liveness/readiness probes, and reads the Valkey URL
+from a Kubernetes Secret so multiple replicas can share the reasoning cache. Set
+`terminationGracePeriodSeconds` longer than your expected request or stream
+duration so SIGTERM can drain active work.
 The pod security context matches the image runtime user with `runAsUser: 10001`,
 `runAsGroup: 10001`, and `fsGroup: 10001`. If your platform requires a different
 UID/GID, override all three values together and ensure every writable mount used

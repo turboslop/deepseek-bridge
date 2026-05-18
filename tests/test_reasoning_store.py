@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import stat
 import unittest
+from fnmatch import fnmatch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -17,6 +19,7 @@ from deepseek_bridge.reasoning_store import (
     ReasoningStoreStats,
     conversation_scope,
 )
+from deepseek_bridge.valkey_store import ValkeyReasoningStore
 
 
 class _MemoryReasoningStore(ReasoningStoreBase):
@@ -58,6 +61,118 @@ class _MemoryReasoningStore(ReasoningStoreBase):
 
     def close(self) -> None:
         self._closed = True
+
+
+class _FakeValkeyClient:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.values: dict[str, tuple[str, float | None]] = {}
+        self.zsets: dict[str, dict[str, float]] = {}
+        self.set_calls: list[tuple[str, str, int | None]] = []
+        self.fail_ops: set[str] = set()
+        self.closed = False
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    def _maybe_fail(self, op: str) -> None:
+        if op in self.fail_ops or "*" in self.fail_ops:
+            raise RuntimeError("valkey://:secret@example.invalid/0")
+
+    def _expire(self, key: str) -> None:
+        item = self.values.get(key)
+        if item is None:
+            return
+        _, expires_at = item
+        if expires_at is not None and self.now >= expires_at:
+            del self.values[key]
+
+    def set(self, name: str, value: str, ex: int | None = None) -> bool:
+        self._maybe_fail("set")
+        expires_at = self.now + ex if ex is not None else None
+        self.values[name] = (value, expires_at)
+        self.set_calls.append((name, value, ex))
+        return True
+
+    def get(self, name: str) -> str | None:
+        self._maybe_fail("get")
+        self._expire(name)
+        item = self.values.get(name)
+        return None if item is None else item[0]
+
+    def delete(self, *names: str) -> int:
+        self._maybe_fail("delete")
+        deleted = 0
+        for name in names:
+            if name in self.values:
+                del self.values[name]
+                deleted += 1
+            if name in self.zsets:
+                del self.zsets[name]
+                deleted += 1
+        return deleted
+
+    def scan_iter(
+        self, match: str | None = None, count: int | None = None
+    ) -> list[str]:
+        self._maybe_fail("scan_iter")
+        keys = sorted(set(self.values) | set(self.zsets))
+        if match is None:
+            return keys
+        return [key for key in keys if fnmatch(key, match)]
+
+    def ping(self) -> bool:
+        self._maybe_fail("ping")
+        return True
+
+    def zadd(self, name: str, mapping: dict[str, float]) -> int:
+        self._maybe_fail("zadd")
+        zset = self.zsets.setdefault(name, {})
+        zset.update(mapping)
+        return len(mapping)
+
+    def zcard(self, name: str) -> int:
+        self._maybe_fail("zcard")
+        return len(self.zsets.get(name, {}))
+
+    def zrange(self, name: str, start: int, end: int) -> list[str]:
+        self._maybe_fail("zrange")
+        items = sorted(
+            self.zsets.get(name, {}).items(), key=lambda item: item[1]
+        )
+        if end == -1:
+            end = len(items) - 1
+        return [key for key, _ in items[start : end + 1]]
+
+    def zrem(self, name: str, *values: str) -> int:
+        self._maybe_fail("zrem")
+        zset = self.zsets.setdefault(name, {})
+        removed = 0
+        for value in values:
+            if value in zset:
+                del zset[value]
+                removed += 1
+        return removed
+
+    def zremrangebyscore(
+        self, name: str, min: float | str, max: float | str
+    ) -> int:
+        self._maybe_fail("zremrangebyscore")
+        min_value = float("-inf") if min == "-inf" else float(min)
+        max_value = float("inf") if max == "+inf" else float(max)
+        zset = self.zsets.setdefault(name, {})
+        stale = [
+            key
+            for key, score in zset.items()
+            if min_value <= score <= max_value
+        ]
+        for key in stale:
+            del zset[key]
+        return len(stale)
+
+    def close(self) -> None:
+        self._maybe_fail("close")
+        self.closed = True
 
 
 class ReasoningStoreContractTests(unittest.TestCase):
@@ -400,6 +515,181 @@ class ReasoningStoreTests(unittest.TestCase):
             s = ReasoningStore(db_path)
             s.close()
             s.put("k", "v", {"role": "assistant"})
+
+
+class ValkeyReasoningStoreTests(unittest.TestCase):
+    def _store(
+        self,
+        client: _FakeValkeyClient,
+        *,
+        max_age_seconds: int | None = 30,
+        max_rows: int | None = None,
+    ) -> ValkeyReasoningStore:
+        return ValkeyReasoningStore(
+            "valkey://:secret@example.invalid/0",
+            key_prefix="tests:",
+            max_age_seconds=max_age_seconds,
+            max_rows=max_rows,
+            client=client,
+        )
+
+    def test_put_get_and_stats_store_json_with_ttl(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+
+        store.put("k", "reasoning", {"role": "assistant", "content": "ok"})
+
+        self.assertEqual(store.get("k"), "reasoning")
+        self.assertEqual(client.set_calls[-1][0], "tests:reasoning:k")
+        self.assertEqual(client.set_calls[-1][2], 30)
+        payload = json.loads(client.set_calls[-1][1])
+        self.assertEqual(payload["reasoning"], "reasoning")
+        self.assertEqual(
+            json.loads(payload["message_json"]),
+            {"content": "ok", "role": "assistant"},
+        )
+        stats = store.stats()
+        self.assertEqual(stats.backend, "valkey")
+        self.assertEqual(stats.entries, 1)
+        self.assertIsNone(stats.path)
+        self.assertEqual(stats.max_age_seconds, 30)
+
+    def test_overwrite_refreshes_value_and_ttl(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+
+        store.put("k", "first", {"role": "assistant"})
+        client.advance(20)
+        store.put("k", "second", {"role": "assistant"})
+        client.advance(29)
+
+        self.assertEqual(store.get("k"), "second")
+
+        client.advance(2)
+
+        self.assertIsNone(store.get("k"))
+        self.assertEqual([call[2] for call in client.set_calls], [30, 30])
+
+    def test_empty_reasoning_is_a_cache_hit(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+
+        store.put("empty", "", {"role": "assistant"})
+
+        self.assertEqual(store.get("empty"), "")
+
+    def test_clear_deletes_only_selected_prefix(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+        store.put("a", "reasoning a", {"role": "assistant"})
+        store.put("b", "reasoning b", {"role": "assistant"})
+        client.values["other:reasoning:c"] = ("{}", None)
+
+        deleted = store.clear()
+
+        self.assertEqual(deleted, 2)
+        self.assertEqual(client.values, {"other:reasoning:c": ("{}", None)})
+        self.assertNotIn("tests:reasoning:__index__", client.zsets)
+
+    def test_max_rows_prunes_oldest_cache_entries(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client, max_age_seconds=None, max_rows=2)
+
+        with patch(
+            "deepseek_bridge.valkey_store.time.time",
+            side_effect=[1.0, 2.0, 3.0],
+        ):
+            store.put("a", "reasoning a", {"role": "assistant"})
+            store.put("b", "reasoning b", {"role": "assistant"})
+            store.put("c", "reasoning c", {"role": "assistant"})
+
+        self.assertIsNone(store.get("a"))
+        self.assertEqual(store.get("b"), "reasoning b")
+        self.assertEqual(store.get("c"), "reasoning c")
+        self.assertEqual(store.stats().entries, 2)
+
+    def test_multiple_instances_share_cache_by_prefix(self) -> None:
+        client = _FakeValkeyClient()
+        store_a = self._store(client)
+        store_b = self._store(client)
+        isolated_store = ValkeyReasoningStore(
+            "valkey://example.invalid/0",
+            key_prefix="other-prefix",
+            max_age_seconds=30,
+            client=client,
+        )
+
+        store_a.put("shared", "from a", {"role": "assistant"})
+
+        self.assertEqual(store_b.get("shared"), "from a")
+        self.assertIsNone(isolated_store.get("shared"))
+
+        store_b.put("shared", "from b", {"role": "assistant"})
+
+        self.assertEqual(store_a.get("shared"), "from b")
+        self.assertEqual(store_a.clear(), 1)
+        self.assertIsNone(store_b.get("shared"))
+
+    def test_prune_removes_expired_index_entries(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client, max_age_seconds=10)
+
+        with patch(
+            "deepseek_bridge.valkey_store.time.time", return_value=100.0
+        ):
+            store.put("old", "reasoning", {"role": "assistant"})
+        with patch(
+            "deepseek_bridge.valkey_store.time.time", return_value=111.0
+        ):
+            deleted = store.prune()
+
+        self.assertEqual(deleted, 1)
+        self.assertEqual(store.stats().entries, 0)
+
+    def test_corrupt_json_is_treated_as_miss_and_deleted(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+        client.values["tests:reasoning:k"] = ("not-json", None)
+        client.zsets["tests:reasoning:__index__"] = {"tests:reasoning:k": 1.0}
+
+        with self.assertLogs("deepseek_bridge", level="WARNING"):
+            self.assertIsNone(store.get("k"))
+        self.assertNotIn("tests:reasoning:k", client.values)
+        self.assertNotIn(
+            "tests:reasoning:k",
+            client.zsets["tests:reasoning:__index__"],
+        )
+
+    def test_connection_failures_are_sanitized_and_do_not_raise(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+        client.fail_ops.update({"set", "get", "ping", "scan_iter", "zcard"})
+
+        with self.assertLogs("deepseek_bridge", level="WARNING") as captured:
+            store.put("k", "reasoning", {"role": "assistant"})
+            self.assertIsNone(store.get("k"))
+            self.assertEqual(store.healthcheck(), (False, "unavailable"))
+            self.assertEqual(store.clear(), 0)
+            self.assertEqual(store.stats().entries, None)
+
+        output = "\n".join(captured.output)
+        self.assertIn("RuntimeError", output)
+        self.assertNotIn("secret", output)
+        self.assertNotIn("example.invalid", output)
+        self.assertNotIn("valkey://", output)
+
+    def test_close_prevents_later_cache_operations(self) -> None:
+        client = _FakeValkeyClient()
+        store = self._store(client)
+
+        store.close()
+        store.put("k", "reasoning", {"role": "assistant"})
+
+        self.assertTrue(client.closed)
+        self.assertIsNone(store.get("k"))
+        self.assertEqual(store.clear(), 0)
+        self.assertEqual(store.prune(), 0)
+        self.assertEqual(store.healthcheck(), (False, "closed"))
 
 
 class AutoCacheMaxRowsTests(unittest.TestCase):

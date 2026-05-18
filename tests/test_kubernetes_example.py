@@ -49,32 +49,26 @@ class KubernetesExampleTests(unittest.TestCase):
         self.assertEqual(pod_security_context["runAsGroup"], gid)
         self.assertEqual(pod_security_context["fsGroup"], gid)
 
-    def test_read_only_root_uses_explicit_cache_mount(self) -> None:
-        pod_spec = self._deployment()["spec"]["template"]["spec"]
+    def test_read_only_root_uses_valkey_without_cache_mount(self) -> None:
         container = self._container()
 
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
-        self.assertIn(
-            "/var/lib/deepseek-bridge/reasoning_content.sqlite3",
-            container["args"],
-        )
-        volume_mounts = {
-            mount["name"]: mount for mount in container["volumeMounts"]
-        }
+        self.assertNotIn("--reasoning-content-path", container["args"])
+        env = {item["name"]: item for item in container["env"]}
         self.assertEqual(
-            volume_mounts["reasoning-cache"]["mountPath"],
-            "/var/lib/deepseek-bridge",
+            env["DEEPSEEK_BRIDGE_STORAGE_BACKEND"]["value"],
+            "valkey",
         )
-        volumes = {volume["name"]: volume for volume in pod_spec["volumes"]}
         self.assertEqual(
-            volumes["reasoning-cache"]["emptyDir"],
-            {},
+            env["DEEPSEEK_BRIDGE_VALKEY_URL"]["valueFrom"]["secretKeyRef"],
+            {"name": "deepseek-bridge-valkey", "key": "url"},
         )
+        self.assertNotIn("volumeMounts", container)
 
-    def test_sqlite_empty_dir_example_is_single_replica(self) -> None:
+    def test_valkey_example_uses_multiple_replicas(self) -> None:
         deployment = self._deployment()
 
-        self.assertEqual(deployment["spec"]["replicas"], 1)
+        self.assertEqual(deployment["spec"]["replicas"], 2)
 
 
 if __name__ == "__main__":

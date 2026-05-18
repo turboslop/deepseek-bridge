@@ -929,11 +929,31 @@ def validate_runtime_settings(settings: Mapping[str, Any]) -> None:
         .strip()
         .lower()
     )
-    if storage_backend != "sqlite":
+    if storage_backend not in {"sqlite", "valkey"}:
         raise ValueError(
-            "storage backend 'valkey' is not implemented yet; "
-            "set storage.backend or DEEPSEEK_BRIDGE_STORAGE_BACKEND to 'sqlite'"
+            "storage backend must be sqlite or valkey; "
+            "set storage.backend or DEEPSEEK_BRIDGE_STORAGE_BACKEND"
         )
+    if storage_backend == "valkey":
+        valkey_url = as_str(setting_value(settings, "valkey_url"), "").strip()
+        if not valkey_url:
+            raise ValueError(
+                "storage backend 'valkey' requires storage.valkey.url "
+                "or DEEPSEEK_BRIDGE_VALKEY_URL"
+            )
+        valkey_key_prefix = (
+            as_str(
+                setting_value(settings, "valkey_key_prefix"),
+                DEFAULT_VALKEY_KEY_PREFIX,
+            )
+            .strip()
+            .strip(":")
+        )
+        if not valkey_key_prefix:
+            raise ValueError(
+                "storage backend 'valkey' requires a non-empty "
+                "storage.valkey.key_prefix"
+            )
 
     log_format = (
         as_str(setting_value(settings, "log_format"), DEFAULT_LOG_FORMAT)
@@ -1237,7 +1257,9 @@ class ProxyConfig:
             valkey_key_prefix=as_str(
                 setting_value(settings, "valkey_key_prefix"),
                 DEFAULT_VALKEY_KEY_PREFIX,
-            ),
+            )
+            .strip()
+            .strip(":"),
             cors=as_bool(
                 setting_value(settings, "cors"),
                 DEFAULT_CORS,
