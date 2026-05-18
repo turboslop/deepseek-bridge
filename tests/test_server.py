@@ -736,6 +736,28 @@ def _post(
             exc.close()
 
 
+def _post_raw_json(
+    url: str, body: bytes, api_key: str = "sk-test"
+) -> tuple[int, dict]:
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+        finally:
+            exc.close()
+
+
 def _get_text(url: str) -> tuple[int, str, str]:
     try:
         with urlopen(url, timeout=5) as response:
@@ -833,6 +855,36 @@ class HttpBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(status, 413)
         self.assertIn("too large", payload["error"]["message"])
+        self.assertEqual(_PlainFakeUpstream.requests, [])
+
+    def test_embeddings_reject_oversized_request_body(self) -> None:
+        self.proxy.server.config = replace(
+            self.proxy.server.config, max_request_body_bytes=10
+        )
+
+        for path in ("/embeddings", "/v1/embeddings"):
+            with self.subTest(path=path):
+                status, payload = _post(
+                    f"{self.proxy.url}{path}",
+                    {"model": "deepseek-v4-pro", "input": "hello"},
+                )
+                self.assertEqual(status, 413)
+                self.assertIn("too large", payload["error"]["message"])
+                self.assertEqual(payload["error"]["code"], "request_too_large")
+
+        self.assertEqual(_PlainFakeUpstream.requests, [])
+
+    def test_embeddings_invalid_json_returns_bad_request(self) -> None:
+        for path in ("/embeddings", "/v1/embeddings"):
+            with self.subTest(path=path):
+                status, payload = _post_raw_json(
+                    f"{self.proxy.url}{path}", b"not json"
+                )
+                self.assertEqual(status, 400)
+                self.assertEqual(
+                    payload["error"]["code"], "invalid_request_error"
+                )
+
         self.assertEqual(_PlainFakeUpstream.requests, [])
 
     def test_forwards_bearer_token_to_upstream(self) -> None:

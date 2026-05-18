@@ -40,7 +40,16 @@ class HandlerEndpoints:
             return
         try:
             payload = self._read_json_body()
-        except (ValueError, RequestBodyTooLargeError) as exc:
+        except RequestBodyTooLargeError as exc:
+            LOG.warning("rejected embeddings request: %s", exc)
+            self._send_json(
+                413,
+                _error_body(
+                    str(exc), "invalid_request_error", "request_too_large"
+                ),
+            )
+            return
+        except ValueError as exc:
             LOG.warning("rejected embeddings request: %s", exc)
             self._send_json(
                 400,
