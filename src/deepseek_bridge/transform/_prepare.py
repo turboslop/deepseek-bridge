@@ -48,6 +48,13 @@ SUPPORTED_REQUEST_FIELDS = {
     "logit_bias",
 }
 
+RUNTIME_OVERRIDE_FIELDS = {
+    "reasoning_effort",
+}
+
+_MISSING = object()
+_THINKING_TYPES = {"enabled", "disabled"}
+
 
 @dataclass(frozen=True)
 class PreparedRequest:
@@ -69,6 +76,54 @@ class PreparedRequest:
     recovery_steps: list[dict[str, Any]] = field(default_factory=list)
     continued_recovery_boundary: bool = False
     retired_prefix_messages: int = 0
+
+
+def _normalize_thinking_type(value: Any, fallback: str) -> str:
+    if isinstance(value, str):
+        thinking_type = value.strip().lower()
+        if thinking_type in _THINKING_TYPES:
+            return thinking_type
+    if fallback in _THINKING_TYPES:
+        return fallback
+    return "enabled"
+
+
+def _effective_thinking_payload(
+    payload: dict[str, Any], config: ProxyConfig
+) -> dict[str, Any]:
+    request_thinking = payload.get("thinking", _MISSING)
+    request_effort = payload.get("reasoning_effort", _MISSING)
+
+    thinking_type = config.thinking
+    reasoning_effort: Any = config.reasoning_effort
+
+    if isinstance(request_thinking, dict):
+        thinking_type = _normalize_thinking_type(
+            request_thinking.get("type", _MISSING),
+            config.thinking,
+        )
+        nested_effort = request_thinking.get("reasoning_effort", _MISSING)
+        if nested_effort is not _MISSING:
+            reasoning_effort = nested_effort
+        elif request_effort is not _MISSING:
+            reasoning_effort = request_effort
+    elif request_thinking is not _MISSING:
+        thinking_type = _normalize_thinking_type(
+            request_thinking,
+            config.thinking,
+        )
+        if request_effort is not _MISSING:
+            reasoning_effort = request_effort
+    elif request_effort is not _MISSING:
+        thinking_type = "enabled"
+        reasoning_effort = request_effort
+
+    thinking = {"type": thinking_type}
+    if thinking_type == "enabled":
+        thinking["reasoning_effort"] = normalize_reasoning_effort(
+            reasoning_effort
+        )
+    return thinking
 
 
 def prepare_upstream_request(
@@ -97,6 +152,7 @@ def prepare_upstream_request(
         key
         for key in payload
         if key not in SUPPORTED_REQUEST_FIELDS
+        and key not in RUNTIME_OVERRIDE_FIELDS
         and key not in {"max_completion_tokens", "functions", "function_call"}
         and key not in DEPRECATED_PARAMS
     )
@@ -132,13 +188,9 @@ def prepare_upstream_request(
         if tool_choice is not None:
             prepared["tool_choice"] = tool_choice
 
-    prepared["thinking"] = {"type": config.thinking}
-    thinking_enabled = config.thinking == "enabled"
-    thinking_disabled = config.thinking == "disabled"
-    if thinking_enabled:
-        prepared["thinking"]["reasoning_effort"] = normalize_reasoning_effort(
-            config.reasoning_effort
-        )
+    prepared["thinking"] = _effective_thinking_payload(payload, config)
+    thinking_enabled = prepared["thinking"]["type"] == "enabled"
+    thinking_disabled = prepared["thinking"]["type"] == "disabled"
 
     cache_namespace = reasoning_cache_namespace(
         config,

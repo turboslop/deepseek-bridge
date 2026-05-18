@@ -545,6 +545,58 @@ class StrictRejectModeTests(_StrictUpstreamCase):
         self.assertEqual(payload["error"]["missing_reasoning_messages"], 1)
         self.assertEqual(StrictFakeDeepSeek.requests, [])
 
+    def test_runtime_effort_isolates_cache_through_handler(self) -> None:
+        status, response = _post(
+            f"{self.proxy.url}/v1/chat/completions",
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [
+                    {"role": "user", "content": "What's the weather tomorrow?"}
+                ],
+                "reasoning_effort": "max",
+                "tools": TOOLS,
+            },
+        )
+        self.assertEqual(status, 200, response)
+        first = response["choices"][0]["message"]
+        self.assertEqual(first["reasoning_content"], THINKING_1_1)
+
+        stripped_history = [
+            {"role": "user", "content": "What's the weather tomorrow?"},
+            _drop_reasoning(first),
+            {
+                "role": "tool",
+                "tool_call_id": CALL_ID_1,
+                "content": "2026-04-24",
+            },
+        ]
+        upstream_count = len(StrictFakeDeepSeek.requests)
+        status, payload = _post(
+            f"{self.proxy.url}/v1/chat/completions",
+            {
+                "model": "deepseek-v4-pro",
+                "messages": stripped_history,
+                "reasoning_effort": "low",
+                "tools": TOOLS,
+            },
+        )
+        self.assertEqual(status, 409, payload)
+        self.assertEqual(payload["error"]["missing_reasoning_messages"], 1)
+        self.assertEqual(len(StrictFakeDeepSeek.requests), upstream_count)
+
+        status, response = _post(
+            f"{self.proxy.url}/v1/chat/completions",
+            {
+                "model": "deepseek-v4-pro",
+                "messages": stripped_history,
+                "reasoning_effort": "max",
+                "tools": TOOLS,
+            },
+        )
+        self.assertEqual(status, 200, response)
+        sent = StrictFakeDeepSeek.requests[-1]
+        self.assertEqual(sent["messages"][1]["reasoning_content"], THINKING_1_1)
+
 
 class ThinkingDisabledTests(_StrictUpstreamCase):
     config_overrides = {"thinking": "disabled"}
@@ -582,6 +634,58 @@ class ThinkingDisabledTests(_StrictUpstreamCase):
         sent = StrictFakeDeepSeek.requests[-1]
         self.assertEqual(sent["thinking"], {"type": "disabled"})
         self.assertNotIn("reasoning_content", sent["messages"][1])
+
+
+class ResponsesReasoningOverrideTests(_StrictUpstreamCase):
+    def test_responses_reasoning_effort_becomes_deepseek_thinking(
+        self,
+    ) -> None:
+        status, _ = _post(
+            f"{self.proxy.url}/v1/chat/completions",
+            {
+                "model": "deepseek-v4-pro",
+                "input": [
+                    {
+                        "role": "user",
+                        "content": "What's the weather tomorrow?",
+                    }
+                ],
+                "reasoning": {"effort": "low"},
+                "tools": TOOLS,
+            },
+        )
+        self.assertEqual(status, 200)
+        sent = StrictFakeDeepSeek.requests[-1]
+        self.assertEqual(
+            sent["thinking"], {"type": "enabled", "reasoning_effort": "high"}
+        )
+        self.assertNotIn("reasoning_effort", sent)
+
+
+class ResponsesReasoningOverrideDisabledDefaultTests(_StrictUpstreamCase):
+    config_overrides = {"thinking": "disabled"}
+
+    def test_responses_reasoning_effort_enables_thinking(self) -> None:
+        status, _ = _post(
+            f"{self.proxy.url}/v1/chat/completions",
+            {
+                "model": "deepseek-v4-pro",
+                "input": [
+                    {
+                        "role": "user",
+                        "content": "What's the weather tomorrow?",
+                    }
+                ],
+                "reasoning": {"effort": "low"},
+                "tools": TOOLS,
+            },
+        )
+        self.assertEqual(status, 200)
+        sent = StrictFakeDeepSeek.requests[-1]
+        self.assertEqual(
+            sent["thinking"], {"type": "enabled", "reasoning_effort": "high"}
+        )
+        self.assertNotIn("reasoning_effort", sent)
 
 
 class RecoveryTests(_StrictUpstreamCase):

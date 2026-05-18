@@ -217,6 +217,173 @@ class RequestPreparationTests(unittest.TestCase):
         self.assertEqual(prepared.payload["thinking"], {"type": "disabled"})
         self.assertNotIn("reasoning_content", prepared.payload["messages"][1])
 
+    def test_request_thinking_payload_overrides_config_default(self) -> None:
+        prepared = prepare_upstream_request(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {
+                    "type": "enabled",
+                    "reasoning_effort": "low",
+                },
+            },
+            ProxyConfig(thinking="disabled", reasoning_effort="max"),
+            self.store,
+        )
+        self.assertEqual(
+            prepared.payload["thinking"],
+            {"type": "enabled", "reasoning_effort": "high"},
+        )
+
+    def test_request_reasoning_effort_enables_thinking_override(self) -> None:
+        with self.assertNoLogs("deepseek_bridge", level="WARNING"):
+            prepared = prepare_upstream_request(
+                {
+                    "model": "deepseek-v4-pro",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "reasoning_effort": "low",
+                },
+                ProxyConfig(thinking="disabled", reasoning_effort="max"),
+                self.store,
+            )
+        self.assertEqual(
+            prepared.payload["thinking"],
+            {"type": "enabled", "reasoning_effort": "high"},
+        )
+        self.assertNotIn("reasoning_effort", prepared.payload)
+
+    def test_nested_thinking_effort_wins_over_top_level_effort(self) -> None:
+        prepared = prepare_upstream_request(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {
+                    "type": "enabled",
+                    "reasoning_effort": "max",
+                },
+                "reasoning_effort": "low",
+            },
+            ProxyConfig(reasoning_effort="low"),
+            self.store,
+        )
+        self.assertEqual(
+            prepared.payload["thinking"],
+            {"type": "enabled", "reasoning_effort": "max"},
+        )
+        self.assertNotIn("reasoning_effort", prepared.payload)
+
+    def test_request_thinking_disabled_overrides_config_enabled(
+        self,
+    ) -> None:
+        prepared = prepare_upstream_request(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [
+                    {"role": "user", "content": "hi"},
+                    {
+                        "role": "assistant",
+                        "content": "answer",
+                        "reasoning_content": "should be discarded",
+                    },
+                ],
+                "thinking": {
+                    "type": "disabled",
+                    "reasoning_effort": "max",
+                },
+            },
+            ProxyConfig(thinking="enabled", reasoning_effort="max"),
+            self.store,
+        )
+        self.assertEqual(prepared.payload["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_content", prepared.payload["messages"][1])
+
+    def test_invalid_request_thinking_type_falls_back_to_config(
+        self,
+    ) -> None:
+        prepared = prepare_upstream_request(
+            {
+                "model": "deepseek-v4-pro",
+                "messages": [{"role": "user", "content": "hi"}],
+                "thinking": {
+                    "type": "bogus",
+                    "reasoning_effort": "low",
+                },
+            },
+            ProxyConfig(thinking="disabled", reasoning_effort="max"),
+            self.store,
+        )
+        self.assertEqual(prepared.payload["thinking"], {"type": "disabled"})
+
+    def test_runtime_reasoning_effort_isolates_reasoning_cache(
+        self,
+    ) -> None:
+        config = ProxyConfig(missing_reasoning_strategy="reject")
+        prior = [{"role": "user", "content": "hi"}]
+        tool_call = {
+            "id": "call_runtime",
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        }
+        missing_payload = {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                *prior,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [tool_call],
+                },
+            ],
+        }
+
+        max_prepared = prepare_upstream_request(
+            {**missing_payload, "reasoning_effort": "max"},
+            config,
+            self.store,
+        )
+        high_prepared = prepare_upstream_request(
+            {**missing_payload, "reasoning_effort": "low"},
+            config,
+            self.store,
+        )
+        self.assertNotEqual(
+            max_prepared.cache_namespace, high_prepared.cache_namespace
+        )
+
+        self.store.store_assistant_message(
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "max effort reasoning",
+                "tool_calls": [tool_call],
+            },
+            conversation_scope(prior, max_prepared.cache_namespace),
+            max_prepared.cache_namespace,
+            prior,
+        )
+
+        high_after_store = prepare_upstream_request(
+            {**missing_payload, "reasoning_effort": "low"},
+            config,
+            self.store,
+        )
+        self.assertEqual(high_after_store.patched_reasoning_messages, 0)
+        self.assertEqual(high_after_store.missing_reasoning_messages, 1)
+        self.assertNotIn(
+            "reasoning_content", high_after_store.payload["messages"][1]
+        )
+
+        max_after_store = prepare_upstream_request(
+            {**missing_payload, "reasoning_effort": "max"},
+            config,
+            self.store,
+        )
+        self.assertEqual(max_after_store.missing_reasoning_messages, 0)
+        self.assertEqual(
+            max_after_store.payload["messages"][1]["reasoning_content"],
+            "max effort reasoning",
+        )
+
     def test_plain_chat_history_does_not_require_reasoning(self) -> None:
         prepared = prepare_upstream_request(
             {

@@ -269,12 +269,31 @@ For the new `customOAIModels` path (VS Code Insiders 1.104+):
 
 Any client that speaks the OpenAI `/v1/chat/completions` API can use DeepSeek Bridge. Set the client's base URL to `http://localhost:9000/v1` (or your tunnel URL).
 
+### Per-Request Thinking Overrides
+
+`--thinking` and `--reasoning-effort` are process defaults. A request can
+override them with DeepSeek's nested `thinking` payload:
+
+```json
+{
+  "model": "deepseek-v4-pro",
+  "messages": [{"role": "user", "content": "Plan this change"}],
+  "thinking": {"type": "enabled", "reasoning_effort": "max"}
+}
+```
+
+OpenAI Responses API payloads can also set `reasoning.effort`; during
+conversion, the proxy maps it into DeepSeek's nested `thinking` payload and
+does not forward a top-level `reasoning_effort` field. The effective thinking
+mode and effort are included in the reasoning cache namespace, so switching
+mode or effort does not reuse incompatible cached reasoning.
+
 ## How It Works
 
 1. **Request interception**: The proxy receives a `/v1/chat/completions` request from the client.
 2. **Format detection**: If the request uses OpenAI Responses API format (common in Cursor Agent Mode), it is converted to Chat Completions format.
 3. **Reasoning repair**: Each assistant message in the conversation is checked. Missing `reasoning_content` fields are looked up in the local SQLite cache and restored.
-4. **Cache isolation**: Cache keys are scoped by a SHA-256 hash of the conversation prefix, upstream model, configuration, and API key. Different conversations and users never collide.
+4. **Cache isolation**: Cache keys are scoped by a SHA-256 hash of the conversation prefix, upstream model, effective thinking settings, configuration, and API key. Different conversations and users never collide.
 5. **Response processing**: Reasoning content from the upstream response is cached for future requests. Display adapters mirror reasoning thoughts into Markdown `<details>` blocks visible in the client.
 
 ## Known Limitations
