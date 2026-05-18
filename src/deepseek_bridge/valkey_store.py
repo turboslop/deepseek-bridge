@@ -190,8 +190,7 @@ class ValkeyReasoningStore(ReasoningStoreBase):
             )
             ttl = (
                 self.max_age_seconds
-                if self.max_age_seconds is not None
-                and self.max_age_seconds > 0
+                if self.max_age_seconds is not None and self.max_age_seconds > 0
                 else None
             )
             try:
@@ -265,9 +264,7 @@ class ValkeyReasoningStore(ReasoningStoreBase):
             with suppress(Exception):
                 self._client.delete(storage_key)
                 self._client.zrem(self._index_key, storage_key)
-            INTERNAL_LOG.debug(
-                "store.cache: key=%s..., hit=False", key[:32]
-            )
+            INTERNAL_LOG.debug("store.cache: key=%s..., hit=False", key[:32])
             return None
         finally:
             METRICS.observe_storage_operation(

@@ -1718,13 +1718,8 @@ class BoundedPoolTests(unittest.TestCase):
                 new_callable=PropertyMock,
                 return_value=1,
             ):
-                status, payload = _post(
-                    f"{proxy.url}/v1/chat/completions",
-                    {
-                        "model": "deepseek-v4-pro",
-                        "messages": [{"role": "user", "content": "hi"}],
-                    },
-                )
+                status, _, body = _get_text(f"{proxy.url}/v1/models")
+            payload = json.loads(body)
             self.assertEqual(status, 503)
             self.assertEqual(payload["error"]["code"], "service_unavailable")
         finally:
