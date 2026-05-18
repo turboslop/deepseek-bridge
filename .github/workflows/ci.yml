@@ -88,3 +88,43 @@ jobs:
         run: |
           uv run coverage run -m unittest discover -s tests -v
           uv run coverage report
+
+  functional-test:
+    name: Functional test (ubuntu-latest, Python 3.14, Valkey)
+    runs-on: ubuntu-latest
+    services:
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev --python 3.14
+
+      - name: Run functional tests
+        env:
+          RUN_FUNCTIONAL_TESTS: "1"
+          FUNCTIONAL_VALKEY_URL: redis://127.0.0.1:${{ job.services.valkey.ports[6379] }}/0
+        run: >-
+          uv run --extra dev --python 3.14 python -m unittest discover
+          -s tests/functional -v
