@@ -97,9 +97,9 @@ failures before a usable upstream response exists.
 
 - Python 3.14 is the intentionally supported runtime for source, CI, and
   container builds.
-- GitHub Releases, GHCR container images, and Helm chart assets are the
-  authoritative release channels. PyPI publishing is not part of the current
-  release workflow.
+- GitHub Releases, GHCR container images, and the shared
+  `https://turboslop.github.io/helm` Helm repository are the authoritative
+  release channels. PyPI publishing is not part of the current release workflow.
 - Release history and migration notes live in [CHANGELOG.md](CHANGELOG.md).
 - Threat model and production security guidance live in
   [SECURITY.md](SECURITY.md).
@@ -544,6 +544,24 @@ The chart lives in [`charts/deepseek-bridge`](charts/deepseek-bridge):
 
 ```bash
 helm install deepseek-bridge ./charts/deepseek-bridge
+```
+
+Tagged releases publish the chart to the shared `turboslop` Helm repository:
+
+```bash
+helm repo add turboslop https://turboslop.github.io/helm
+helm repo update turboslop
+helm search repo turboslop/deepseek-bridge --versions
+helm upgrade --install deepseek-bridge turboslop/deepseek-bridge
+```
+
+Add `--version` with one of the versions returned by `helm search` when you
+need a pinned install.
+
+The same chart is also published to GHCR as an OCI artifact:
+
+```bash
+helm upgrade --install deepseek-bridge oci://ghcr.io/turboslop/deepseek-bridge
 ```
 
 The default chart values run one replica with in-memory SQLite for local/dev

@@ -8,6 +8,24 @@ This chart installs DeepSeek Bridge as a Kubernetes workload.
 helm install deepseek-bridge ./charts/deepseek-bridge
 ```
 
+Tagged releases are published to the shared `turboslop` Helm repository:
+
+```sh
+helm repo add turboslop https://turboslop.github.io/helm
+helm repo update turboslop
+helm search repo turboslop/deepseek-bridge --versions
+helm upgrade --install deepseek-bridge turboslop/deepseek-bridge
+```
+
+Add `--version` with one of the versions returned by `helm search` when you
+need a pinned install.
+
+The same chart is also available as a GHCR OCI artifact:
+
+```sh
+helm upgrade --install deepseek-bridge oci://ghcr.io/turboslop/deepseek-bridge
+```
+
 The default install is a single-replica local/dev profile using an in-memory
 SQLite reasoning cache. Multi-replica installs should use Valkey so cache
 entries are shared across pods.
