@@ -39,7 +39,7 @@ jobs:
 
           version="${tag#v}"
           {
-            echo "chart_version=${version}-chart"
+            echo "chart_version=${version}"
             echo "image=ghcr.io/${GITHUB_REPOSITORY}"
             echo "tag=${tag}"
             echo "version=${version}"
@@ -295,6 +295,58 @@ jobs:
         run: >-
           helm push "${{ steps.package.outputs.chart_package }}"
           oci://ghcr.io/${{ github.repository_owner }}
+
+      - name: Create Helm repository app token
+        id: helm-repo-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.HELM_REPO_APP_ID }}
+          private-key: ${{ secrets.HELM_REPO_APP_PRIVATE_KEY }}
+          owner: turboslop
+          repositories: helm
+          permission-contents: write
+
+      - name: Checkout Helm repository
+        uses: actions/checkout@v6
+        with:
+          repository: turboslop/helm
+          ref: gh-pages
+          path: helm-repo
+          token: ${{ steps.helm-repo-token.outputs.token }}
+
+      - name: Publish Helm chart to repository index
+        env:
+          CHART_PACKAGE: ${{ steps.package.outputs.chart_package }}
+          HELM_REPO_DIR: helm-repo
+          HELM_REPO_URL: https://turboslop.github.io/helm
+        run: |
+          set -euo pipefail
+
+          cp -f "${CHART_PACKAGE}" "${HELM_REPO_DIR}/"
+          if [ -f "${HELM_REPO_DIR}/index.yaml" ]; then
+            helm repo index "${HELM_REPO_DIR}" \
+              --url "${HELM_REPO_URL}" \
+              --merge "${HELM_REPO_DIR}/index.yaml"
+          else
+            helm repo index "${HELM_REPO_DIR}" --url "${HELM_REPO_URL}"
+          fi
+
+      - name: Push Helm repository updates
+        working-directory: helm-repo
+        env:
+          CHART_VERSION: ${{ needs.release-metadata.outputs.chart_version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Helm repository is already up to date"
+          else
+            git add .
+            git commit -m "chore(chart): publish deepseek-bridge ${CHART_VERSION}"
+            git push
+          fi
 
       - name: Upload Helm chart to GitHub release
         env:
