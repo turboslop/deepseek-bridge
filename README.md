@@ -122,6 +122,42 @@ read-only or cache persistence is required. For read-only-root deployments, make
 `/data` writable by UID/GID `10001`, for example with a pod `fsGroup` or volume
 ownership setting.
 
+### LiteLLM E2E Smoke Test
+
+Run the live Docker Compose smoke test for this chain:
+
+```text
+OpenAI-compatible client -> LiteLLM Proxy -> DeepSeek Bridge -> DeepSeek Cloud
+```
+
+The test builds the local bridge image, starts LiteLLM with
+`deepseek-v4-pro` routed to the bridge as an OpenAI-compatible provider, then
+sends a real tool-call conversation to DeepSeek Cloud. The follow-up request
+intentionally omits `reasoning_content`; the bridge runs in strict missing
+reasoning mode, so the test only passes if the first response was cached and
+the second turn was repaired.
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+./scripts/litellm-e2e.sh
+```
+
+Or run it through unittest:
+
+```bash
+DEEPSEEK_BRIDGE_RUN_LITELLM_E2E=1 \
+DEEPSEEK_API_KEY=sk-... \
+  python -m unittest tests.test_litellm_e2e_compose -v
+```
+
+This is an opt-in live test. It requires Docker Compose, pulls the LiteLLM
+container image if needed, and consumes real DeepSeek API quota. Set
+`DEEPSEEK_BRIDGE_LITELLM_E2E_SKIP_CLEANUP=1` to keep containers for debugging.
+In GitHub Actions, the `LiteLLM E2E (Compose, DeepSeek Cloud)` CI job runs on
+pushes and manual workflow dispatches when the repository secret
+`DEEPSEEK_API_KEY` is configured. Pull request events skip this live test so
+untrusted PR contexts do not receive cloud credentials.
+
 ## Configuration
 
 Configuration precedence is:
