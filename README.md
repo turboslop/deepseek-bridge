@@ -1,9 +1,7 @@
 # DeepSeek Bridge
 
-[![PyPI version](https://img.shields.io/pypi/v/deepseek-bridge)](https://pypi.org/project/deepseek-bridge/)
-[![Python versions](https://img.shields.io/pypi/pyversions/deepseek-bridge)](https://pypi.org/project/deepseek-bridge/)
-[![CI](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml)
-[![License](https://img.shields.io/pypi/l/deepseek-bridge)](https://github.com/breixopd/deepseek-bridge/blob/main/LICENSE)
+[![CI](https://github.com/turboslop/deepseek-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/turboslop/deepseek-bridge/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/turboslop/deepseek-bridge)](https://github.com/turboslop/deepseek-bridge/blob/main/LICENSE)
 
 OpenAI-compatible HTTP stateful adapter for the DeepSeek V4 (DS4) reasoning
 protocol.
