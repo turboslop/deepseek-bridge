@@ -174,6 +174,9 @@ class HelmChartTests(unittest.TestCase):
 
         self.assertEqual(deployment["spec"]["replicas"], 1)
         self.assertEqual(
+            container["image"], "ghcr.io/turboslop/deepseek-bridge:latest"
+        )
+        self.assertEqual(
             service["spec"]["ports"][0],
             {
                 "name": "http",

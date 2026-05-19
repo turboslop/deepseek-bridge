@@ -362,6 +362,14 @@ An installable chart lives in
 helm install deepseek-bridge ./charts/deepseek-bridge
 ```
 
+Tagged releases publish the Docker image and Helm chart to GHCR. For tag
+`v0.1.0`, install the published chart with:
+
+```bash
+helm install deepseek-bridge oci://ghcr.io/turboslop/deepseek-bridge \
+  --version 0.1.0-chart
+```
+
 The default chart values run one replica with an in-memory SQLite reasoning
 cache for local/dev use. Use Valkey for multi-replica installs:
 
