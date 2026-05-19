@@ -22,7 +22,6 @@ from deepseek_bridge.config import (
     KUBERNETES_HOST,
     KUBERNETES_REASONING_CONTENT_PATH,
     KUBERNETES_RUNTIME_MODE,
-    KUBERNETES_TUNNEL,
     ProxyConfig,
     _auto_cache_max_rows,
     default_config_path,
@@ -53,7 +52,6 @@ class ConfigTests(unittest.TestCase):
                 ProxyConfig().reasoning_content_path,
                 home / ".deepseek-bridge" / "reasoning_content.sqlite3",
             )
-            self.assertEqual(ProxyConfig().tunnel, "cloudflared")
             self.assertEqual(ProxyConfig().runtime_mode, DEFAULT_RUNTIME_MODE)
             self.assertEqual(
                 ProxyConfig().collapsible_reasoning,
@@ -91,7 +89,6 @@ class ConfigTests(unittest.TestCase):
                 f"{DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS}",
                 config_text,
             )
-            self.assertIn("  mode: cloudflared", config_text)
             self.assertIn(
                 "  collapsible: "
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
@@ -153,7 +150,6 @@ class ConfigTests(unittest.TestCase):
                         "reasoning_effort: max",
                         "port: 9100",
                         "host: 0.0.0.0",
-                        "tunnel: cloudflared",
                         "request_timeout: 123.5",
                         "max_request_body_bytes: 1234",
                         "cors: true",
@@ -179,7 +175,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.reasoning_effort, "max")
         self.assertEqual(config.host, "0.0.0.0")
         self.assertEqual(config.port, 9100)
-        self.assertEqual(config.tunnel, "cloudflared")
         self.assertEqual(config.request_timeout, 123.5)
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertTrue(config.cors)
@@ -231,8 +226,6 @@ class ConfigTests(unittest.TestCase):
                         "    enabled: false",
                         "metrics:",
                         "  enabled: false",
-                        "tunnel:",
-                        "  mode: none",
                         "cors:",
                         "  enabled: false",
                         "  allowed_origins:",
@@ -285,7 +278,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertEqual(config.max_pool_connections, 7)
         self.assertEqual(config.max_thread_pool, 9)
-        self.assertEqual(config.tunnel, "none")
 
     def test_invalid_config_values_fall_back_to_defaults(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -411,24 +403,6 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "key_prefix"):
                 ProxyConfig.from_file(config_path=config_path, environ={})
 
-    def test_structured_tunnel_url_without_mode_uses_default_mode(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "config.yaml"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        "tunnel:",
-                        "  cf_url: https://app.example.com",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-
-            config = ProxyConfig.from_file(config_path=config_path, environ={})
-
-        self.assertEqual(config.tunnel, "cloudflared")
-        self.assertEqual(config.cf_url, "https://app.example.com")
-
     def test_cursor_reasoning_display_can_be_disabled_from_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
@@ -496,7 +470,9 @@ class ConfigTests(unittest.TestCase):
     def test_legacy_process_environment_does_not_override_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
-            config_path.write_text("tunnel: ngrok\n", encoding="utf-8")
+            config_path.write_text(
+                "model: deepseek-v4-flash\n", encoding="utf-8"
+            )
 
             with patch.dict(
                 "os.environ",
@@ -513,7 +489,7 @@ class ConfigTests(unittest.TestCase):
                     "/ignored.yaml",
                 )
 
-        self.assertEqual(config.tunnel, "ngrok")
+        self.assertEqual(config.upstream_model, "deepseek-v4-flash")
 
     def test_kubernetes_runtime_defaults_are_read_only_friendly(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -532,7 +508,6 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.runtime_mode, KUBERNETES_RUNTIME_MODE)
             self.assertEqual(config.host, KUBERNETES_HOST)
             self.assertEqual(config.port, DEFAULT_PORT)
-            self.assertEqual(config.tunnel, KUBERNETES_TUNNEL)
             self.assertEqual(
                 config.reasoning_content_path,
                 KUBERNETES_REASONING_CONTENT_PATH,
@@ -550,7 +525,6 @@ class ConfigTests(unittest.TestCase):
                         "model: deepseek-v4-pro",
                         "thinking: enabled",
                         "reasoning_effort: max",
-                        "tunnel: cloudflared",
                         "reasoning_cache_max_age_seconds: 60",
                     ]
                 ),
@@ -565,7 +539,6 @@ class ConfigTests(unittest.TestCase):
                     "DEEPSEEK_BRIDGE_MODEL": "deepseek-v4-flash",
                     "DEEPSEEK_BRIDGE_THINKING": "disabled",
                     "DEEPSEEK_BRIDGE_REASONING_EFFORT": "low",
-                    "DEEPSEEK_BRIDGE_TUNNEL_MODE": "none",
                     "DEEPSEEK_BRIDGE_LOG_FILE_ENABLED": "false",
                     "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_AGE_SECONDS": "120",
                     "DEEPSEEK_BRIDGE_REASONING_CACHE_MAX_ENTRIES": "10001",
@@ -582,7 +555,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.upstream_model, "deepseek-v4-flash")
         self.assertEqual(config.thinking, "disabled")
         self.assertEqual(config.reasoning_effort, "low")
-        self.assertEqual(config.tunnel, "none")
         self.assertEqual(config.reasoning_cache_max_age_seconds, 120)
         self.assertEqual(config.reasoning_cache_max_entries, 10001)
         self.assertEqual(
@@ -770,17 +742,6 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError, "reasoning_display.enabled"
             ):
-                ProxyConfig.from_file(config_path=config_path, environ={})
-
-    def test_invalid_structured_tunnel_mode_raises_value_error(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "config.yaml"
-            config_path.write_text(
-                "\n".join(["tunnel:", "  mode: invalid"]),
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(ValueError, "tunnel.mode"):
                 ProxyConfig.from_file(config_path=config_path, environ={})
 
     def test_metrics_enabled_is_supported(self) -> None:

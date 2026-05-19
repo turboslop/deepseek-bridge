@@ -26,8 +26,6 @@ class ProxyStartupTests(unittest.TestCase):
                 sys.executable,
                 "-m",
                 "deepseek_bridge",
-                "--tunnel",
-                "none",
                 "--port",
                 str(cls.port),
                 "--no-log",

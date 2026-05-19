@@ -69,7 +69,6 @@ DEFAULT_LOG_DIR = str(Path.home() / APP_DIR_NAME / "logs")
 DEFAULT_RUNTIME_MODE = "local"
 KUBERNETES_RUNTIME_MODE = "kubernetes"
 KUBERNETES_HOST = "0.0.0.0"
-KUBERNETES_TUNNEL = "none"
 KUBERNETES_REASONING_CONTENT_PATH = ":memory:"
 DEFAULT_STORAGE_BACKEND = "sqlite"
 DEFAULT_VALKEY_KEY_PREFIX = "deepseek-bridge"
@@ -77,7 +76,6 @@ DEFAULT_LOG_FORMAT = "text"
 DEFAULT_TRACE_MODE = "metadata-only"
 SUPPORTED_TRACE_MODES = {"metadata-only", "redacted", "full"}
 DEFAULT_METRICS_ENABLED = False
-SUPPORTED_TUNNELS = {"none", "cloudflared", "ngrok"}
 
 CORS_ALLOWED_ORIGINS_TEXT = "\n".join(
     f"    - {origin}" for origin in DEFAULT_CORS_ALLOWED_ORIGINS
@@ -127,11 +125,6 @@ logging:
 
 metrics:
   enabled: false
-
-tunnel:
-  mode: cloudflared
-  # cf_url: https://app.example.com  # required for cloudflared tunnel
-  # ngrok_url: https://my-tunnel.ngrok.app
 
 cors:
   enabled: {str(DEFAULT_CORS).lower()}
@@ -378,10 +371,6 @@ def _strict_thinking(name: str, value: Any) -> str:
     if normalized in FALSE_VALUES:
         return "disabled"
     raise ValueError(f"{name} must be enabled or disabled; got {value!r}")
-
-
-def _strict_tunnel(name: str, value: Any) -> str:
-    return _strict_enum(name, value, SUPPORTED_TUNNELS)
 
 
 def _strict_str_tuple(name: str, value: Any) -> tuple[str, ...]:
@@ -661,43 +650,6 @@ def normalize_config_settings(
             name="metrics.enabled",
         )
 
-    tunnel = setting_value(settings, "tunnel")
-    if isinstance(tunnel, Mapping):
-        if setting_value(tunnel, "mode") is MISSING:
-            normalized["tunnel"] = "cloudflared"
-        _set_if_present(
-            normalized,
-            tunnel,
-            "mode",
-            "tunnel",
-            _strict_tunnel,
-            name="tunnel.mode",
-        )
-        _set_if_present(
-            normalized,
-            tunnel,
-            "cf_url",
-            "cf_url",
-            to_str,
-            name="tunnel.cf_url",
-        )
-        _set_if_present(
-            normalized,
-            tunnel,
-            "cfd_tunnel_name",
-            "cfd_tunnel_name",
-            to_str,
-            name="tunnel.cfd_tunnel_name",
-        )
-        _set_if_present(
-            normalized,
-            tunnel,
-            "ngrok_url",
-            "ngrok_url",
-            to_str,
-            name="tunnel.ngrok_url",
-        )
-
     cors = setting_value(settings, "cors")
     if isinstance(cors, Mapping):
         _set_if_present(
@@ -794,9 +746,6 @@ def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
         "DEEPSEEK_BRIDGE_UPSTREAM_BASE_URL": "base_url",
         "DEEPSEEK_BRIDGE_MODEL": "model",
         "DEEPSEEK_BRIDGE_UPSTREAM_MODEL": "model",
-        "DEEPSEEK_BRIDGE_CF_URL": "cf_url",
-        "DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME": "cfd_tunnel_name",
-        "DEEPSEEK_BRIDGE_NGROK_URL": "ngrok_url",
         "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey_url",
         "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "valkey_key_prefix",
     }
@@ -903,15 +852,6 @@ def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
             "DEEPSEEK_BRIDGE_STORAGE_BACKEND",
             environ["DEEPSEEK_BRIDGE_STORAGE_BACKEND"],
             {"sqlite", "valkey"},
-        )
-    if "DEEPSEEK_BRIDGE_TUNNEL_MODE" in environ:
-        settings["tunnel"] = _strict_tunnel(
-            "DEEPSEEK_BRIDGE_TUNNEL_MODE",
-            environ["DEEPSEEK_BRIDGE_TUNNEL_MODE"],
-        )
-    if "DEEPSEEK_BRIDGE_TUNNEL" in environ:
-        settings["tunnel"] = _strict_tunnel(
-            "DEEPSEEK_BRIDGE_TUNNEL", environ["DEEPSEEK_BRIDGE_TUNNEL"]
         )
     if "DEEPSEEK_BRIDGE_LOG_LEVEL" in environ:
         settings["debug"] = (
@@ -1099,10 +1039,6 @@ class ProxyConfig:
     cors_allow_credentials: bool = DEFAULT_CORS_ALLOW_CREDENTIALS
     ollama: bool = True
     debug: bool = False
-    tunnel: str = "cloudflared"
-    cf_url: str = ""  # Cloudflare tunnel public URL
-    cfd_tunnel_name: str = "deepseek-bridge"
-    ngrok_url: str = ""  # Fixed ngrok endpoint URL (reserved domains)
     compact: bool = False
     trace_dir: Path | None = None
     trace_mode: str = DEFAULT_TRACE_MODE
@@ -1158,7 +1094,6 @@ class ProxyConfig:
         )
         kubernetes_mode = normalized_runtime_mode == KUBERNETES_RUNTIME_MODE
         host_default = KUBERNETES_HOST if kubernetes_mode else DEFAULT_HOST
-        tunnel_default = KUBERNETES_TUNNEL if kubernetes_mode else "cloudflared"
         reasoning_content_default: Path | str = (
             KUBERNETES_REASONING_CONTENT_PATH
             if kubernetes_mode
@@ -1290,12 +1225,6 @@ class ProxyConfig:
                 setting_value(settings, "debug"),
                 False,
             ),
-            tunnel=as_str(setting_value(settings, "tunnel"), tunnel_default),
-            cf_url=as_str(setting_value(settings, "cf_url"), ""),
-            cfd_tunnel_name=as_str(
-                setting_value(settings, "cfd_tunnel_name"), "deepseek-bridge"
-            ),
-            ngrok_url=as_str(setting_value(settings, "ngrok_url"), ""),
             max_pool_connections=max_pool_connections,
             max_thread_pool=max_thread_pool,
             max_queue_size=_auto_queue_size(max_thread_pool),

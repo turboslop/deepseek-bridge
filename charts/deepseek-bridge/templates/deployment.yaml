@@ -57,8 +57,6 @@ spec:
             - 0.0.0.0
             - --port
             - {{ .Values.containerPort | quote }}
-            - --tunnel
-            - none
             {{- range .Values.extraArgs }}
             - {{ . | quote }}
             {{- end }}
@@ -69,8 +67,6 @@ spec:
               value: "0.0.0.0"
             - name: DEEPSEEK_BRIDGE_PORT
               value: {{ .Values.containerPort | quote }}
-            - name: DEEPSEEK_BRIDGE_TUNNEL_MODE
-              value: "none"
             - name: DEEPSEEK_BRIDGE_STORAGE_BACKEND
               value: {{ lower .Values.storage.backend | quote }}
             - name: DEEPSEEK_BRIDGE_LOG_FORMAT

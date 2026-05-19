@@ -33,8 +33,6 @@ spec:
             - 0.0.0.0
             - --port
             - "9000"
-            - --tunnel
-            - none
           env:
             - name: DEEPSEEK_BRIDGE_LOG_FORMAT
               value: json
