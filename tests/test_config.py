@@ -16,6 +16,7 @@ from deepseek_bridge.config import (
     DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS,
     DEFAULT_RUNTIME_MODE,
     DEFAULT_THINKING,
+    DEFAULT_TRACE_MODE,
     DEFAULT_UPSTREAM_MODEL,
     ENV_CONFIG_PATH,
     KUBERNETES_HOST,
@@ -59,6 +60,7 @@ class ConfigTests(unittest.TestCase):
                 DEFAULT_COLLAPSIBLE_REASONING,
             )
             self.assertIsNone(ProxyConfig().trace_dir)
+            self.assertEqual(ProxyConfig().trace_mode, DEFAULT_TRACE_MODE)
             self.assertEqual(ProxyConfig().log_format, "text")
 
     def test_missing_default_config_file_is_populated(self) -> None:
@@ -120,6 +122,7 @@ class ConfigTests(unittest.TestCase):
                 "    path: null  # auto: ~/.deepseek-bridge/logs",
                 config_text,
             )
+            self.assertIn("  trace_mode: metadata-only", config_text)
             self.assertEqual(config.log_dir, home / ".deepseek-bridge" / "logs")
 
     def test_missing_explicit_config_file_is_not_populated(self) -> None:
@@ -222,6 +225,7 @@ class ConfigTests(unittest.TestCase):
                         "  level: debug",
                         "  format: text",
                         "  compact: true",
+                        "  trace_mode: redacted",
                         "  trace_dir: traces",
                         "  file:",
                         "    enabled: false",
@@ -267,6 +271,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(config.debug)
         self.assertTrue(config.compact)
         self.assertEqual(config.log_format, "text")
+        self.assertEqual(config.trace_mode, "redacted")
         self.assertEqual(config.trace_dir, Path(temp_dir) / "traces")
         self.assertIsNone(config.log_dir)
         self.assertFalse(config.cors)
@@ -568,6 +573,7 @@ class ConfigTests(unittest.TestCase):
                     "DEEPSEEK_BRIDGE_VALKEY_URL": "valkey://env.invalid/0",
                     "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "env-prefix:",
                     "DEEPSEEK_BRIDGE_METRICS_ENABLED": "true",
+                    "DEEPSEEK_BRIDGE_TRACE_MODE": "full",
                 },
             )
 
@@ -584,6 +590,7 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(config.valkey_url, "valkey://env.invalid/0")
         self.assertEqual(config.valkey_key_prefix, "env-prefix")
+        self.assertEqual(config.trace_mode, "full")
         self.assertIsNone(config.log_dir)
         self.assertTrue(config.metrics_enabled)
 
@@ -598,6 +605,19 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(config.log_format, "json")
+
+    def test_invalid_trace_mode_raises_value_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(["logging:", "  trace_mode: unsafe"]),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "logging.trace_mode must be one of"
+            ):
+                ProxyConfig.from_file(config_path=config_path, environ={})
 
     def test_structured_config_can_enable_json_logging(self) -> None:
         with TemporaryDirectory() as temp_dir:

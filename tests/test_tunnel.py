@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -49,6 +50,19 @@ class TunnelTests(unittest.TestCase):
         self.assertIsNone(parse_ngrok_public_url({"tunnels": []}))
         self.assertIsNone(parse_ngrok_public_url({}))
 
+    def test_parse_ngrok_public_url_ignores_non_string_urls(self) -> None:
+        payload = {
+            "endpoints": [
+                {"url": None},
+                {"url": 123},
+                {"public_url": "https://valid.example.com"},
+            ]
+        }
+
+        self.assertEqual(
+            parse_ngrok_public_url(payload), "https://valid.example.com"
+        )
+
     def test_ngrok_agent_urls_use_current_api_then_legacy_fallback(
         self,
     ) -> None:
@@ -58,6 +72,16 @@ class TunnelTests(unittest.TestCase):
                 "http://127.0.0.1:4040/api/endpoints",
                 "http://127.0.0.1:4040/api/tunnels",
             ],
+        )
+
+    def test_ngrok_agent_urls_preserves_explicit_endpoint_paths(self) -> None:
+        self.assertEqual(
+            ngrok_agent_urls("http://127.0.0.1:4040/api/endpoints"),
+            ["http://127.0.0.1:4040/api/endpoints"],
+        )
+        self.assertEqual(
+            ngrok_agent_urls("http://127.0.0.1:4040/api/tunnels"),
+            ["http://127.0.0.1:4040/api/tunnels"],
         )
 
 
@@ -116,6 +140,21 @@ class CloudflaredTunnelStopTests(unittest.TestCase):
 
         mock_proc.terminate.assert_called_once()
         mock_proc.wait.assert_called_once_with(timeout=5)
+
+    def test_cloudflared_stop_kills_after_timeout(self) -> None:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired("cloudflared", 5),
+            None,
+        ]
+
+        tunnel = CloudflaredTunnel(target_url="http://localhost:9000")
+        tunnel.process = mock_proc
+        tunnel.stop()
+
+        mock_proc.terminate.assert_called_once()
+        mock_proc.kill.assert_called_once()
 
     def test_stop_skips_if_already_exited(self) -> None:
         mock_proc = MagicMock()
