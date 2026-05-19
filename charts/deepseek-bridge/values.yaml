@@ -148,6 +148,10 @@ ollama:
 performance:
   requestTimeout: 300
   streamReadTimeout: 180
+  upstreamRetryAttempts: 2
+  upstreamRetryInitialDelaySeconds: 1
+  upstreamRetryMaxDelaySeconds: 4
+  upstreamRetryJitterSeconds: 0.25
   maxRequestBodyBytes: 20971520
   maxPoolConnections: 10
   maxThreadPool: 12

@@ -66,6 +66,10 @@ data:
     performance:
       request_timeout: {{ .Values.performance.requestTimeout }}
       stream_read_timeout: {{ .Values.performance.streamReadTimeout }}
+      upstream_retry_attempts: {{ .Values.performance.upstreamRetryAttempts }}
+      upstream_retry_initial_delay_seconds: {{ .Values.performance.upstreamRetryInitialDelaySeconds }}
+      upstream_retry_max_delay_seconds: {{ .Values.performance.upstreamRetryMaxDelaySeconds }}
+      upstream_retry_jitter_seconds: {{ .Values.performance.upstreamRetryJitterSeconds }}
       max_request_body_bytes: {{ int .Values.performance.maxRequestBodyBytes }}
       max_pool_connections: {{ .Values.performance.maxPoolConnections }}
       max_thread_pool: {{ .Values.performance.maxThreadPool }}

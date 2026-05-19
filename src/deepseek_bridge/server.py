@@ -5,6 +5,8 @@ from ._types import (
     ProxyResponseResult,
     RequestBodyTooLargeError,
 )
+from .asgi import BridgeRuntimeState, create_app
+from .async_upstream import AsyncUpstreamClient
 
 # Re-exports from cli module
 from .cli import (
@@ -55,7 +57,9 @@ from .streaming._sse import (
 __all__ = [
     "MODEL_CREATED_TIMESTAMPS",
     "SYSTEM_FINGERPRINT",
+    "AsyncUpstreamClient",
     "BoundedThreadPoolHTTPServer",
+    "BridgeRuntimeState",
     "DeepSeekProxyHandler",
     "DeepSeekProxyServer",
     "ProxyResponseResult",
@@ -64,6 +68,7 @@ __all__ = [
     "build_arg_parser",
     "cache_hit_rate",
     "context_status",
+    "create_app",
     "elapsed_ms",
     "format_count",
     "format_usage_count",

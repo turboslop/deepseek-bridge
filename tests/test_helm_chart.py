@@ -75,7 +75,7 @@ class GrafanaDashboardTests(unittest.TestCase):
         self.assertIn("Upstream latency", panel_titles)
         self.assertIn("Upstream error rate", panel_titles)
         self.assertIn("Active streaming responses", panel_titles)
-        self.assertIn("Thread pool workers and queue", panel_titles)
+        self.assertIn("ASGI active requests", panel_titles)
         self.assertIn("Cache hit ratio", panel_titles)
         self.assertIn("Cache hits and misses", panel_titles)
         self.assertIn("Valkey operation latency", panel_titles)
@@ -99,8 +99,7 @@ class GrafanaDashboardTests(unittest.TestCase):
             joined_exprs,
         )
         self.assertIn("deepseek_bridge_streams_active", joined_exprs)
-        self.assertIn("deepseek_bridge_thread_pool_active", joined_exprs)
-        self.assertIn("deepseek_bridge_thread_pool_queue", joined_exprs)
+        self.assertIn("deepseek_bridge_asgi_requests_active", joined_exprs)
         self.assertIn("deepseek_bridge_cache_hit_ratio", joined_exprs)
         self.assertIn("deepseek_bridge_cache_hits_total", joined_exprs)
         self.assertIn("deepseek_bridge_cache_misses_total", joined_exprs)
@@ -207,6 +206,10 @@ class HelmChartTests(unittest.TestCase):
         self.assertFalse(config["metrics"]["enabled"])
         self.assertEqual(
             config["performance"]["max_request_body_bytes"], 20971520
+        )
+        self.assertEqual(config["performance"]["upstream_retry_attempts"], 2)
+        self.assertEqual(
+            config["performance"]["upstream_retry_jitter_seconds"], 0.25
         )
         pod_security = deployment["spec"]["template"]["spec"]["securityContext"]
         self.assertTrue(pod_security["runAsNonRoot"])

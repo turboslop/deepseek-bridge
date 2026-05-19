@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import os
-import signal
 import sys
-import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import uvicorn
+
 from deepseek_bridge import __version__
 
+from .asgi import create_app
+from .async_upstream import AsyncUpstreamClient
 from .config import (
     SUPPORTED_TRACE_MODES,
     ProxyConfig,
@@ -22,19 +23,11 @@ from .config import (
     default_config_path,
     default_reasoning_content_path,
 )
-from .handler import (
-    DeepSeekProxyHandler,
-)
 from .helpers import (
-    _handle_shutdown_signal,
     _shutdown_requested,
 )
 from .logging import LOG, configure_logging
 from .reasoning_store import ReasoningStore, ReasoningStoreProtocol
-from .server_infrastructure import (
-    BoundedThreadPoolHTTPServer,
-    UpstreamPool,
-)
 from .trace import TraceWriter
 
 
@@ -224,6 +217,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Streaming read timeout in seconds, default from config or 180",
     )
     group_perf.add_argument(
+        "--upstream-retry-attempts",
+        type=int,
+        help="Transport retry attempts before returning an upstream error",
+    )
+    group_perf.add_argument(
+        "--upstream-retry-initial-delay-seconds",
+        type=float,
+        help="Initial transport retry backoff delay in seconds",
+    )
+    group_perf.add_argument(
+        "--upstream-retry-max-delay-seconds",
+        type=float,
+        help="Maximum transport retry backoff delay in seconds",
+    )
+    group_perf.add_argument(
+        "--upstream-retry-jitter-seconds",
+        type=float,
+        help="Random retry jitter budget in seconds",
+    )
+    group_perf.add_argument(
         "--max-pool-connections",
         type=int,
         help="Maximum upstream pool connections, default from config or 10",
@@ -322,10 +335,16 @@ def warn_if_insecure_upstream(url: str) -> None:
     )
 
 
-def _run_server(server: BoundedThreadPoolHTTPServer) -> None:
-    server.timeout = 0.5
-    while not _shutdown_requested.is_set():
-        server.handle_request()
+def _run_server(app: Any, config: ProxyConfig) -> None:
+    uvicorn.run(
+        app,
+        host=config.host,
+        port=config.port,
+        log_config=None,
+        access_log=False,
+        server_header=False,
+        lifespan="on",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -394,6 +413,20 @@ def main(argv: list[str] | None = None) -> int:
             )
     if args.stream_read_timeout is not None:
         updates["stream_read_timeout"] = args.stream_read_timeout
+    if args.upstream_retry_attempts is not None:
+        updates["upstream_retry_attempts"] = args.upstream_retry_attempts
+    if args.upstream_retry_initial_delay_seconds is not None:
+        updates["upstream_retry_initial_delay_seconds"] = (
+            args.upstream_retry_initial_delay_seconds
+        )
+    if args.upstream_retry_max_delay_seconds is not None:
+        updates["upstream_retry_max_delay_seconds"] = (
+            args.upstream_retry_max_delay_seconds
+        )
+    if args.upstream_retry_jitter_seconds is not None:
+        updates["upstream_retry_jitter_seconds"] = (
+            args.upstream_retry_jitter_seconds
+        )
     if args.max_request_body_bytes is not None:
         updates["max_request_body_bytes"] = args.max_request_body_bytes
     if args.reasoning_cache_max_age_seconds is not None:
@@ -448,17 +481,8 @@ def main(argv: list[str] | None = None) -> int:
             LOG.error("failed to initialize trace directory: %s", exc)
             store.close()
             return 2
-    pool = UpstreamPool(max_connections=config.max_pool_connections)
-    server = BoundedThreadPoolHTTPServer(
-        (config.host, config.port),
-        DeepSeekProxyHandler,
-        max_workers=config.max_thread_pool,
-    )
-    server.config = config
-    server.reasoning_store = store
-    server.trace_writer = trace_writer
-    server.upstream_pool = pool
-    server.start_time = time.monotonic()
+    upstream_client = AsyncUpstreamClient(config)
+    app = create_app(config, store, upstream_client, trace_writer)
 
     # GC tuning: reduce collection frequency during streaming to save CPU.
     # gc.freeze() excludes all currently-allocated objects from GC scans.
@@ -521,22 +545,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             LOG.info("Trace mode: %s", config.trace_mode)
-    signal.signal(signal.SIGTERM, _handle_shutdown_signal)
-    with contextlib.suppress(ValueError):
-        signal.signal(signal.SIGINT, _handle_shutdown_signal)
-    if hasattr(signal, "SIGPIPE"):
-        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-
     try:
         try:
-            _run_server(server)
+            _run_server(app, config)
         except KeyboardInterrupt:
             LOG.info("received SIGINT, initiating graceful shutdown")
             _shutdown_requested.set()
     finally:
-        if isinstance(server, BoundedThreadPoolHTTPServer):
-            LOG.info("graceful shutdown: stopping new connections...")
-            server.server_close()
+        LOG.info("graceful shutdown: stopping new connections...")
         _shutdown_requested.set()
         store.prune()
         store.close()

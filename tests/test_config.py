@@ -236,6 +236,10 @@ class ConfigTests(unittest.TestCase):
                         "performance:",
                         "  request_timeout: 123.5",
                         "  stream_read_timeout: 90",
+                        "  upstream_retry_attempts: 4",
+                        "  upstream_retry_initial_delay_seconds: 0.5",
+                        "  upstream_retry_max_delay_seconds: 8",
+                        "  upstream_retry_jitter_seconds: 0.1",
                         "  max_request_body_bytes: 1234",
                         "  max_pool_connections: 7",
                         "  max_thread_pool: 9",
@@ -275,6 +279,10 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.ollama)
         self.assertEqual(config.request_timeout, 123.5)
         self.assertEqual(config.stream_read_timeout, 90.0)
+        self.assertEqual(config.upstream_retry_attempts, 4)
+        self.assertEqual(config.upstream_retry_initial_delay_seconds, 0.5)
+        self.assertEqual(config.upstream_retry_max_delay_seconds, 8.0)
+        self.assertEqual(config.upstream_retry_jitter_seconds, 0.1)
         self.assertEqual(config.max_request_body_bytes, 1234)
         self.assertEqual(config.max_pool_connections, 7)
         self.assertEqual(config.max_thread_pool, 9)
@@ -547,6 +555,12 @@ class ConfigTests(unittest.TestCase):
                     "DEEPSEEK_BRIDGE_VALKEY_KEY_PREFIX": "env-prefix:",
                     "DEEPSEEK_BRIDGE_METRICS_ENABLED": "true",
                     "DEEPSEEK_BRIDGE_TRACE_MODE": "full",
+                    "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_ATTEMPTS": "5",
+                    (
+                        "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS"
+                    ): "0.25",
+                    "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_MAX_DELAY_SECONDS": "6",
+                    "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_JITTER_SECONDS": "0",
                 },
             )
 
@@ -563,6 +577,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.valkey_url, "valkey://env.invalid/0")
         self.assertEqual(config.valkey_key_prefix, "env-prefix")
         self.assertEqual(config.trace_mode, "full")
+        self.assertEqual(config.upstream_retry_attempts, 5)
+        self.assertEqual(config.upstream_retry_initial_delay_seconds, 0.25)
+        self.assertEqual(config.upstream_retry_max_delay_seconds, 6.0)
+        self.assertEqual(config.upstream_retry_jitter_seconds, 0.0)
         self.assertIsNone(config.log_dir)
         self.assertTrue(config.metrics_enabled)
 

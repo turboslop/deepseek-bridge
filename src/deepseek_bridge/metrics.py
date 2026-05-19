@@ -109,12 +109,14 @@ class MetricsRegistry:
         self._counters: dict[MetricKey, float] = {}
         self._histograms: dict[MetricKey, _Histogram] = {}
         self._streams_active = 0
+        self._asgi_requests_active = 0
 
     def reset(self) -> None:
         with self._lock:
             self._counters.clear()
             self._histograms.clear()
             self._streams_active = 0
+            self._asgi_requests_active = 0
 
     def inc_counter(
         self,
@@ -190,6 +192,48 @@ class MetricsRegistry:
         with self._lock:
             self._streams_active = max(0, self._streams_active - 1)
 
+    def asgi_request_started(self) -> None:
+        with self._lock:
+            self._asgi_requests_active += 1
+
+    def asgi_request_finished(self) -> None:
+        with self._lock:
+            self._asgi_requests_active = max(0, self._asgi_requests_active - 1)
+
+    def record_upstream_retry(
+        self, *, model: str, reason: str, attempt: int
+    ) -> None:
+        self.inc_counter(
+            "deepseek_bridge_upstream_retries_total",
+            {
+                "model": normalize_model_label(model or "custom"),
+                "reason": reason,
+                "attempt": attempt,
+            },
+        )
+
+    def record_upstream_retry_exhausted(
+        self, *, model: str, reason: str
+    ) -> None:
+        self.inc_counter(
+            "deepseek_bridge_upstream_retry_exhausted_total",
+            {
+                "model": normalize_model_label(model or "custom"),
+                "reason": reason,
+            },
+        )
+
+    def record_upstream_transport_error(
+        self, *, model: str, reason: str
+    ) -> None:
+        self.inc_counter(
+            "deepseek_bridge_upstream_transport_errors_total",
+            {
+                "model": normalize_model_label(model or "custom"),
+                "reason": reason,
+            },
+        )
+
     def record_cache_hit(self, backend: str) -> None:
         self.inc_counter(
             "deepseek_bridge_cache_hits_total", {"backend": backend}
@@ -227,6 +271,7 @@ class MetricsRegistry:
                 for key, value in self._histograms.items()
             }
             streams_active = self._streams_active
+            asgi_requests_active = self._asgi_requests_active
 
         lines: list[str] = []
         self._emit_counter(
@@ -259,7 +304,34 @@ class MetricsRegistry:
             "Currently active streaming responses.",
             float(streams_active),
         )
+        self._emit_gauge(
+            lines,
+            "deepseek_bridge_asgi_requests_active",
+            "Currently active ASGI HTTP requests.",
+            float(asgi_requests_active),
+        )
         self._emit_thread_pool_gauges(lines, server)
+        self._emit_counter(
+            lines,
+            counters,
+            "deepseek_bridge_upstream_retries_total",
+            (
+                "Retried upstream transport attempts by model, reason, "
+                "and attempt."
+            ),
+        )
+        self._emit_counter(
+            lines,
+            counters,
+            "deepseek_bridge_upstream_retry_exhausted_total",
+            "Upstream requests that exhausted configured transport retries.",
+        )
+        self._emit_counter(
+            lines,
+            counters,
+            "deepseek_bridge_upstream_transport_errors_total",
+            "Upstream transport errors by model and reason.",
+        )
         self._emit_counter(
             lines,
             counters,
