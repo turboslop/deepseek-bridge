@@ -52,9 +52,6 @@ data:
     metrics:
       enabled: {{ .Values.metrics.enabled }}
 
-    tunnel:
-      mode: none
-
     cors:
       enabled: {{ .Values.cors.enabled }}
       allowed_origins:

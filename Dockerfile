@@ -48,8 +48,6 @@ RUN groupadd --system --gid 10001 deepseek-bridge \
         '  compact: true' \
         '  file:' \
         '    enabled: false' \
-        'tunnel:' \
-        '  mode: none' \
         > /etc/deepseek-bridge/config.yaml \
     && chown -R 10001:10001 /data \
     && chmod 0444 /etc/deepseek-bridge/config.yaml

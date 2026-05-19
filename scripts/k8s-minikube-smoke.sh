@@ -287,9 +287,6 @@ host_env="$(kubectl_smoke get pod "${pod}" \
 port_env="$(kubectl_smoke get pod "${pod}" \
   -n "${NAMESPACE}" \
   -o jsonpath='{.spec.containers[?(@.name=="deepseek-bridge")].env[?(@.name=="DEEPSEEK_BRIDGE_PORT")].value}')"
-tunnel_env="$(kubectl_smoke get pod "${pod}" \
-  -n "${NAMESPACE}" \
-  -o jsonpath='{.spec.containers[?(@.name=="deepseek-bridge")].env[?(@.name=="DEEPSEEK_BRIDGE_TUNNEL_MODE")].value}')"
 
 assert_equal "${actual_image}" "${IMAGE}" "pod image"
 assert_equal "${pull_policy}" "Never" "imagePullPolicy"
@@ -299,12 +296,9 @@ assert_token "${args}" "--host" "container args"
 assert_token "${args}" "0.0.0.0" "container args"
 assert_token "${args}" "--port" "container args"
 assert_token "${args}" "9000" "container args"
-assert_token "${args}" "--tunnel" "container args"
-assert_token "${args}" "none" "container args"
 assert_equal "${runtime_env}" "kubernetes" "runtime env"
 assert_equal "${host_env}" "0.0.0.0" "host env"
 assert_equal "${port_env}" "9000" "port env"
-assert_equal "${tunnel_env}" "none" "tunnel env"
 
 log "Probing /healthz and /readyz through the Kubernetes Service"
 kubectl_smoke port-forward \

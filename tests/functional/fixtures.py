@@ -563,8 +563,6 @@ class BridgeProcess:
             str(self.port),
             "--base-url",
             self.upstream_url,
-            "--tunnel",
-            "none",
             "--headless",
             "--no-log",
             "--no-display-reasoning",

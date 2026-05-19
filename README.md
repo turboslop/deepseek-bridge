@@ -19,7 +19,7 @@ only the process runner for the HTTP adapter.
 
 ```bash
 pip install deepseek-bridge
-deepseek-bridge --tunnel none --port 9000
+deepseek-bridge --port 9000
 ```
 
 Point any OpenAI-compatible client at:
@@ -102,7 +102,7 @@ Install and run the adapter locally:
 
 ```bash
 pip install deepseek-bridge
-deepseek-bridge --tunnel none --host 127.0.0.1 --port 9000
+deepseek-bridge --host 127.0.0.1 --port 9000
 ```
 
 Check that the HTTP service is alive:
@@ -148,7 +148,7 @@ response = client.chat.completions.create(
 ```bash
 git clone https://github.com/breixopd/deepseek-bridge.git
 cd deepseek-bridge
-uv run --python 3.14 deepseek-bridge --tunnel none --port 9000
+uv run --python 3.14 deepseek-bridge --port 9000
 ```
 
 On first local run, the adapter creates:
@@ -183,22 +183,8 @@ Add a custom OpenAI-compatible model:
 
 - **Model**: `deepseek-v4-pro` or `deepseek-v4-flash`
 - **API Key**: your DeepSeek API key
-- **Base URL**: `http://127.0.0.1:9000/v1` if reachable, otherwise your public
-  tunnel or service URL with `/v1`
-
-Cursor may block plain `localhost` for some custom endpoint flows. In that case
-run the adapter behind a reachable HTTPS URL, for example a Cloudflare named
-tunnel:
-
-```bash
-deepseek-bridge --tunnel cloudflared --cf-url https://app.example.com
-```
-
-Disable tunneling when the client can reach the adapter directly:
-
-```bash
-deepseek-bridge --tunnel none
-```
+- **Base URL**: `http://127.0.0.1:9000/v1` if reachable, otherwise your
+  reverse-proxy, Ingress, or service URL with `/v1`
 
 ### GitHub Copilot BYOK / Ollama Compatibility
 
@@ -321,9 +307,6 @@ logging:
 metrics:
   enabled: false
 
-tunnel:
-  mode: none
-
 cors:
   enabled: true
   allowed_origins:
@@ -366,10 +349,10 @@ or `--trace-dir` is enabled:
 - `full` records full request/response bodies and stream chunks. Use it only
   for deliberate short-lived debugging in trusted environments.
 
-For browser clients served from a public tunnel or custom domain, add that
-exact origin to `cors.allowed_origins`. `allowed_origins: ["*"]` is supported,
-but credentialed responses echo the request origin instead of combining
-credentials with wildcard `*`.
+For browser clients served from a custom domain, add that exact origin to
+`cors.allowed_origins`. `allowed_origins: ["*"]` is supported, but credentialed
+responses echo the request origin instead of combining credentials with wildcard
+`*`.
 
 ### Environment Variables
 
@@ -400,10 +383,6 @@ credentials with wildcard `*`.
 | `DEEPSEEK_BRIDGE_LOG_DIR` | `logging.file.path` |
 | `DEEPSEEK_BRIDGE_TRACE_DIR` | `logging.trace_dir` |
 | `DEEPSEEK_BRIDGE_METRICS_ENABLED` | `metrics.enabled` |
-| `DEEPSEEK_BRIDGE_TUNNEL_MODE` / `DEEPSEEK_BRIDGE_TUNNEL` | `tunnel.mode` |
-| `DEEPSEEK_BRIDGE_CF_URL` | `tunnel.cf_url` |
-| `DEEPSEEK_BRIDGE_CFD_TUNNEL_NAME` | `tunnel.cfd_tunnel_name` |
-| `DEEPSEEK_BRIDGE_NGROK_URL` | `tunnel.ngrok_url` |
 | `DEEPSEEK_BRIDGE_CORS` / `DEEPSEEK_BRIDGE_CORS_ENABLED` | `cors.enabled` |
 | `DEEPSEEK_BRIDGE_CORS_ALLOWED_ORIGINS` | `cors.allowed_origins` |
 | `DEEPSEEK_BRIDGE_CORS_ALLOW_CREDENTIALS` | `cors.allow_credentials` |
@@ -498,8 +477,8 @@ deepseek-bridge --config /etc/deepseek-bridge/config.yaml
 ```
 
 The baked config uses Kubernetes-friendly defaults: `runtime.mode:
-kubernetes`, no tunnel, `0.0.0.0:9000`, compact stdout/stderr logs, no file
-logs, and SQLite cache path `/data/reasoning_content.sqlite3`. Override with
+kubernetes`, `0.0.0.0:9000`, compact stdout/stderr logs, no file logs, and
+SQLite cache path `/data/reasoning_content.sqlite3`. Override with
 `DEEPSEEK_BRIDGE_*` env vars or mount your own config at
 `/etc/deepseek-bridge/config.yaml`.
 
@@ -514,10 +493,10 @@ Kubernetes mode runs the adapter as a headless HTTP workload:
 deepseek-bridge --runtime-mode kubernetes
 ```
 
-In Kubernetes mode, the adapter defaults to `0.0.0.0:9000`, disables tunnels,
-logs to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`, and
-uses an in-memory SQLite cache unless Valkey or a SQLite file path is
-configured. For multiple replicas, set:
+In Kubernetes mode, the adapter defaults to `0.0.0.0:9000`, logs to
+stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`, and uses an
+in-memory SQLite cache unless Valkey or a SQLite file path is configured. For
+multiple replicas, set:
 
 ```bash
 DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey
@@ -533,9 +512,9 @@ Use distinct probes:
 
 An example Deployment and Service live in
 [`examples/kubernetes/deployment.yaml`](examples/kubernetes/deployment.yaml).
-The example uses `readOnlyRootFilesystem: true`, disables tunnels, binds to
-`0.0.0.0`, uses separate liveness/readiness probes, and reads the Valkey URL
-from a Kubernetes Secret.
+The example uses `readOnlyRootFilesystem: true`, binds to `0.0.0.0`, uses
+separate liveness/readiness probes, and reads the Valkey URL from a Kubernetes
+Secret.
 
 Set `terminationGracePeriodSeconds` longer than your expected request or stream
 duration so SIGTERM can drain active work.
@@ -685,8 +664,6 @@ product surface; clients interact with HTTP endpoints.
 | `--reasoning-effort` | Default reasoning effort |
 | `--display-reasoning` / `--no-display-reasoning` | Mirror reasoning into visible client content |
 | `--collapsible-reasoning` / `--no-collapsible-reasoning` | Use Markdown details for mirrored reasoning |
-| `--tunnel` | Optional tunnel service: `none`, `cloudflared`, or `ngrok` |
-| `--cf-url`, `--ngrok-url` | Public tunnel URL settings |
 | `--cors` / `--no-cors` | Send CORS headers |
 | `--cors-allowed-origin` | Allowed browser origin; repeat for multiple origins |
 | `--cors-allow-credentials` / `--no-cors-allow-credentials` | Credentialed CORS behavior |

@@ -185,7 +185,7 @@ class CorsHeaderTests(unittest.TestCase):
 class HttpCorsTests(unittest.TestCase):
     def test_http_preflight_reflects_allowed_origin(self) -> None:
         server = DeepSeekProxyServer(("127.0.0.1", 0), DeepSeekProxyHandler)
-        server.config = ProxyConfig(tunnel="none")
+        server.config = ProxyConfig()
         server.reasoning_store = ReasoningStore(":memory:")
         server.upstream_pool = UpstreamPool()
         thread = threading.Thread(target=server.serve_forever, daemon=True)

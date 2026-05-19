@@ -16,7 +16,7 @@ The console script is defined in `pyproject.toml` and points to `deepseek_bridge
 
 ## Repository Layout
 
-- `src/deepseek_bridge/cli.py` - argument parsing, startup, logging setup, tunnel setup, server lifecycle.
+- `src/deepseek_bridge/cli.py` - argument parsing, startup, logging setup, server lifecycle.
 - `src/deepseek_bridge/config.py` - default config, config file loading, typed `ProxyConfig`.
 - `src/deepseek_bridge/server_infrastructure.py` - HTTP server, bounded thread pool, upstream connection pool.
 - `src/deepseek_bridge/handler/` - request routing, endpoint handlers, upstream forwarding, streaming handling.
@@ -45,16 +45,16 @@ Run one test module:
 uv run --extra dev --python 3.14 python -m unittest tests.test_reasoning_store
 ```
 
-Run the server locally without a tunnel:
+Run the server locally:
 
 ```sh
-uv run --python 3.14 deepseek-bridge --tunnel none --port 9000
+uv run --python 3.14 deepseek-bridge --port 9000
 ```
 
 Run with debug logs and request traces:
 
 ```sh
-uv run --python 3.14 deepseek-bridge --tunnel none --debug --trace-dir ./dumps
+uv run --python 3.14 deepseek-bridge --debug --trace-dir ./dumps
 ```
 
 Format, lint, and type-check commands documented in the README:
@@ -93,7 +93,7 @@ When changing storage:
 
 Open issues track the Kubernetes work. The intended production direction is:
 
-- container image runs `deepseek-bridge --tunnel none --host 0.0.0.0 --port 9000`;
+- container image runs `deepseek-bridge --host 0.0.0.0 --port 9000`;
 - configuration can come from environment variables;
 - liveness and readiness endpoints are separate;
 - logs go to stdout/stderr, with optional JSON formatting;
@@ -101,7 +101,7 @@ Open issues track the Kubernetes work. The intended production direction is:
 - the Helm chart manages Deployment, Service, probes, ServiceMonitor, autoscaling, and Grafana dashboard resources;
 - Valkey is the preferred shared reasoning-cache backend for multi-replica Kubernetes deployments.
 
-For Kubernetes changes, avoid making cloudflared, ngrok, or local file paths mandatory.
+For Kubernetes changes, avoid making local file paths mandatory.
 
 ## Valkey Backend Expectations
 

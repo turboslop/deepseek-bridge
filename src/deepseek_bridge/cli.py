@@ -5,7 +5,6 @@ import contextlib
 import os
 import signal
 import sys
-import threading
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -37,15 +36,6 @@ from .server_infrastructure import (
     UpstreamPool,
 )
 from .trace import TraceWriter
-from .tunnel import (
-    CloudflaredTunnel,
-    HealthCheckConfig,
-    NgrokTunnel,
-    TunnelService,
-    create_tunnel,
-    get_tunnel_choices,
-    local_tunnel_target,
-)
 
 
 def _startup_log_format_from_env() -> str:
@@ -146,23 +136,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--port",
         type=int,
         help="Bind port, default from config or 9000",
-    )
-    group_net.add_argument(
-        "--tunnel",
-        choices=["none", *get_tunnel_choices()],
-        default=None,
-        help=(
-            "Tunnel service for public URL exposure, default from config or "
-            "cloudflared in local mode"
-        ),
-    )
-    group_net.add_argument(
-        "--cf-url",
-        help="Cloudflare tunnel public URL (required for cloudflared tunnel)",
-    )
-    group_net.add_argument(
-        "--ngrok-url",
-        help="Fixed ngrok endpoint URL for reserved domains/endpoints",
     )
     group_net.add_argument(
         "--base-url",
@@ -285,7 +258,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="runtime_mode",
         help=(
             "Runtime profile, default local. Kubernetes mode defaults to "
-            "0.0.0.0, no tunnel, stdout logs, and in-memory cache."
+            "0.0.0.0, stdout logs, and in-memory cache."
         ),
     )
     group_other.add_argument(
@@ -349,60 +322,6 @@ def warn_if_insecure_upstream(url: str) -> None:
     )
 
 
-def _verify_tunnel_url(url: str, timeout: float = 10.0) -> bool:
-    import http.client
-    import urllib.parse
-
-    parsed = urllib.parse.urlparse(url)
-    host = parsed.hostname or "127.0.0.1"
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    for attempt in range(3):
-        try:
-            conn = (
-                http.client.HTTPSConnection(host, port=port, timeout=timeout)
-                if parsed.scheme == "https"
-                else http.client.HTTPConnection(
-                    host, port=port, timeout=timeout
-                )
-            )
-            conn.request("GET", "/v1/health")
-            resp = conn.getresponse()
-            body = resp.read().decode("utf-8", errors="replace")
-            conn.close()
-            if resp.status == 200:
-                LOG.info("tunnel health check: ok (%s)", url)
-                return True
-            if resp.status == 530:
-                if attempt < 2:
-                    time.sleep(5)
-                    continue
-                LOG.warning(
-                    "tunnel health check: HTTP 530 at %s — Cloudflare tunnel "
-                    "not connected. Run 'cloudflared tunnel list' and "
-                    "'cloudflared tunnel route dns'. "
-                    "Body: %s",
-                    url,
-                    body[:120],
-                )
-                return False
-            LOG.warning(
-                "tunnel health check: HTTP %s at %s — %s",
-                resp.status,
-                url,
-                body[:120],
-            )
-            return False
-        except Exception as exc:
-            if attempt < 2:
-                time.sleep(5)
-                continue
-            LOG.warning(
-                "tunnel health check: failed to reach %s — %s", url, exc
-            )
-            return False
-    return False
-
-
 def _run_server(server: BoundedThreadPoolHTTPServer) -> None:
     server.timeout = 0.5
     while not _shutdown_requested.is_set():
@@ -439,12 +358,6 @@ def main(argv: list[str] | None = None) -> int:
         updates["reasoning_effort"] = args.reasoning_effort
     if args.reasoning_content_path is not None:
         updates["reasoning_content_path"] = args.reasoning_content_path
-    if args.tunnel is not None:
-        updates["tunnel"] = args.tunnel
-    if args.cf_url is not None:
-        updates["cf_url"] = args.cf_url
-    if args.ngrok_url is not None:
-        updates["ngrok_url"] = args.ngrok_url
     if args.debug:
         updates["debug"] = True
     if args.compact is not None:
@@ -512,11 +425,6 @@ def main(argv: list[str] | None = None) -> int:
     log_file_path = configure_logging(
         debug=config.debug, log_dir=log_dir, log_format=config.log_format
     )
-    if config.runtime_mode == "kubernetes" and config.tunnel != "none":
-        LOG.error(
-            "kubernetes runtime requires tunnel=none; got %s", config.tunnel
-        )
-        return 2
     warn_if_insecure_upstream(config.upstream_base_url)
     try:
         store = create_reasoning_store(config)
@@ -560,43 +468,8 @@ def main(argv: list[str] | None = None) -> int:
     gc.freeze()
     gc.set_threshold(50000, 10, 10)
 
-    tunnel: TunnelService | None = None
-    public_url: str | None = None
-    if config.tunnel != "none":
-        target_url = local_tunnel_target(config.host, config.port)
-        tunnel = create_tunnel(config.tunnel, target_url)
-        if isinstance(tunnel, CloudflaredTunnel):
-            tunnel.cfd_url = config.cf_url
-            tunnel.cfd_tunnel_name = getattr(
-                config, "cfd_tunnel_name", "deepseek-bridge"
-            )
-        if isinstance(tunnel, NgrokTunnel) and config.ngrok_url:
-            tunnel.ngrok_url = config.ngrok_url
-        try:
-            public_url = tunnel.start()
-            # Run health check in background — don't block server startup
-            threading.Thread(
-                target=_verify_tunnel_url,
-                args=(public_url,),
-                daemon=True,
-            ).start()
-        except RuntimeError as exc:
-            LOG.error("%s", exc)
-            server.server_close()
-            store.close()
-            return 2
-        if isinstance(tunnel, NgrokTunnel):
-            tunnel.health_check = HealthCheckConfig(
-                check_interval=30,
-            )
-            tunnel.start_health_check()
-    server.public_url = public_url
     local_base_url = f"http://{config.host}:{config.port}/v1"
-    api_base_url = (
-        f"{public_url.rstrip('/')}/v1"
-        if public_url is not None
-        else local_base_url
-    )
+    api_base_url = local_base_url
 
     # ── Startup Banner ──────────────────────────────────────────
     LOG.info("")
@@ -628,10 +501,6 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("  API Base:  %s", api_base_url)
     if config.runtime_mode != "local":
         LOG.info("  Runtime:   %s", config.runtime_mode)
-    if public_url is not None:
-        LOG.info("  Tunnel:    %s", public_url)
-    elif config.tunnel == "none":
-        LOG.info("  Tunnel:    none")
     LOG.info("  Ollama:    %s", "enabled" if config.ollama else "disabled")
     LOG.info("")
     LOG.info("Storage")
@@ -669,8 +538,6 @@ def main(argv: list[str] | None = None) -> int:
             LOG.info("graceful shutdown: stopping new connections...")
             server.server_close()
         _shutdown_requested.set()
-        if tunnel is not None:
-            tunnel.stop()
         store.prune()
         store.close()
         if hasattr(gc, "unfreeze"):

@@ -159,8 +159,6 @@ class CliAndHelperTests(unittest.TestCase):
                 "--no-display-reasoning",
                 "--no-collapsible-reasoning",
                 "--cors",
-                "--tunnel",
-                "cloudflared",
                 "--trace-dir",
                 "/tmp/dcp-traces",
             ]
@@ -168,7 +166,6 @@ class CliAndHelperTests(unittest.TestCase):
         self.assertFalse(args.display_reasoning)
         self.assertFalse(args.collapsible_reasoning)
         self.assertTrue(args.cors)
-        self.assertEqual(args.tunnel, "cloudflared")
         self.assertEqual(args.trace_dir, Path("/tmp/dcp-traces"))
 
     def test_console_logging_hides_info_prefix_and_level(self) -> None:
@@ -812,7 +809,6 @@ class HttpBoundaryTests(unittest.TestCase):
         proxy.config = ProxyConfig(
             upstream_base_url=self.upstream.url,
             upstream_model="deepseek-v4-pro",
-            tunnel="none",
         )
         proxy.reasoning_store = self.store
         proxy.upstream_pool = UpstreamPool()
@@ -1698,7 +1694,6 @@ class BoundedPoolTests(unittest.TestCase):
         proxy.config = ProxyConfig(
             upstream_base_url="http://127.0.0.1:1",
             upstream_model="deepseek-v4-pro",
-            tunnel="none",
             max_queue_size=1,
         )
         proxy.reasoning_store = store

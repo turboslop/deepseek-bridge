@@ -17,6 +17,13 @@ This project follows tag-based releases. Release tags must use
   documentation.
 - Documented Helm production posture and added an opt-in chart NetworkPolicy.
 
+### Removed
+
+- Removed built-in public exposure helpers and all related CLI flags,
+  configuration keys, environment variables, documentation, and tests. Deploy
+  DeepSeek Bridge directly on localhost or behind your own reverse proxy,
+  Ingress, or service mesh.
+
 ### Security
 
 - Added explicit trace safety modes: `metadata-only`, `redacted`, and `full`.
@@ -43,7 +50,6 @@ model: deepseek-v4-pro
 thinking: enabled
 reasoning_effort: max
 reasoning_content_path: reasoning_content.sqlite3
-tunnel: none
 debug: false
 ```
 
@@ -73,9 +79,6 @@ storage:
 
 logging:
   level: info
-
-tunnel:
-  mode: none
 ```
 
 ### Key Mapping
@@ -102,9 +105,6 @@ tunnel:
 | `log_dir` | `logging.file.path` |
 | `trace_dir` | `logging.trace_dir` |
 | `metrics_enabled` | `metrics.enabled` |
-| `tunnel` | `tunnel.mode` |
-| `cf_url` | `tunnel.cf_url` |
-| `ngrok_url` | `tunnel.ngrok_url` |
 | `cors` | `cors.enabled` |
 | `cors_allowed_origins` | `cors.allowed_origins` |
 | `cors_allow_credentials` | `cors.allow_credentials` |
