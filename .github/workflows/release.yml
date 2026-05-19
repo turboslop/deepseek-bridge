@@ -2,6 +2,7 @@
 name: Release
 
 "on":
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -9,8 +10,43 @@ name: Release
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  release-metadata:
+    name: Derive release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      chart_version: ${{ steps.meta.outputs.chart_version }}
+      image: ${{ steps.meta.outputs.image }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Derive versions from tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tags must look like v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+
+          version="${tag#v}"
+          {
+            echo "chart_version=${version}-chart"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY}"
+            echo "tag=${tag}"
+            echo "version=${version}"
+          } >> "$GITHUB_OUTPUT"
+
   lint:
+    needs: release-metadata
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -50,6 +86,7 @@ jobs:
 
   unit-test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    needs: release-metadata
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -83,6 +120,7 @@ jobs:
 
   functional-test:
     name: Functional test (ubuntu-latest, Python 3.14, Valkey)
+    needs: release-metadata
     runs-on: ubuntu-latest
     services:
       valkey:
@@ -121,9 +159,33 @@ jobs:
           uv run --extra dev --python 3.14 python -m unittest discover
           -s tests/functional -v
 
+  github-release:
+    name: Create GitHub release
+    needs: [release-metadata, lint, unit-test, functional-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" -R "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --title "Release ${RELEASE_TAG}" \
+              --generate-notes \
+              -R "${GITHUB_REPOSITORY}"
+          fi
+
   publish:
     name: Publish to PyPI
-    needs: [lint, unit-test, functional-test]
+    needs: [release-metadata, lint, unit-test, functional-test]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -149,3 +211,126 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           attestations: false
+
+  docker:
+    name: Build and publish Docker image
+    needs: [release-metadata, lint, unit-test, functional-test]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.release-metadata.outputs.image }}
+          tags: |
+            type=raw,value=${{ needs.release-metadata.outputs.tag }}
+            type=raw,value=${{ needs.release-metadata.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PACKAGE_VERSION=${{ needs.release-metadata.outputs.version }}
+
+      - name: Attest Docker image
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ needs.release-metadata.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  helm:
+    name: Publish Helm chart
+    needs: [release-metadata, github-release, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Lint Helm chart
+        run: helm lint charts/deepseek-bridge
+
+      - name: Package Helm chart
+        id: package
+        env:
+          APP_VERSION: ${{ needs.release-metadata.outputs.tag }}
+          CHART_VERSION: ${{ needs.release-metadata.outputs.chart_version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          helm package charts/deepseek-bridge \
+            --destination dist \
+            --version "${CHART_VERSION}" \
+            --app-version "${APP_VERSION}"
+
+          echo "chart_package=dist/deepseek-bridge-${CHART_VERSION}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Attest Helm chart
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: ${{ steps.package.outputs.chart_package }}
+
+      - name: Log in to GHCR for Helm
+        run: >-
+          echo "${{ secrets.GITHUB_TOKEN }}" |
+          helm registry login ghcr.io
+          --username "${{ github.actor }}"
+          --password-stdin
+
+      - name: Push Helm chart to GHCR
+        run: >-
+          helm push "${{ steps.package.outputs.chart_package }}"
+          oci://ghcr.io/${{ github.repository_owner }}
+
+      - name: Upload Helm chart to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+        run: >-
+          gh release upload "${RELEASE_TAG}"
+          "${{ steps.package.outputs.chart_package }}"
+          --clobber
+          -R "${GITHUB_REPOSITORY}"
