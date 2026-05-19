@@ -378,6 +378,43 @@ class HelmChartTests(unittest.TestCase):
         )
         self.assertEqual(route["spec"]["hostnames"], ["bridge.example.com"])
 
+    def test_network_policy_renders_when_enabled(self) -> None:
+        docs = self._render(
+            "--set",
+            "networkPolicy.enabled=true",
+            "--set",
+            (
+                "networkPolicy.ingress.from[0].namespaceSelector."
+                "matchLabels.name=edge"
+            ),
+            "--set",
+            "networkPolicy.egress.enabled=true",
+            "--set",
+            (
+                "networkPolicy.egress.rules[0].to[0].namespaceSelector."
+                "matchLabels.name=cache"
+            ),
+        )
+
+        policy = self._find(docs, "NetworkPolicy", "deepseek-bridge")
+
+        self.assertEqual(policy["spec"]["policyTypes"], ["Ingress", "Egress"])
+        self.assertEqual(
+            policy["spec"]["ingress"][0]["ports"][0]["port"], "http"
+        )
+        self.assertEqual(
+            policy["spec"]["ingress"][0]["from"][0]["namespaceSelector"][
+                "matchLabels"
+            ]["name"],
+            "edge",
+        )
+        self.assertEqual(
+            policy["spec"]["egress"][0]["to"][0]["namespaceSelector"][
+                "matchLabels"
+            ]["name"],
+            "cache",
+        )
+
     def test_hpa_and_pdb_render(self) -> None:
         docs = self._render(
             "--set",

@@ -46,6 +46,12 @@ class TraceWriterUnitTests(unittest.TestCase):
             second.finish("completed", http_status=200)
 
             self.assertTrue((writer.session_dir / "manifest.json").exists())
+            manifest = json.loads(
+                (writer.session_dir / "manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["trace_mode"], "metadata-only")
             self.assertTrue(
                 (writer.session_dir / "request-000001.json").exists()
             )
@@ -81,6 +87,59 @@ class TraceWriterUnitTests(unittest.TestCase):
             self.assertIn(
                 "sha256", payload["request"]["headers"]["Authorization"]
             )
+
+    def test_full_mode_records_body_content(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            writer = TraceWriter(temp_dir, trace_mode="full")
+            trace = writer.start_request(
+                method="POST",
+                path="/v1/chat/completions",
+                client_address="127.0.0.1",
+                headers={},
+            )
+            trace.record_cursor_body(
+                {
+                    "model": "deepseek-v4-pro",
+                    "messages": [
+                        {"role": "user", "content": "keep this prompt"}
+                    ],
+                }
+            )
+            trace.finish("completed")
+
+            payload = json.loads(trace.path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["trace_mode"], "full")
+            self.assertEqual(
+                payload["request"]["body"]["messages"][0]["content"],
+                "keep this prompt",
+            )
+
+    def test_redacted_mode_records_summary_without_body_content(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            writer = TraceWriter(temp_dir, trace_mode="redacted")
+            trace = writer.start_request(
+                method="POST",
+                path="/v1/chat/completions",
+                client_address="127.0.0.1",
+                headers={},
+            )
+            trace.record_cursor_body(
+                {
+                    "model": "deepseek-v4-pro",
+                    "messages": [
+                        {"role": "user", "content": "hide this prompt"}
+                    ],
+                }
+            )
+            trace.finish("completed")
+
+            serialized = trace.path.read_text(encoding="utf-8")
+            payload = json.loads(serialized)
+            self.assertEqual(payload["trace_mode"], "redacted")
+            self.assertNotIn("hide this prompt", serialized)
+            self.assertNotIn("body", payload["request"])
+            self.assertEqual(payload["request"]["summary"]["message_count"], 1)
+            self.assertIn("body_redacted", payload["request"])
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +313,8 @@ class TraceIntegrationTests(unittest.TestCase):
         trace = _read_single_trace(self.writer.session_dir)
         self.assertEqual(trace["request"]["method"], "POST")
         self.assertEqual(trace["request"]["path"], "/v1/summarize")
-        self.assertEqual(trace["request"]["body"]["model"], "gpt-4o-mini")
+        self.assertNotIn("body", trace["request"])
+        self.assertIn("body_metadata", trace["request"])
         self.assertEqual(trace["request"]["summary"]["model"], "gpt-4o-mini")
         self.assertEqual(trace["completion"]["status"], "rejected")
         self.assertEqual(trace["completion"]["http_status"], 404)
@@ -274,18 +334,50 @@ class TraceIntegrationTests(unittest.TestCase):
         serialized = json.dumps(trace)
         self.assertEqual(trace["completion"]["status"], "completed")
         self.assertEqual(
-            trace["request"]["body"]["messages"][0]["content"],
-            "What is tomorrow's date?",
+            trace["request"]["summary"]["messages"][0]["content"]["length"],
+            len("What is tomorrow's date?"),
         )
-        self.assertEqual(
-            trace["upstream"]["response"]["body"]["json"]["choices"][0][
-                "message"
-            ]["reasoning_content"],
-            "I need the date.",
-        )
+        self.assertNotIn("body", trace["request"])
+        self.assertNotIn("body", trace["upstream"]["response"])
+        self.assertNotIn("What is tomorrow's date?", serialized)
+        self.assertNotIn("I need the date.", serialized)
         self.assertNotIn("sk-from-cursor", serialized)
 
-    def test_captures_streaming_replay_chunks(self) -> None:
+    def test_metadata_mode_records_stream_chunk_metadata_only(self) -> None:
+        request = Request(
+            f"{self.proxy.url}/v1/chat/completions",
+            data=json.dumps(
+                {
+                    "model": "deepseek-v4-pro",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "stream"}],
+                }
+            ).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": "Bearer sk-test",
+                "Content-Type": "application/json",
+            },
+        )
+        with urlopen(request, timeout=2) as response:
+            response.read()
+        trace = _read_single_trace(self.writer.session_dir)
+        serialized = json.dumps(trace)
+        self.assertEqual(trace["completion"]["status"], "completed")
+        upstream_chunk = trace["upstream"]["stream"]["chunks"][0]
+        cursor_chunk = trace["cursor_response"]["stream"]["chunks"][0]
+        self.assertIn("line_metadata", upstream_chunk)
+        self.assertIn("line_metadata", cursor_chunk)
+        self.assertNotIn("line", upstream_chunk)
+        self.assertNotIn("line", cursor_chunk)
+        self.assertNotIn('"line":', serialized)
+        self.assertNotIn("think", serialized)
+        self.assertNotIn("answer", serialized)
+        self.assertNotIn("<details>", serialized)
+
+    def test_full_mode_captures_streaming_replay_chunks(self) -> None:
+        self.writer = TraceWriter(self.temp_dir.name, trace_mode="full")
+        self.proxy.server.trace_writer = self.writer
         request = Request(
             f"{self.proxy.url}/v1/chat/completions",
             data=json.dumps(

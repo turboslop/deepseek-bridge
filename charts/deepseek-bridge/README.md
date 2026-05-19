@@ -12,6 +12,35 @@ The default install is a single-replica local/dev profile using an in-memory
 SQLite reasoning cache. Multi-replica installs should use Valkey so cache
 entries are shared across pods.
 
+## Production posture
+
+The default values are intentionally small and development-friendly. For
+production, set an explicit profile instead of relying on empty defaults:
+
+```sh
+helm install deepseek-bridge ./charts/deepseek-bridge \
+  --set storage.backend=valkey \
+  --set valkey.existingSecret=deepseek-bridge-valkey \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set resources.limits.memory=1Gi \
+  --set metrics.enabled=true
+```
+
+Recommended production controls:
+
+- use an external managed Valkey/Redis-compatible service with TLS/auth;
+- store Valkey URLs and credentials in Kubernetes Secrets;
+- keep the built-in Valkey deployment for development or small private
+  clusters only;
+- configure resource requests and limits for the adapter and Valkey;
+- put authenticated ingress, gateway auth, or service mesh policy in front of
+  any endpoint reachable outside a trusted network;
+- terminate TLS at the ingress/gateway or mesh boundary;
+- enable `networkPolicy.enabled=true` and set ingress/egress rules appropriate
+  for your namespace and CNI;
+- avoid `trace_mode=full` on routine production traffic.
+
 ## External Valkey
 
 ```sh

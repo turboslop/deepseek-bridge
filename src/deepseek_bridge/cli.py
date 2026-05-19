@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from deepseek_bridge import __version__
 
 from .config import (
+    SUPPORTED_TRACE_MODES,
     ProxyConfig,
     _auto_pool_connections,
     _auto_queue_size,
@@ -208,7 +209,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group_storage.add_argument(
         "--trace-dir",
         type=Path,
-        help="Write full structured request traces to this directory",
+        help="Write structured request traces to this directory",
+    )
+    group_storage.add_argument(
+        "--trace-mode",
+        choices=sorted(SUPPORTED_TRACE_MODES),
+        help=(
+            "Trace safety mode: metadata-only (default), redacted, or full. "
+            "Full traces may contain prompts, tool arguments, responses, and "
+            "reasoning content."
+        ),
     )
     group_storage.add_argument(
         "--reasoning-content-path",
@@ -445,6 +455,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["metrics_enabled"] = args.metrics
     if args.trace_dir is not None:
         updates["trace_dir"] = args.trace_dir
+    if args.trace_mode is not None:
+        updates["trace_mode"] = args.trace_mode
     if args.display_reasoning is not None:
         updates["display_reasoning"] = args.display_reasoning
     if args.collapsible_reasoning is not None:
@@ -521,7 +533,9 @@ def main(argv: list[str] | None = None) -> int:
     trace_writer: TraceWriter | None = None
     if config.trace_dir is not None:
         try:
-            trace_writer = TraceWriter(config.trace_dir)
+            trace_writer = TraceWriter(
+                config.trace_dir, trace_mode=config.trace_mode
+            )
         except OSError as exc:
             LOG.error("failed to initialize trace directory: %s", exc)
             store.close()
@@ -631,9 +645,13 @@ def main(argv: list[str] | None = None) -> int:
         LOG.warning("debug mode: request/response logging enabled")
     if trace_writer is not None:
         LOG.info("Trace dir: %s", trace_writer.session_dir)
-        LOG.warning(
-            "trace logging enabled; prompts and code will be written to disk"
-        )
+        if config.trace_mode == "full":
+            LOG.warning(
+                "full trace logging enabled; prompts, code, responses, and "
+                "reasoning may be written to disk"
+            )
+        else:
+            LOG.info("Trace mode: %s", config.trace_mode)
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     with contextlib.suppress(ValueError):
         signal.signal(signal.SIGINT, _handle_shutdown_signal)

@@ -152,6 +152,14 @@ performance:
   maxPoolConnections: 10
   maxThreadPool: 12
 
+# Development default. Production installs should set explicit requests/limits,
+# for example:
+# resources:
+#   requests:
+#     cpu: 250m
+#     memory: 256Mi
+#   limits:
+#     memory: 1Gi
 resources: {}
 
 livenessProbe:
@@ -184,6 +192,14 @@ podDisruptionBudget:
   enabled: false
   minAvailable: null
   maxUnavailable: 1
+
+networkPolicy:
+  enabled: false
+  ingress:
+    from: []
+  egress:
+    enabled: false
+    rules: []
 
 ingress:
   enabled: false

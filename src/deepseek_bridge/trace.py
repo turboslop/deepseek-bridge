@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 TRACE_SCHEMA_VERSION = 1
+DEFAULT_TRACE_MODE = "metadata-only"
+TRACE_MODES = {"metadata-only", "redacted", "full"}
 
 
 def utc_now_iso() -> str:
@@ -19,6 +21,13 @@ def utc_now_iso() -> str:
 
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def normalize_trace_mode(value: str | None) -> str:
+    normalized = str(value or DEFAULT_TRACE_MODE).strip().lower()
+    if normalized in TRACE_MODES:
+        return normalized
+    return DEFAULT_TRACE_MODE
 
 
 def authorization_summary(authorization: str | None) -> dict[str, Any]:
@@ -46,6 +55,39 @@ def jsonable_body(body: bytes) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"text": text}
     return {"json": payload}
+
+
+def redacted_body(body: bytes) -> dict[str, Any]:
+    text = body.decode("utf-8", errors="replace")
+    result: dict[str, Any] = {
+        "body_bytes": len(body),
+        "sha256": sha256_text(text),
+    }
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        result["text"] = content_stats(text)
+        return result
+    if isinstance(payload, dict):
+        result["json_summary"] = payload_summary(payload)
+        return result
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    result["json"] = {
+        "type": type(payload).__name__,
+        "sha256": sha256_text(canonical),
+    }
+    if isinstance(payload, list):
+        result["json"]["items"] = len(payload)
+    return result
+
+
+def stream_line_metadata(line: bytes) -> dict[str, Any]:
+    text = line.decode("utf-8", errors="replace")
+    return {
+        "bytes": len(line),
+        "sha256": sha256_text(text),
+        "done": text.strip() == "data: [DONE]",
+    }
 
 
 def tool_names(payload: dict[str, Any]) -> list[str]:
@@ -153,8 +195,11 @@ def write_json_private(path: Path, payload: dict[str, Any]) -> None:
 
 
 class TraceWriter:
-    def __init__(self, base_dir: str | Path) -> None:
+    def __init__(
+        self, base_dir: str | Path, *, trace_mode: str = DEFAULT_TRACE_MODE
+    ) -> None:
         self.base_dir = Path(base_dir).expanduser()
+        self.trace_mode = normalize_trace_mode(trace_mode)
         self.base_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         session_name = (
             datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
@@ -196,6 +241,7 @@ class TraceWriter:
                 "upstream": {},
                 "cursor_response": {},
                 "completion": {},
+                "trace_mode": self.trace_mode,
             },
         )
 
@@ -209,6 +255,7 @@ class TraceWriter:
                 "base_dir": str(self.base_dir),
                 "session_dir": str(self.session_dir),
                 "format": "one JSON file per traced POST request",
+                "trace_mode": self.trace_mode,
             },
         )
 
@@ -222,12 +269,47 @@ class TraceRequest:
     _started: float = field(default_factory=time.monotonic)
     _finished: bool = False
 
+    @property
+    def trace_mode(self) -> str:
+        return self.writer.trace_mode
+
+    def _store_payload(
+        self, section: dict[str, Any], payload: dict[str, Any]
+    ) -> None:
+        summary = payload_summary(payload)
+        section["summary"] = summary
+        if self.trace_mode == "full":
+            section["body"] = payload
+        elif self.trace_mode == "redacted":
+            section["body_redacted"] = summary
+
+    def _store_body(
+        self, section: dict[str, Any], body: bytes, *, key: str = "body"
+    ) -> None:
+        if self.trace_mode == "full":
+            section[key] = jsonable_body(body)
+            return
+        redacted = redacted_body(body)
+        if self.trace_mode == "redacted":
+            section[f"{key}_redacted"] = redacted
+            if "json_summary" in redacted:
+                section["summary"] = redacted["json_summary"]
+            return
+        section[f"{key}_metadata"] = {
+            "body_bytes": redacted["body_bytes"],
+            "sha256": redacted["sha256"],
+        }
+        if "json_summary" in redacted:
+            section["summary"] = redacted["json_summary"]
+
     def record_cursor_body(self, payload: dict[str, Any]) -> None:
-        self.data["request"]["body"] = payload
-        self.data["request"]["summary"] = payload_summary(payload)
+        self._store_payload(self.data["request"], payload)
 
     def record_cursor_body_bytes(self, body: bytes) -> None:
         self.data["request"]["body_bytes"] = len(body)
+        if self.trace_mode != "full":
+            self._store_body(self.data["request"], body)
+            return
         text = body.decode("utf-8", errors="replace")
         try:
             payload = json.loads(text)
@@ -247,7 +329,7 @@ class TraceRequest:
         self.data["request"]["body_omitted"] = omitted
 
     def record_transform(self, prepared: Any) -> None:
-        self.data["transform"] = {
+        transform = {
             "original_model": prepared.original_model,
             "upstream_model": prepared.upstream_model,
             "cache_namespace": prepared.cache_namespace,
@@ -267,8 +349,14 @@ class TraceRequest:
             "reasoning_diagnostics": prepared.reasoning_diagnostics,
             "recovery_steps": prepared.recovery_steps,
             "upstream_request_summary": payload_summary(prepared.payload),
-            "upstream_request_body": prepared.payload,
         }
+        if self.trace_mode == "full":
+            transform["upstream_request_body"] = prepared.payload
+        elif self.trace_mode == "redacted":
+            transform["upstream_request_redacted"] = payload_summary(
+                prepared.payload
+            )
+        self.data["transform"] = transform
 
     def record_upstream_request(
         self,
@@ -297,7 +385,7 @@ class TraceRequest:
         if stream is not None:
             response["stream"] = stream
         if body is not None:
-            response["body"] = jsonable_body(body)
+            self._store_body(response, body)
         self.data["upstream"]["response"] = response
 
     def record_cursor_response(
@@ -311,7 +399,7 @@ class TraceRequest:
         if headers is not None:
             response["headers"] = sanitized_headers(headers)
         if body is not None:
-            response["body"] = jsonable_body(body)
+            self._store_body(response, body)
         self.data["cursor_response"].update(response)
 
     def record_stream_chunk(
@@ -324,16 +412,30 @@ class TraceRequest:
             "stream", {"chunks": []}
         )
         index = len(upstream_stream["chunks"])
+        if self.trace_mode == "full":
+            upstream_stream["chunks"].append(
+                {
+                    "index": index,
+                    "line": upstream_line.decode("utf-8", errors="replace"),
+                }
+            )
+            cursor_stream["chunks"].append(
+                {
+                    "index": index,
+                    "line": cursor_line.decode("utf-8", errors="replace"),
+                }
+            )
+            return
         upstream_stream["chunks"].append(
             {
                 "index": index,
-                "line": upstream_line.decode("utf-8", errors="replace"),
+                "line_metadata": stream_line_metadata(upstream_line),
             }
         )
         cursor_stream["chunks"].append(
             {
                 "index": index,
-                "line": cursor_line.decode("utf-8", errors="replace"),
+                "line_metadata": stream_line_metadata(cursor_line),
             }
         )
 

@@ -161,6 +161,8 @@ class CliArgParserTests(unittest.TestCase):
                 "/tmp/logs",
                 "--trace-dir",
                 "/tmp/trace",
+                "--trace-mode",
+                "redacted",
                 "--no-log",
                 "--clear-reasoning-cache",
                 "--reasoning-content-path",
@@ -171,6 +173,7 @@ class CliArgParserTests(unittest.TestCase):
         )
         self.assertEqual(args.log_dir, Path("/tmp/logs"))
         self.assertEqual(args.trace_dir, Path("/tmp/trace"))
+        self.assertEqual(args.trace_mode, "redacted")
         self.assertTrue(args.no_log)
         self.assertTrue(args.clear_reasoning_cache)
         self.assertEqual(args.reasoning_content_path, Path("/tmp/reasoning.db"))
@@ -508,6 +511,8 @@ class CliMainTests(unittest.TestCase):
                     "--max-thread-pool",
                     "20",
                     "--metrics",
+                    "--trace-mode",
+                    "full",
                     "--tunnel",
                     "none",
                 ]
@@ -524,8 +529,46 @@ class CliMainTests(unittest.TestCase):
             self.assertEqual(server.config.max_pool_connections, 20)
             self.assertEqual(server.config.max_queue_size, 50)
             self.assertTrue(server.config.metrics_enabled)
+            self.assertEqual(server.config.trace_mode, "full")
             self.assertEqual(server.config.tunnel, "none")
             self.assertEqual(mock_store_cls.call_args.kwargs["max_rows"], 42)
+
+    def test_main_initializes_trace_writer_with_configured_mode(self) -> None:
+        srv_bind, srv_activate = self._server_bind_patches()
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch(
+                "deepseek_bridge.cli._run_server",
+                side_effect=KeyboardInterrupt,
+            ) as mock_run,
+            patch("deepseek_bridge.cli.create_tunnel"),
+            patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
+            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.configure_logging"),
+            patch("deepseek_bridge.cli.TraceWriter") as mock_trace_writer,
+            patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
+            srv_bind,
+            srv_activate,
+        ):
+            mock_cfg_cls.from_file.return_value = ProxyConfig(
+                tunnel="none",
+                trace_dir=Path(temp_dir),
+                trace_mode="redacted",
+            )
+            mock_store = MagicMock()
+            mock_store.check_bloat.return_value = (None, None)
+            mock_store_cls.return_value = mock_store
+
+            from deepseek_bridge.cli import main
+
+            result = main([])
+
+            self.assertEqual(result, 0)
+            mock_trace_writer.assert_called_once_with(
+                Path(temp_dir), trace_mode="redacted"
+            )
+            server = mock_run.call_args.args[0]
+            self.assertIs(server.trace_writer, mock_trace_writer.return_value)
 
     def test_main_runs_http_server(self) -> None:
         """main runs the HTTP server loop directly."""

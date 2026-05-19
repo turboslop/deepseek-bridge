@@ -8,6 +8,12 @@ from deepseek_bridge.streaming import (
     StreamAccumulator,
     fold_reasoning_into_content,
 )
+from deepseek_bridge.streaming._sse import (
+    SYSTEM_FINGERPRINT,
+    inject_recovery_notice,
+    recovery_notice_chunk,
+    sse_data,
+)
 
 
 class StreamAccumulatorTests(unittest.TestCase):
@@ -116,6 +122,7 @@ class StreamAccumulatorTests(unittest.TestCase):
         self.assertEqual(
             store.get(f"scope:{scope}:tool_call:call_stream"), "Need a tool."
         )
+
         self.assertEqual(accumulator.store_reasoning(store, scope), 0)
         store.close()
 
@@ -490,6 +497,41 @@ class FoldReasoningTests(unittest.TestCase):
         }
         fold_reasoning_into_content(payload, collapsible=True)
         self.assertEqual(payload["choices"][0]["message"]["content"], "answer")
+
+
+class SseHelperTests(unittest.TestCase):
+    def test_sse_data_serializes_payload_with_sse_frame(self) -> None:
+        self.assertEqual(sse_data({"ok": True}), b'data: {"ok":true}\n\n')
+
+    def test_inject_recovery_notice_targets_first_content_delta(self) -> None:
+        chunk = {
+            "choices": [
+                {"index": 0, "delta": {"role": "assistant"}},
+                {"index": 1, "delta": {"content": "answer"}},
+            ]
+        }
+
+        self.assertTrue(inject_recovery_notice(chunk, "notice\n"))
+
+        self.assertNotIn("content", chunk["choices"][0]["delta"])
+        self.assertEqual(
+            chunk["choices"][1]["delta"]["content"], "notice\nanswer"
+        )
+
+    def test_inject_recovery_notice_handles_malformed_chunks(self) -> None:
+        self.assertFalse(inject_recovery_notice({}, "notice"))
+        self.assertFalse(
+            inject_recovery_notice({"choices": [{"delta": "bad"}]}, "notice")
+        )
+
+    def test_recovery_notice_chunk_has_fingerprint_and_notice(self) -> None:
+        chunk = recovery_notice_chunk("deepseek-v4-pro", "Recovered.\n")
+
+        self.assertEqual(chunk["model"], "deepseek-v4-pro")
+        self.assertEqual(chunk["system_fingerprint"], SYSTEM_FINGERPRINT)
+        self.assertEqual(
+            chunk["choices"][0]["delta"]["content"], "Recovered.\n"
+        )
 
 
 if __name__ == "__main__":

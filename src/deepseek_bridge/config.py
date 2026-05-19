@@ -74,6 +74,8 @@ KUBERNETES_REASONING_CONTENT_PATH = ":memory:"
 DEFAULT_STORAGE_BACKEND = "sqlite"
 DEFAULT_VALKEY_KEY_PREFIX = "deepseek-bridge"
 DEFAULT_LOG_FORMAT = "text"
+DEFAULT_TRACE_MODE = "metadata-only"
+SUPPORTED_TRACE_MODES = {"metadata-only", "redacted", "full"}
 DEFAULT_METRICS_ENABLED = False
 SUPPORTED_TUNNELS = {"none", "cloudflared", "ngrok"}
 
@@ -118,6 +120,7 @@ reasoning_display:
 logging:
   level: info
   format: text
+  trace_mode: metadata-only
   file:
     enabled: true
     path: null  # auto: ~/.deepseek-bridge/logs
@@ -620,6 +623,14 @@ def normalize_config_settings(
             _strict_bool,
             name="logging.compact",
         )
+        _set_if_present(
+            normalized,
+            logging_settings,
+            "trace_mode",
+            "trace_mode",
+            lambda n, v: _strict_enum(n, v, SUPPORTED_TRACE_MODES),
+            name="logging.trace_mode",
+        )
         trace_dir = setting_value(logging_settings, "trace_dir")
         if trace_dir is not MISSING and trace_dir is not None:
             normalized["trace_dir"] = _config_path(
@@ -917,6 +928,12 @@ def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
             environ["DEEPSEEK_BRIDGE_LOG_FORMAT"],
             {"text", "json"},
         )
+    if "DEEPSEEK_BRIDGE_TRACE_MODE" in environ:
+        settings["trace_mode"] = _strict_enum(
+            "DEEPSEEK_BRIDGE_TRACE_MODE",
+            environ["DEEPSEEK_BRIDGE_TRACE_MODE"],
+            SUPPORTED_TRACE_MODES,
+        )
 
     return settings
 
@@ -990,6 +1007,13 @@ def normalize_runtime_mode(value: Any) -> str:
     if runtime_mode in {DEFAULT_RUNTIME_MODE, KUBERNETES_RUNTIME_MODE}:
         return runtime_mode
     return DEFAULT_RUNTIME_MODE
+
+
+def normalize_trace_mode(value: Any) -> str:
+    trace_mode = as_str(value, DEFAULT_TRACE_MODE).strip().lower()
+    if trace_mode in SUPPORTED_TRACE_MODES:
+        return trace_mode
+    return DEFAULT_TRACE_MODE
 
 
 def _auto_stream_timeout(request_timeout: float, explicit: Any = None) -> float:
@@ -1081,6 +1105,7 @@ class ProxyConfig:
     ngrok_url: str = ""  # Fixed ngrok endpoint URL (reserved domains)
     compact: bool = False
     trace_dir: Path | None = None
+    trace_mode: str = DEFAULT_TRACE_MODE
     log_dir: Path | None = field(default_factory=default_log_dir)
     log_format: str = DEFAULT_LOG_FORMAT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
@@ -1278,6 +1303,9 @@ class ProxyConfig:
                 setting_value(settings, "trace_dir"),
                 None,
                 config_dir,
+            ),
+            trace_mode=normalize_trace_mode(
+                setting_value(settings, "trace_mode")
             ),
             log_dir=log_dir,
             log_format=as_str(

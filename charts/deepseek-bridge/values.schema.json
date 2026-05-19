@@ -55,6 +55,14 @@
           "type": "boolean"
         }
       }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

@@ -5,137 +5,246 @@
 [![CI](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/breixopd/deepseek-bridge/actions/workflows/ci.yml)
 [![License](https://img.shields.io/pypi/l/deepseek-bridge)](https://github.com/breixopd/deepseek-bridge/blob/main/LICENSE)
 
-A local proxy that connects AI coding tools (Cursor, GitHub Copilot, Codex, and any OpenAI-compatible client) to DeepSeek's reasoning models by repairing the `reasoning_content` chain that these tools commonly drop from tool-call requests.
+OpenAI-compatible HTTP stateful adapter for the DeepSeek V4 (DS4) reasoning
+protocol.
+
+DeepSeek Bridge runs as a local service, sidecar, container, or Kubernetes
+workload. OpenAI-compatible clients send ordinary `/v1` HTTP requests to the
+adapter; the adapter forwards them to DeepSeek, preserves the reasoning state
+required by DS4 tool-call conversations, and repairs follow-up turns when the
+client did not keep `reasoning_content`.
+
+This is not a chat UI, TUI, or workflow CLI. The `deepseek-bridge` command is
+only the process runner for the HTTP adapter.
 
 ```bash
 pip install deepseek-bridge
+deepseek-bridge --tunnel none --port 9000
 ```
 
-DeepSeek's [thinking-mode API](https://api-docs.deepseek.com/guides/thinking_mode#tool-calls) requires every assistant message in a multi-turn tool-call conversation to carry its complete `reasoning_content` back to the server. When a client omits this field, the API returns a 400 error. DeepSeek Bridge intercepts requests, restores the missing reasoning from a local cache, and forwards them upstream — no client-side changes needed.
+Point any OpenAI-compatible client at:
 
-## Features
+```text
+http://127.0.0.1:9000/v1
+```
 
-### Reasoning Repair
-- Injects `reasoning_content` into outgoing tool-call requests, restoring previously cached reasoning from regular and streamed DeepSeek responses.
-- Displays thinking tokens in the client UI using collapsible Markdown `<details>` blocks.
-- Cursor Agent Mode support: automatically converts Responses API payloads to Chat Completions format.
+and use your DeepSeek API key as the client's normal bearer token. The adapter
+does not need a separate API-key setting for ordinary use; it forwards the
+client's `Authorization: Bearer ...` header upstream.
 
-### Connection Resilience
-- Connection pooling via `urllib3` with keep-alive and minimal retries.
-- Bounded thread pool prevents thread exhaustion on long-running streaming connections.
-- Configurable SSE read timeout (default 180 seconds) prevents hung threads on silent upstreams.
-- Tunnel support (cloudflared by default, ngrok optional) with health check and automatic reconnection.
-- Graceful shutdown on SIGTERM — active requests drain, reasoning cache is flushed.
+## What It Adapts
 
-### API Compatibility
-- `system_fingerprint` in every streaming and non-streaming response.
-- `x-request-id` UUID header on every response.
-- OpenAI-standard error format.
-- CORS headers enabled by default.
-- `/healthz` liveness, `/readyz` readiness, `/v1/embeddings`, `/v1/health`, and `/v1/models` endpoints.
-- `/v1/completions` legacy endpoint (auto-converts `prompt` to `messages`).
-- Multimodal content arrays preserved.
-- DeepSeek V4 thinking parameter support (`thinking`, `reasoning_effort`, `response_format`, `logprobs`).
-- Silent mapping of legacy model names (`deepseek-chat`, `deepseek-reasoner`) to `deepseek-v4-flash`.
+DeepSeek thinking/tool-call conversations have a stricter state contract than
+the common OpenAI-compatible transcript shape. In multi-turn tool-call flows,
+DeepSeek expects assistant messages to be replayed with their full
+`reasoning_content`. Many OpenAI-compatible clients keep only the visible
+assistant message and tool calls, then drop the hidden reasoning field. DeepSeek
+then rejects the next request.
 
-### Logging and Observability
-- Persistent log files with `--log-dir`.
-- Heartbeat and pool utilization counters.
-- Full structured request traces with `--trace-dir`.
+DeepSeek Bridge sits between the client and DeepSeek:
 
-## Why This Exists
+```text
+OpenAI-compatible client
+  -> DeepSeek Bridge /v1
+  -> DeepSeek API
+```
 
-DeepSeek's thinking-mode API enforces a strict contract: every assistant message that participates in a tool-call chain must include the full `reasoning_content` field. Some AI coding tools (including Cursor) drop this field from their chat transcript, causing DeepSeek to reject subsequent tool-call requests.
+The adapter records `reasoning_content` from DeepSeek responses, scopes it to
+the conversation and effective model/thinking settings, and restores it into
+later tool-call requests before forwarding them upstream.
 
-DeepSeek Bridge stores copies of `reasoning_content` from every response and patches missing entries back into requests before forwarding them upstream.
+## HTTP Surface
 
-## Installation
+The primary interface is HTTP, not terminal interaction.
+
+| Client endpoint | Purpose |
+| --- | --- |
+| `/v1/chat/completions` | Main OpenAI-compatible chat endpoint with DS4 reasoning repair |
+| `/v1/completions` | Legacy completions compatibility; prompts are converted to messages |
+| `/v1/embeddings` | Embeddings passthrough |
+| `/v1/models` | Model metadata for OpenAI-compatible clients |
+| `/healthz` | Liveness probe |
+| `/readyz` | Readiness probe including storage health |
+| `/metrics` | Prometheus metrics when enabled |
+| `/api/version`, `/api/tags`, `/api/show` | Ollama-compatible endpoints for clients such as GitHub Copilot BYOK |
+
+Cursor Agent Mode is also supported when it sends OpenAI Responses-style
+payloads to the Chat Completions endpoint; the adapter converts those payloads
+before forwarding them to DeepSeek.
+
+## Core Capabilities
+
+- Stateful DS4 reasoning repair across streamed and non-streamed tool-call
+  conversations.
+- SQLite storage for local single-process use.
+- Valkey storage for shared multi-replica deployments.
+- OpenAI-compatible response shape, errors, request IDs, CORS, model metadata,
+  and streaming behavior.
+- DeepSeek V4 thinking controls: `thinking`, `reasoning_effort`,
+  `response_format`, `logprobs`, and legacy DeepSeek model aliases.
+- Optional visible reasoning mirror for clients that cannot render native
+  reasoning UI.
+- Bounded request thread pool, upstream connection pooling, SSE read timeouts,
+  graceful SIGTERM draining, health/readiness endpoints, and Prometheus metrics.
+- Container and Helm deployment support for Kubernetes-native operation.
+
+## Trust and Release Posture
+
+- Release history and migration notes live in [CHANGELOG.md](CHANGELOG.md).
+- Threat model and production security guidance live in
+  [SECURITY.md](SECURITY.md).
+- AI-assisted contribution expectations live in
+  [AI_ASSISTED_DEVELOPMENT.md](AI_ASSISTED_DEVELOPMENT.md).
+
+## Quick Start
+
+Install and run the adapter locally:
 
 ```bash
-# From PyPI
 pip install deepseek-bridge
+deepseek-bridge --tunnel none --host 127.0.0.1 --port 9000
+```
 
-# From source
+Check that the HTTP service is alive:
+
+```bash
+curl -fsS http://127.0.0.1:9000/healthz
+```
+
+Send a request through the adapter:
+
+```bash
+curl -fsS http://127.0.0.1:9000/v1/chat/completions \
+  -H "Authorization: Bearer ${DEEPSEEK_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-v4-pro",
+    "messages": [
+      {"role": "user", "content": "Plan a small refactor."}
+    ],
+    "thinking": {"type": "enabled", "reasoning_effort": "max"},
+    "stream": true
+  }'
+```
+
+Use the same base URL and API key in any OpenAI-compatible SDK:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-...",
+    base_url="http://127.0.0.1:9000/v1",
+)
+
+response = client.chat.completions.create(
+    model="deepseek-v4-pro",
+    messages=[{"role": "user", "content": "Explain this adapter."}],
+)
+```
+
+## Running From Source
+
+```bash
 git clone https://github.com/breixopd/deepseek-bridge.git
 cd deepseek-bridge
-uv run deepseek-bridge
+uv run --python 3.14 deepseek-bridge --tunnel none --port 9000
 ```
 
-### Usage
+On first local run, the adapter creates:
+
+- `~/.deepseek-bridge/config.yaml` - structured runtime configuration.
+- `~/.deepseek-bridge/reasoning_content.sqlite3` - local reasoning state cache.
+
+## Client Setup
+
+### Generic OpenAI-Compatible Clients
+
+Set the client's base URL to:
+
+```text
+http://127.0.0.1:9000/v1
+```
+
+If the client runs outside the machine or cluster, use the adapter's reachable
+service URL instead, for example:
+
+```text
+https://deepseek-bridge.example.com/v1
+```
+
+Set the client's API key to your DeepSeek API key. The adapter forwards that
+bearer token to DeepSeek and uses it as part of the reasoning-cache namespace,
+so separate users or keys do not share reasoning entries.
+
+### Cursor
+
+Add a custom OpenAI-compatible model:
+
+- **Model**: `deepseek-v4-pro` or `deepseek-v4-flash`
+- **API Key**: your DeepSeek API key
+- **Base URL**: `http://127.0.0.1:9000/v1` if reachable, otherwise your public
+  tunnel or service URL with `/v1`
+
+Cursor may block plain `localhost` for some custom endpoint flows. In that case
+run the adapter behind a reachable HTTPS URL, for example a Cloudflare named
+tunnel:
 
 ```bash
-# Run the HTTP proxy
-deepseek-bridge
-
-# Run without tunnel (localhost only)
-deepseek-bridge --tunnel none --port 9000
-
-# Run as a Kubernetes workload
-deepseek-bridge --runtime-mode kubernetes --host 0.0.0.0 --port 9000 --tunnel none
-
-# Debug output with trace dumps
-deepseek-bridge --debug --trace-dir ./dumps
-
-# Use a custom config file
-deepseek-bridge --config ./my-config.yaml
-
-# Clear reasoning cache and exit
-deepseek-bridge --clear-reasoning-cache
-
-# Disable thinking display in client UI
-deepseek-bridge --no-display-reasoning
+deepseek-bridge --tunnel cloudflared --cf-url https://app.example.com
 ```
 
-On first run, DeepSeek Bridge creates:
-- `~/.deepseek-bridge/config.yaml` — configuration file
-- `~/.deepseek-bridge/reasoning_content.sqlite3` — reasoning cache
-
-### Container Image
-
-Build a local image from the repository root:
+Disable tunneling when the client can reach the adapter directly:
 
 ```bash
-docker build --build-arg PACKAGE_VERSION=0.0.0+local -t deepseek-bridge:local .
+deepseek-bridge --tunnel none
 ```
 
-Run it with Kubernetes-friendly defaults:
+### GitHub Copilot BYOK / Ollama Compatibility
 
-```bash
-docker run --rm -d --name deepseek-bridge -p 9000:9000 deepseek-bridge:local
-curl -fsS http://127.0.0.1:9000/healthz
-docker exec deepseek-bridge id -u
-docker stop deepseek-bridge
+For the Ollama-compatible path in VS Code:
+
+```json
+{
+  "github.copilot.chat.byok.ollamaEndpoint": "http://127.0.0.1:9000"
+}
 ```
 
-The image runs as UID `10001` and starts with a short command:
+For the `customOAIModels` path:
 
-```bash
-deepseek-bridge --config /etc/deepseek-bridge/config.yaml
+```json
+{
+  "github.copilot.chat.customOAIModels": {
+    "deepseek-v4-pro": {
+      "name": "DeepSeek V4 Pro",
+      "url": "http://127.0.0.1:9000/v1/chat/completions",
+      "toolCalling": true,
+      "vision": false,
+      "thinking": true,
+      "maxInputTokens": 1000000,
+      "maxOutputTokens": 384000,
+      "streaming": true,
+      "requiresAPIKey": true
+    }
+  }
+}
 ```
 
-Container defaults are supplied by `/etc/deepseek-bridge/config.yaml`: explicit
-`runtime.mode: kubernetes`, no tunnel, `0.0.0.0:9000`, compact logs, no file
-logs, and SQLite cache path `/data/reasoning_content.sqlite3`. Override with
-`DEEPSEEK_BRIDGE_*` env vars or mount your own config file at that path. Mount
-`/data` as an `emptyDir` or persistent volume if the root filesystem is
-read-only or cache persistence is required. For read-only-root deployments, make
-`/data` writable by UID/GID `10001`, for example with a pod `fsGroup` or volume
-ownership setting.
+### LiteLLM
 
-### LiteLLM E2E Smoke Test
-
-Run the live Docker Compose smoke test for this chain:
+LiteLLM can route an OpenAI-compatible model to DeepSeek Bridge, which then
+adapts the DS4 reasoning protocol before sending traffic to DeepSeek Cloud:
 
 ```text
 OpenAI-compatible client -> LiteLLM Proxy -> DeepSeek Bridge -> DeepSeek Cloud
 ```
 
-The test builds the local bridge image, starts LiteLLM with
-`deepseek-v4-pro` routed to the bridge as an OpenAI-compatible provider, then
-sends a real tool-call conversation to DeepSeek Cloud. The follow-up request
-intentionally omits `reasoning_content`; the bridge runs in strict missing
-reasoning mode, so the test only passes if the first response was cached and
-the second turn was repaired.
+The repository includes an opt-in live Docker Compose smoke test for this
+chain. It builds the local bridge image, starts LiteLLM with `deepseek-v4-pro`
+routed to the adapter as an OpenAI-compatible provider, sends a real tool-call
+conversation to DeepSeek Cloud, and then sends a follow-up request that
+intentionally omits `reasoning_content`. The test passes only if the first
+response was cached and the second turn was repaired.
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
@@ -150,26 +259,21 @@ DEEPSEEK_API_KEY=sk-... \
   python -m unittest tests.test_litellm_e2e_compose -v
 ```
 
-This is an opt-in live test. It requires Docker Compose, pulls the LiteLLM
-container image if needed, and consumes real DeepSeek API quota. Set
+This test consumes real DeepSeek API quota and requires Docker Compose. Set
 `DEEPSEEK_BRIDGE_LITELLM_E2E_SKIP_CLEANUP=1` to keep containers for debugging.
-In GitHub Actions, the `LiteLLM E2E (Compose, DeepSeek Cloud)` CI job runs on
-pushes and manual workflow dispatches when the repository secret
-`DEEPSEEK_API_KEY` is configured. Pull request events skip this live test so
-untrusted PR contexts do not receive cloud credentials.
 
 ## Configuration
 
-Configuration precedence is:
+Configuration precedence:
 
 ```text
-built-in defaults < YAML config < DEEPSEEK_BRIDGE_* env vars < CLI flags
+built-in defaults < YAML config < DEEPSEEK_BRIDGE_* env vars < process flags
 ```
 
 The default config path is `~/.deepseek-bridge/config.yaml`. Pass
 `--config /path/to/deepseek-bridge.yaml` or set `DEEPSEEK_BRIDGE_CONFIG_PATH`
-to use another file. Existing flat config files continue to work, but the
-primary schema is structured YAML:
+to use another file. Older flat config files still load, but the preferred
+schema is structured YAML:
 
 ```yaml
 version: 1
@@ -209,6 +313,7 @@ logging:
   level: info
   format: text
   compact: false
+  trace_mode: metadata-only
   file:
     enabled: true
     path: null
@@ -217,9 +322,7 @@ metrics:
   enabled: false
 
 tunnel:
-  mode: cloudflared
-  # cf_url: https://app.example.com
-  # ngrok_url: https://my-tunnel.ngrok.app
+  mode: none
 
 cors:
   enabled: true
@@ -241,23 +344,37 @@ performance:
   max_thread_pool: 12
 ```
 
+YAML paths are relative to the config file. Environment-variable and process
+flag paths are relative to the process working directory unless absolute.
+
+`storage.backend` must be `sqlite` or `valkey`. Valkey storage requires
+`storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`.
+
+`logging.format` supports `text` and `json`. Use
+`DEEPSEEK_BRIDGE_LOG_FORMAT=json` for one-line structured logs in container
+logging stacks. Set `metrics.enabled` or `DEEPSEEK_BRIDGE_METRICS_ENABLED=true`
+to expose Prometheus metrics on `/metrics`.
+
+`logging.trace_mode` controls how much data is written when `logging.trace_dir`
+or `--trace-dir` is enabled:
+
+- `metadata-only` records request/response metadata, byte counts, and safe
+  summaries without prompt, tool argument, response, reasoning, or stream chunk
+  content.
+- `redacted` records structural payload summaries and hashes for debugging
+  without full content.
+- `full` records full request/response bodies and stream chunks. Use it only
+  for deliberate short-lived debugging in trusted environments.
+
 For browser clients served from a public tunnel or custom domain, add that
-exact origin to `cors.allowed_origins`. Setting `allowed_origins: ["*"]` is
-supported, but credentialed responses echo the request origin instead of
-combining credentials with wildcard `*`.
+exact origin to `cors.allowed_origins`. `allowed_origins: ["*"]` is supported,
+but credentialed responses echo the request origin instead of combining
+credentials with wildcard `*`.
 
-YAML paths are relative to the config file. Environment-variable and CLI paths
-are relative to the process working directory unless absolute.
-`storage.backend` must be `sqlite` or `valkey`; Valkey storage requires
-`storage.valkey.url` or `DEEPSEEK_BRIDGE_VALKEY_URL`. `logging.format` supports
-`text` and `json`; use `DEEPSEEK_BRIDGE_LOG_FORMAT=json` for one-line
-structured records in container logging stacks. Set `metrics.enabled` to
-`true` to expose Prometheus metrics on `/metrics`.
-
-Supported environment variables:
+### Environment Variables
 
 | Variable | Config key |
-|----------|------------|
+| --- | --- |
 | `DEEPSEEK_BRIDGE_CONFIG_PATH` | Config file path |
 | `DEEPSEEK_BRIDGE_RUNTIME_MODE` / `DEEPSEEK_BRIDGE_RUNTIME` | `runtime.mode` |
 | `DEEPSEEK_BRIDGE_HOST` | `server.host` |
@@ -278,6 +395,7 @@ Supported environment variables:
 | `DEEPSEEK_BRIDGE_LOG_LEVEL` / `DEEPSEEK_BRIDGE_DEBUG` | `logging.level` |
 | `DEEPSEEK_BRIDGE_LOG_FORMAT` | `logging.format` |
 | `DEEPSEEK_BRIDGE_COMPACT` | `logging.compact` |
+| `DEEPSEEK_BRIDGE_TRACE_MODE` | `logging.trace_mode` |
 | `DEEPSEEK_BRIDGE_LOG_FILE_ENABLED` | `logging.file.enabled` |
 | `DEEPSEEK_BRIDGE_LOG_DIR` | `logging.file.path` |
 | `DEEPSEEK_BRIDGE_TRACE_DIR` | `logging.trace_dir` |
@@ -296,82 +414,142 @@ Supported environment variables:
 | `DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS` | `performance.max_pool_connections` |
 | `DEEPSEEK_BRIDGE_MAX_THREAD_POOL` | `performance.max_thread_pool` |
 
-Container-only configuration can be expressed without long CLI invocations:
+## State Storage
 
-```bash
-docker run --rm -p 9000:9000 \
-  -e DEEPSEEK_BRIDGE_MODEL=deepseek-v4-pro \
-  -e DEEPSEEK_BRIDGE_THINKING=enabled \
-  -e DEEPSEEK_BRIDGE_REASONING_EFFORT=max \
-  -e DEEPSEEK_BRIDGE_TUNNEL_MODE=none \
-  deepseek-bridge:local
+The adapter is stateful because DS4 reasoning repair requires previously
+returned `reasoning_content`.
+
+### SQLite
+
+SQLite is the default backend for local development and single-process
+deployments:
+
+```yaml
+storage:
+  backend: sqlite
+  sqlite:
+    path: reasoning_content.sqlite3
 ```
 
-In Kubernetes, mount the YAML as a ConfigMap and put sensitive backend URLs in
-Secrets-backed env vars. Use `storage.backend=valkey` for multi-replica shared
-reasoning caches, or keep a writable mount when using SQLite.
+The local cache contains reasoning text and serialized assistant messages.
+Treat it as sensitive prompt-derived data. The adapter creates local config and
+cache directories with private permissions where possible.
+
+### Valkey
+
+Use Valkey when more than one adapter replica must share the same reasoning
+state:
+
+```yaml
+storage:
+  backend: valkey
+  valkey:
+    url: valkey://valkey.default.svc.cluster.local:6379/0
+    key_prefix: deepseek-bridge
+```
+
+Entries are stored with TTL based on
+`reasoning_cache.max_age_seconds`. The suggested Kubernetes pattern is to put
+the Valkey URL in a Secret-backed environment variable:
+
+```bash
+DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey
+DEEPSEEK_BRIDGE_VALKEY_URL=valkey://...
+```
+
+## Security Notes
+
+- Client bearer tokens pass through the adapter and are forwarded to DeepSeek.
+- API keys are not logged in normal logs; trace files summarize authorization
+  headers by hash.
+- Request traces can contain full prompts, tool arguments, responses, and
+  reasoning state when `trace_mode` is `full`. Enable `--trace-dir` only for
+  explicit debugging and protect the output directory.
+- SQLite and Valkey caches contain `reasoning_content`, which may include
+  sensitive prompt-derived information.
+- In Kubernetes, prefer Secrets for Valkey URLs, NetworkPolicies around the
+  adapter and Valkey, private ingress, and TLS at the edge.
+- Do not expose the adapter publicly unless you intentionally trust the clients
+  that can send bearer tokens through it.
+
+## Container Image
+
+Build a local image:
+
+```bash
+docker build --build-arg PACKAGE_VERSION=0.0.0+local -t deepseek-bridge:local .
+```
+
+Run the adapter as an HTTP service:
+
+```bash
+docker run --rm -d --name deepseek-bridge \
+  -p 9000:9000 \
+  deepseek-bridge:local
+
+curl -fsS http://127.0.0.1:9000/healthz
+docker stop deepseek-bridge
+```
+
+The image runs as UID `10001` and starts:
+
+```bash
+deepseek-bridge --config /etc/deepseek-bridge/config.yaml
+```
+
+The baked config uses Kubernetes-friendly defaults: `runtime.mode:
+kubernetes`, no tunnel, `0.0.0.0:9000`, compact stdout/stderr logs, no file
+logs, and SQLite cache path `/data/reasoning_content.sqlite3`. Override with
+`DEEPSEEK_BRIDGE_*` env vars or mount your own config at
+`/etc/deepseek-bridge/config.yaml`.
+
+For read-only-root deployments, keep `/data` writable by UID/GID `10001` when
+using file-backed SQLite, or use Valkey and avoid local cache persistence.
 
 ## Kubernetes
 
-Use Kubernetes mode for headless container execution:
+Kubernetes mode runs the adapter as a headless HTTP workload:
 
 ```bash
 deepseek-bridge --runtime-mode kubernetes
 ```
 
-In Kubernetes mode, the proxy defaults to `0.0.0.0:9000`, disables tunnels,
-logs only to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`,
-and uses an in-memory SQLite reasoning cache unless Valkey or a SQLite file path
-is configured. Set `DEEPSEEK_BRIDGE_LOG_FORMAT=json` when your cluster logging
-stack expects one-line structured records. That allows a read-only root
-filesystem by default. For multiple replicas, set
-`DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey` and `DEEPSEEK_BRIDGE_VALKEY_URL` so all
-pods share the same reasoning cache. If you want the SQLite reasoning cache to
-survive process restarts, mount a writable directory and set the cache path to a
-file inside that mount.
+In Kubernetes mode, the adapter defaults to `0.0.0.0:9000`, disables tunnels,
+logs to stdout/stderr, skips auto-creating `~/.deepseek-bridge/config.yaml`, and
+uses an in-memory SQLite cache unless Valkey or a SQLite file path is
+configured. For multiple replicas, set:
 
-The published container image already sets `runtime.mode: kubernetes` in its
-baked config. Workload manifests may still pass `--runtime-mode kubernetes`
-explicitly when the deployment should pin the runtime profile regardless of
-mounted config or environment overrides.
+```bash
+DEEPSEEK_BRIDGE_STORAGE_BACKEND=valkey
+DEEPSEEK_BRIDGE_VALKEY_URL=valkey://...
+```
 
 Use distinct probes:
 
-- `/healthz` is a lightweight liveness check and returns 200 while the process is serving.
-- `/readyz` returns 200 only when the server is accepting traffic, storage is usable, and shutdown is not draining.
+- `/healthz` is a lightweight liveness check and returns 200 while the process
+  is serving.
+- `/readyz` returns 200 only when the process is accepting traffic, storage is
+  usable, and shutdown is not draining.
 
 An example Deployment and Service live in
 [`examples/kubernetes/deployment.yaml`](examples/kubernetes/deployment.yaml).
-The example sets `readOnlyRootFilesystem: true`, disables tunnels, binds to
+The example uses `readOnlyRootFilesystem: true`, disables tunnels, binds to
 `0.0.0.0`, uses separate liveness/readiness probes, and reads the Valkey URL
-from a Kubernetes Secret so multiple replicas can share the reasoning cache. Set
-`terminationGracePeriodSeconds` longer than your expected request or stream
+from a Kubernetes Secret.
+
+Set `terminationGracePeriodSeconds` longer than your expected request or stream
 duration so SIGTERM can drain active work.
-The pod security context matches the image runtime user with `runAsUser: 10001`,
-`runAsGroup: 10001`, and `fsGroup: 10001`. If your platform requires a different
-UID/GID, override all three values together and ensure every writable mount used
-by the cache, logs, traces, or temporary files is writable by that identity; keep
-the root filesystem read-only.
 
 ### Helm
 
-An installable chart lives in
-[`charts/deepseek-bridge`](charts/deepseek-bridge):
+The chart lives in [`charts/deepseek-bridge`](charts/deepseek-bridge):
 
 ```bash
 helm install deepseek-bridge ./charts/deepseek-bridge
 ```
 
-Tagged releases publish the Docker image and Helm chart to GHCR. For tag
-`v0.1.0`, install the published chart with:
-
-```bash
-helm install deepseek-bridge oci://ghcr.io/turboslop/deepseek-bridge \
-  --version 0.1.0-chart
-```
-
-The default chart values run one replica with an in-memory SQLite reasoning
-cache for local/dev use. Use Valkey for multi-replica installs:
+The default chart values run one replica with in-memory SQLite for local/dev
+use. Use Valkey for multi-replica installs:
 
 ```bash
 helm install deepseek-bridge ./charts/deepseek-bridge \
@@ -380,102 +558,33 @@ helm install deepseek-bridge ./charts/deepseek-bridge \
   --set valkey.existingSecret=deepseek-bridge-valkey
 ```
 
-The chart can also deploy a small built-in Valkey instance for development with
-`--set valkey.enabled=true`. Enable Prometheus scraping with
-`--set metrics.enabled=true --set serviceMonitor.enabled=true`.
+The chart can deploy a small built-in Valkey instance for development:
 
-Run the same Minikube packaging smoke gate used by CI with:
+```bash
+helm install deepseek-bridge ./charts/deepseek-bridge \
+  --set storage.backend=valkey \
+  --set valkey.enabled=true
+```
+
+Enable Prometheus scraping:
+
+```bash
+helm upgrade --install deepseek-bridge ./charts/deepseek-bridge \
+  --set metrics.enabled=true \
+  --set serviceMonitor.enabled=true
+```
+
+Run the same Minikube packaging smoke gate used by CI:
 
 ```bash
 DEEPSEEK_BRIDGE_RUN_K8S_SMOKE=1 \
   python -m unittest tests.test_k8s_minikube_smoke -v
 ```
 
-The smoke gate builds the local Docker image, loads that exact tag into
-Minikube, lints and renders the chart, validates the rendered manifests with the
-Kubernetes API, installs the release, waits for the app pod, checks Service
-endpoints, and probes `/healthz` and `/readyz` through a Service port-forward.
-It requires Docker, Helm, kubectl, Minikube, and curl.
+## Per-Request Thinking Overrides
 
-## Client Setup
-
-### Cursor
-
-In Cursor, add a custom model with these settings:
-- **Model**: `deepseek-v4-pro` (or `deepseek-v4-flash`)
-- **API Key**: Your DeepSeek API key
-- **Base URL**: Your tunnel HTTPS URL with `/v1` path (e.g., `https://app.example.com/v1`)
-
-> **Note on tunnels**: Cursor blocks non-public URLs such as `localhost`. DeepSeek Bridge uses [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) by default — a free, persistent HTTPS tunnel with no bandwidth or time limits. Use `--tunnel none` to disable tunneling. Use `--tunnel ngrok` if you prefer [ngrok](https://ngrok.com).
-
-### Cloudflare Tunnel Setup
-
-Cloudflare Named Tunnels are free, persistent, support SSE streaming, and have no bandwidth/time limits. One-time setup:
-
-```bash
-# Install cloudflared
-brew install cloudflare/cloudflare/cloudflared   # macOS
-# Or download from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
-
-# Login and create a tunnel
-cloudflared tunnel login
-cloudflared tunnel create deepseek-bridge
-
-# Point it at your domain
-cloudflared tunnel route dns deepseek-bridge app.example.com
-```
-
-Then add your tunnel URL to `~/.deepseek-bridge/config.yaml`:
-
-```yaml
-tunnel: cloudflared
-cf_url: https://app.example.com
-```
-
-Use `--tunnel cloudflared` on the CLI.
-
-### GitHub Copilot
-
-Configure the Ollama endpoint in VS Code:
-
-```json
-{
-  "github.copilot.chat.byok.ollamaEndpoint": "http://localhost:9000"
-}
-```
-
-Then open Copilot Chat, navigate to "Manage Models", and your DeepSeek models appear automatically.
-
-Agent Mode is supported — the proxy advertises `tool_calls` capability via the Ollama `/api/show` endpoint and handles reasoning repair across tool-call chains.
-
-For the new `customOAIModels` path (VS Code Insiders 1.104+):
-
-```json
-{
-  "github.copilot.chat.customOAIModels": {
-    "deepseek-v4-pro": {
-      "name": "DeepSeek V4 Pro",
-      "url": "http://localhost:9000/v1/chat/completions",
-      "toolCalling": true,
-      "vision": false,
-      "thinking": true,
-      "maxInputTokens": 1000000,
-      "maxOutputTokens": 384000,
-      "streaming": true,
-      "requiresAPIKey": true
-    }
-  }
-}
-```
-
-### Other OpenAI-Compatible Clients
-
-Any client that speaks the OpenAI `/v1/chat/completions` API can use DeepSeek Bridge. Set the client's base URL to `http://localhost:9000/v1` (or your tunnel URL).
-
-### Per-Request Thinking Overrides
-
-`--thinking` and `--reasoning-effort` are process defaults. A request can
-override them with DeepSeek's nested `thinking` payload:
+Process configuration defines defaults, but a request can override thinking
+mode and effort:
 
 ```json
 {
@@ -485,92 +594,119 @@ override them with DeepSeek's nested `thinking` payload:
 }
 ```
 
-OpenAI Responses API payloads can also set `reasoning.effort`; during
-conversion, the proxy maps it into DeepSeek's nested `thinking` payload and
-does not forward a top-level `reasoning_effort` field. The effective thinking
-mode and effort are included in the reasoning cache namespace, so switching
-mode or effort does not reuse incompatible cached reasoning.
+OpenAI Responses-style payloads can set `reasoning.effort`. During conversion,
+the adapter maps it into DeepSeek's nested `thinking` payload and does not
+forward a top-level `reasoning_effort` field.
+
+The effective model, thinking mode, and effort are part of the reasoning-cache
+namespace, so incompatible modes do not reuse the same cached reasoning.
 
 ## How It Works
 
-1. **Request interception**: The proxy receives a `/v1/chat/completions` request from the client.
-2. **Format detection**: If the request uses OpenAI Responses API format (common in Cursor Agent Mode), it is converted to Chat Completions format.
-3. **Reasoning repair**: Each assistant message in the conversation is checked. Missing `reasoning_content` fields are looked up in the local SQLite cache and restored.
-4. **Cache isolation**: Cache keys are scoped by a SHA-256 hash of the conversation prefix, upstream model, effective thinking settings, configuration, and API key. Different conversations and users never collide.
-5. **Response processing**: Reasoning content from the upstream response is cached for future requests. Display adapters mirror reasoning thoughts into Markdown `<details>` blocks visible in the client.
+1. The client sends an OpenAI-compatible HTTP request to the adapter.
+2. The adapter validates the path, request body, auth header, and runtime state.
+3. Responses-style payloads are normalized to Chat Completions when needed.
+4. The adapter computes a cache namespace from the conversation, upstream
+   model, thinking settings, config, and bearer token.
+5. Missing assistant `reasoning_content` is looked up in SQLite or Valkey and
+   restored before the request is sent upstream.
+6. DeepSeek's response is streamed or returned to the client in an
+   OpenAI-compatible shape.
+7. New `reasoning_content` from the response is stored for later turns.
 
 ## Known Limitations
 
+### Reasoning State Is Required
+
+If earlier turns were never seen by the adapter, strict DS4 repair may be
+impossible. The default `missing_reasoning_strategy: recover` tries to keep the
+conversation moving by dropping unrecoverable older tool-call context. Use
+`missing_reasoning_strategy: reject` when debugging correctness.
+
 ### Cursor Sub-Agents
 
-Cursor sub-agents do not inherit custom API base URL or API key settings. This is a Cursor-side bug (see [forum thread](https://forum.cursor.com/t/sub-agents-are-not-using-custom-openai-base-urls/152574)). Use the main agent (`Cmd+Shift+0` to toggle) for direct DeepSeek chat. Sub-agents that route through the proxy will work correctly; those that bypass it fall back to Cursor's built-in models.
-
-### Cursor Agent Mode Responses API Format
-
-Cursor Agent mode sends OpenAI Responses API-format payloads to the Chat Completions endpoint. DeepSeek Bridge detects and converts these automatically.
+Cursor sub-agents may not inherit custom OpenAI base URL or API-key settings.
+When that happens, they bypass the adapter and use Cursor's built-in models.
+Sub-agents that actually route through the adapter work like ordinary clients.
 
 ### Reasoning Display
 
-Cursor's native reasoning UI is available only for Cursor's own models. For custom endpoints, reasoning content is mirrored into visible Markdown details blocks. Use `--no-display-reasoning` to disable this behavior.
+Some clients cannot render native reasoning UI for custom endpoints. When
+`reasoning_display.enabled` is true, the adapter mirrors reasoning into visible
+Markdown `<details>` blocks. Disable this with:
+
+```bash
+deepseek-bridge --no-display-reasoning
+```
 
 ## Development
 
-```bash
-# Run tests
-uv run --extra dev --python 3.14 python -m unittest discover -s tests
+Run the full unittest suite:
 
-# Run opt-in functional HTTP tests against a local Valkey
+```bash
+uv run --extra dev --python 3.14 python -m unittest discover -s tests
+```
+
+Run opt-in functional HTTP tests against a local Valkey:
+
+```bash
 RUN_FUNCTIONAL_TESTS=1 \
 FUNCTIONAL_VALKEY_URL=redis://127.0.0.1:6379/0 \
 uv run --extra dev --python 3.14 python -m unittest discover -s tests/functional -v
+```
 
-# Format, lint, type-check, and YAML-check
+Format, lint, type-check, and YAML-check:
+
+```bash
 uv run --extra dev --python 3.14 pre-commit run --all-files
-
-# Strict type check for production code
 uv run --extra dev --python 3.14 mypy src/deepseek_bridge
+```
 
-# Run with coverage gate
+Run with coverage:
+
+```bash
 uv run --extra dev --python 3.14 coverage run -m unittest discover -s tests
 uv run --extra dev --python 3.14 coverage report
 ```
 
-## CLI Reference
+## Process Flags
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | `deepseek-v4-pro` | Fallback model when request omits it |
-| `--runtime-mode` | `local` | Runtime profile (`local`, `kubernetes`) |
-| `--thinking` | `enabled` | DeepSeek thinking mode |
-| `--reasoning-effort` | `max` | Reasoning effort level |
-| `--display-reasoning` | on | Show reasoning content in client UI |
-| `--collapsible-reasoning` | on | Use collapsible Markdown for reasoning |
-| `--host` | `127.0.0.1` | Bind address |
-| `--port` | `9000` | Bind port |
-| `--tunnel` | `cloudflared` | Tunnel service (none, cloudflared, ngrok) |
-| `--cf-url` | none | Cloudflare tunnel public URL |
-| `--ngrok-url` | none | Fixed ngrok endpoint URL |
-| `--base-url` | `https://api.deepseek.com` | Upstream DeepSeek API URL |
-| `--cors` | on | Send CORS headers |
-| `--cors-allowed-origin` | loopback origins | Allowed browser Origin; repeat for multiple origins |
-| `--cors-allow-credentials` | on | Allow browser credentials for matching CORS origins |
-| `--stream-read-timeout` | `180` | SSE read timeout in seconds |
-| `--max-thread-pool` | `20` | Max concurrent request threads |
-| `--max-pool-connections` | `10` | Max upstream connections |
-| `--ollama` / `--no-ollama` | on | Enable/disable Ollama endpoints |
-| `--log-dir` | none | Directory for persistent log files |
-| `--trace-dir` | none | Directory for request trace dumps |
-| `--debug` | off | Enable DEBUG-level log output |
-| `--compact` | off | One-line-per-request output |
-| `--headless` | off | Disable interactive terminal UI affordances |
-| `--config` | ~/.deepseek-bridge/config.yaml | Config file path |
-| `--no-log` | off | Disable all log file output |
-| `--reasoning-content-path` | ~/.deepseek-bridge/reasoning_content.sqlite3 | Reasoning cache path |
-| `--reasoning-cache-max-age-seconds` | 604800 | Max age of cached reasoning (seconds) |
-| `--missing-reasoning-strategy` | recover | Strategy for missing reasoning (recover/reject) |
-| `--max-request-body-bytes` | 20971520 | Max request body size in bytes |
-| `--clear-reasoning-cache` | off | Clear reasoning cache and exit |
-| `--version` | - | Print version and exit |
+These flags configure the adapter process. They do not define the public
+product surface; clients interact with HTTP endpoints.
+
+| Flag | Purpose |
+| --- | --- |
+| `--config` | YAML config file path |
+| `--runtime-mode` / `--runtime` | Runtime profile: `local` or `kubernetes` |
+| `--host`, `--port` | HTTP bind address |
+| `--base-url` | Upstream DeepSeek API base URL |
+| `--model` | Fallback DeepSeek model when a request omits one |
+| `--thinking` | Default DeepSeek thinking mode |
+| `--reasoning-effort` | Default reasoning effort |
+| `--display-reasoning` / `--no-display-reasoning` | Mirror reasoning into visible client content |
+| `--collapsible-reasoning` / `--no-collapsible-reasoning` | Use Markdown details for mirrored reasoning |
+| `--tunnel` | Optional tunnel service: `none`, `cloudflared`, or `ngrok` |
+| `--cf-url`, `--ngrok-url` | Public tunnel URL settings |
+| `--cors` / `--no-cors` | Send CORS headers |
+| `--cors-allowed-origin` | Allowed browser origin; repeat for multiple origins |
+| `--cors-allow-credentials` / `--no-cors-allow-credentials` | Credentialed CORS behavior |
+| `--request-timeout` | Upstream request timeout |
+| `--stream-read-timeout` | SSE read timeout |
+| `--max-thread-pool` | Maximum concurrent request workers |
+| `--max-pool-connections` | Maximum upstream connection pool size |
+| `--max-request-body-bytes` | Maximum accepted request body size |
+| `--ollama` / `--no-ollama` | Enable Ollama-compatible endpoints |
+| `--metrics` / `--no-metrics` | Expose Prometheus metrics on `/metrics` |
+| `--log-dir`, `--no-log` | Persistent log file behavior |
+| `--trace-dir` | Write structured request traces using the configured trace mode |
+| `--trace-mode` | Trace safety mode: `metadata-only`, `redacted`, or `full` |
+| `--debug` | Enable DEBUG-level internal logs |
+| `--compact`, `--headless` | Compact service-friendly console output |
+| `--reasoning-content-path` | SQLite reasoning cache path |
+| `--reasoning-cache-max-age-seconds` | Max age for cached reasoning |
+| `--missing-reasoning-strategy` | `recover` or `reject` when required reasoning is unavailable |
+| `--clear-reasoning-cache` | Clear configured reasoning state and exit |
+| `--version` | Print version and exit |
 
 ## License
 
@@ -578,4 +714,6 @@ MIT License
 
 ## Acknowledgements
 
-Based on [yxlao/deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy), the original project that started this work.
+Based on
+[yxlao/deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy),
+the original project that started this work.
