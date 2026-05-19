@@ -8,6 +8,11 @@ This project follows tag-based releases. Release tags must use
 
 ### Changed
 
+- Moved the process runtime to a Starlette ASGI application served by Uvicorn.
+- Replaced the production upstream transport path with async `httpx` and added
+  configurable bounded retries for upstream transport/connect failures.
+- Reclassified the package as beta after the ASGI runtime, async upstream
+  transport, retry policy, and matching tests were added.
 - Repositioned the project as an OpenAI-compatible HTTP stateful adapter for
   the DeepSeek V4 (DS4) reasoning protocol. The `deepseek-bridge` executable is
   the adapter process runner, not the product interface.
@@ -139,5 +144,7 @@ logging:
    - migration steps and rollback notes.
 
 Tags and GitHub Releases are intentionally the public source of truth for
-released versions. Unreleased branch state should not be described as production
-ready.
+released versions. GHCR container images and Helm chart assets are the primary
+install channels for released builds. PyPI publishing is intentionally absent
+from the current release workflow. Unreleased branch state should not be
+described as production ready.

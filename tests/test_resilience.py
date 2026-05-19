@@ -7,8 +7,9 @@ from __future__ import annotations
 import threading
 import time
 import unittest
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
+import httpx
 import urllib3
 
 from deepseek_bridge.config import ProxyConfig
@@ -19,6 +20,7 @@ from deepseek_bridge.helpers import (
 from deepseek_bridge.metrics import METRICS
 from deepseek_bridge.reasoning_store import ReasoningStoreStats
 from deepseek_bridge.server import (
+    AsyncUpstreamClient,
     BoundedThreadPoolHTTPServer,
     DeepSeekProxyHandler,
     UpstreamPool,
@@ -68,6 +70,64 @@ class UpstreamPoolTests(unittest.TestCase):
 
         _args, kwargs = mock_pool_mgr.return_value.request.call_args
         self.assertNotIn("metrics_model", kwargs)
+
+
+class AsyncUpstreamClientTests(unittest.IsolatedAsyncioTestCase):
+    """Async upstream client limits and timeout construction."""
+
+    def test_async_client_uses_configured_connection_limits(self) -> None:
+        with (
+            patch("deepseek_bridge.async_upstream.httpx.Limits") as limits,
+            patch("deepseek_bridge.async_upstream.httpx.AsyncClient") as client,
+        ):
+            AsyncUpstreamClient(ProxyConfig(max_pool_connections=7))
+
+        limits.assert_called_once_with(
+            max_connections=7,
+            max_keepalive_connections=7,
+        )
+        client.assert_called_once_with(
+            limits=limits.return_value,
+            headers={"User-Agent": "DeepSeekBridge"},
+        )
+
+    async def test_post_uses_stream_timeout_for_streaming(self) -> None:
+        client = AsyncUpstreamClient(
+            ProxyConfig(request_timeout=10, stream_read_timeout=3)
+        )
+        try:
+            with (
+                patch(
+                    "deepseek_bridge.async_upstream.httpx.Timeout"
+                ) as timeout,
+                patch.object(client._client, "build_request") as build_request,
+                patch.object(
+                    client._client,
+                    "send",
+                    new=AsyncMock(
+                        return_value=httpx.Response(200, content=b"{}")
+                    ),
+                ),
+            ):
+                build_request.return_value = httpx.Request(
+                    "POST", "https://api.example.test/chat/completions"
+                )
+
+                await client.post(
+                    "https://api.example.test/chat/completions",
+                    body=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    stream=True,
+                )
+
+            timeout.assert_called_once_with(
+                connect=10,
+                read=3,
+                write=10,
+                pool=10,
+            )
+        finally:
+            await client.aclose()
 
 
 # ---------------------------------------------------------------------------

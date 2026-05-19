@@ -56,6 +56,47 @@
         }
       }
     },
+    "performance": {
+      "type": "object",
+      "properties": {
+        "requestTimeout": {
+          "type": "number",
+          "minimum": 0.001
+        },
+        "streamReadTimeout": {
+          "type": "number",
+          "minimum": 0.001
+        },
+        "upstreamRetryAttempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upstreamRetryInitialDelaySeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "upstreamRetryMaxDelaySeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "upstreamRetryJitterSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxRequestBodyBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxPoolConnections": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxThreadPool": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "networkPolicy": {
       "type": "object",
       "properties": {

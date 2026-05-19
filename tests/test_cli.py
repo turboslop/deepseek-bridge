@@ -5,12 +5,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from deepseek_bridge.config import ProxyConfig
 from deepseek_bridge.reasoning_store import ReasoningStoreStats
-from deepseek_bridge.server_infrastructure import BoundedThreadPoolHTTPServer
 
 
 class CliImportTests(unittest.TestCase):
@@ -184,6 +184,14 @@ class CliArgParserTests(unittest.TestCase):
                 "120",
                 "--stream-read-timeout",
                 "90",
+                "--upstream-retry-attempts",
+                "4",
+                "--upstream-retry-initial-delay-seconds",
+                "0.5",
+                "--upstream-retry-max-delay-seconds",
+                "8",
+                "--upstream-retry-jitter-seconds",
+                "0.1",
                 "--max-pool-connections",
                 "20",
                 "--max-thread-pool",
@@ -194,6 +202,10 @@ class CliArgParserTests(unittest.TestCase):
         )
         self.assertEqual(args.request_timeout, 120.0)
         self.assertEqual(args.stream_read_timeout, 90.0)
+        self.assertEqual(args.upstream_retry_attempts, 4)
+        self.assertEqual(args.upstream_retry_initial_delay_seconds, 0.5)
+        self.assertEqual(args.upstream_retry_max_delay_seconds, 8.0)
+        self.assertEqual(args.upstream_retry_jitter_seconds, 0.1)
         self.assertEqual(args.max_pool_connections, 20)
         self.assertEqual(args.max_thread_pool, 40)
         self.assertEqual(args.max_request_body_bytes, 1048576)
@@ -279,17 +291,8 @@ class CliMainTests(unittest.TestCase):
 
     @staticmethod
     def _server_bind_patches():
-        """Return context-manager tuple with disabled socket binding."""
-        return (
-            patch.object(
-                BoundedThreadPoolHTTPServer, "server_bind", return_value=None
-            ),
-            patch.object(
-                BoundedThreadPoolHTTPServer,
-                "server_activate",
-                return_value=None,
-            ),
-        )
+        """Compatibility shim for pre-ASGI CLI tests."""
+        return (nullcontext(), nullcontext())
 
     def test_main_kubernetes_runtime_skips_file_logs(self) -> None:
         """Kubernetes runtime can start without persistent logs."""
@@ -299,7 +302,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ),
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging") as mock_log,
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -337,7 +340,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ) as mock_run,
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging"),
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -378,17 +381,17 @@ class CliMainTests(unittest.TestCase):
             )
 
             self.assertEqual(result, 0)
-            server = mock_run.call_args.args[0]
-            self.assertEqual(server.config.host, "0.0.0.0")
-            self.assertEqual(server.config.port, 9100)
-            self.assertEqual(server.config.upstream_model, "from-cli")
-            self.assertEqual(server.config.request_timeout, 120)
-            self.assertEqual(server.config.stream_read_timeout, 72)
-            self.assertEqual(server.config.max_thread_pool, 20)
-            self.assertEqual(server.config.max_pool_connections, 20)
-            self.assertEqual(server.config.max_queue_size, 50)
-            self.assertTrue(server.config.metrics_enabled)
-            self.assertEqual(server.config.trace_mode, "full")
+            config = mock_run.call_args.args[1]
+            self.assertEqual(config.host, "0.0.0.0")
+            self.assertEqual(config.port, 9100)
+            self.assertEqual(config.upstream_model, "from-cli")
+            self.assertEqual(config.request_timeout, 120)
+            self.assertEqual(config.stream_read_timeout, 72)
+            self.assertEqual(config.max_thread_pool, 20)
+            self.assertEqual(config.max_pool_connections, 20)
+            self.assertEqual(config.max_queue_size, 50)
+            self.assertTrue(config.metrics_enabled)
+            self.assertEqual(config.trace_mode, "full")
             self.assertEqual(mock_store_cls.call_args.kwargs["max_rows"], 42)
 
     def test_main_initializes_trace_writer_with_configured_mode(self) -> None:
@@ -400,7 +403,7 @@ class CliMainTests(unittest.TestCase):
                 side_effect=KeyboardInterrupt,
             ) as mock_run,
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging"),
             patch("deepseek_bridge.cli.TraceWriter") as mock_trace_writer,
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
@@ -423,8 +426,10 @@ class CliMainTests(unittest.TestCase):
             mock_trace_writer.assert_called_once_with(
                 Path(temp_dir), trace_mode="redacted"
             )
-            server = mock_run.call_args.args[0]
-            self.assertIs(server.trace_writer, mock_trace_writer.return_value)
+            app = mock_run.call_args.args[0]
+            self.assertIs(
+                app.state.bridge.trace_writer, mock_trace_writer.return_value
+            )
 
     def test_main_runs_http_server(self) -> None:
         """main runs the HTTP server loop directly."""
@@ -434,7 +439,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ) as mock_run,
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging"),
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -460,7 +465,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ),
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging") as mock_log,
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -490,7 +495,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ),
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging") as mock_log,
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -515,7 +520,7 @@ class CliMainTests(unittest.TestCase):
                 "deepseek_bridge.cli._run_server", side_effect=KeyboardInterrupt
             ) as mock_run,
             patch("deepseek_bridge.cli.ReasoningStore") as mock_store_cls,
-            patch("deepseek_bridge.cli.UpstreamPool"),
+            patch("deepseek_bridge.cli.AsyncUpstreamClient"),
             patch("deepseek_bridge.cli.configure_logging"),
             patch("deepseek_bridge.cli.ProxyConfig") as mock_cfg_cls,
             srv_bind,
@@ -531,8 +536,8 @@ class CliMainTests(unittest.TestCase):
             result = main(["--headless"])
 
             self.assertEqual(result, 0)
-            server = mock_run.call_args.args[0]
-            self.assertTrue(server.config.compact)
+            config = mock_run.call_args.args[1]
+            self.assertTrue(config.compact)
 
     def test_main_config_loading_error_returns_2(self) -> None:
         """Invalid YAML config file → main returns exit code 2."""

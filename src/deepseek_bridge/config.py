@@ -43,6 +43,10 @@ DEFAULT_COLLAPSIBLE_REASONING = True
 DEFAULT_DEBUG = False
 DEFAULT_REQUEST_TIMEOUT = 300.0
 DEFAULT_STREAM_READ_TIMEOUT = 180.0
+DEFAULT_UPSTREAM_RETRY_ATTEMPTS = 2
+DEFAULT_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS = 1.0
+DEFAULT_UPSTREAM_RETRY_MAX_DELAY_SECONDS = 4.0
+DEFAULT_UPSTREAM_RETRY_JITTER_SECONDS = 0.25
 DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_MAX_POOL_CONNECTIONS = 10
 DEFAULT_MAX_THREAD_POOL = max(os.cpu_count() or 4, 12)
@@ -83,6 +87,9 @@ CORS_ALLOWED_ORIGINS_TEXT = "\n".join(
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-bridge/config.yaml."
 )
+_DEFAULT_RETRY_INITIAL_DELAY = DEFAULT_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS
+_DEFAULT_RETRY_MAX_DELAY = DEFAULT_UPSTREAM_RETRY_MAX_DELAY_SECONDS
+_DEFAULT_RETRY_JITTER = DEFAULT_UPSTREAM_RETRY_JITTER_SECONDS
 DEFAULT_CONFIG_TEXT = f"""{DEFAULT_CONFIG_HEADER}
 # API keys are read from Cursor's Authorization header and forwarded upstream.
 version: 1
@@ -138,6 +145,10 @@ ollama:
 performance:
   request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
   stream_read_timeout: {DEFAULT_STREAM_READ_TIMEOUT:g}
+  upstream_retry_attempts: {DEFAULT_UPSTREAM_RETRY_ATTEMPTS}
+  upstream_retry_initial_delay_seconds: {_DEFAULT_RETRY_INITIAL_DELAY:g}
+  upstream_retry_max_delay_seconds: {_DEFAULT_RETRY_MAX_DELAY:g}
+  upstream_retry_jitter_seconds: {_DEFAULT_RETRY_JITTER:g}
   max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
   max_pool_connections: {DEFAULT_MAX_POOL_CONNECTIONS}
   max_thread_pool: {DEFAULT_MAX_THREAD_POOL}
@@ -708,6 +719,38 @@ def normalize_config_settings(
         _set_if_present(
             normalized,
             performance,
+            "upstream_retry_attempts",
+            "upstream_retry_attempts",
+            lambda n, v: _strict_int(n, v, minimum=0),
+            name="performance.upstream_retry_attempts",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "upstream_retry_initial_delay_seconds",
+            "upstream_retry_initial_delay_seconds",
+            lambda n, v: _strict_float(n, v, minimum=0.0),
+            name="performance.upstream_retry_initial_delay_seconds",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "upstream_retry_max_delay_seconds",
+            "upstream_retry_max_delay_seconds",
+            lambda n, v: _strict_float(n, v, minimum=0.0),
+            name="performance.upstream_retry_max_delay_seconds",
+        )
+        _set_if_present(
+            normalized,
+            performance,
+            "upstream_retry_jitter_seconds",
+            "upstream_retry_jitter_seconds",
+            lambda n, v: _strict_float(n, v, minimum=0.0),
+            name="performance.upstream_retry_jitter_seconds",
+        )
+        _set_if_present(
+            normalized,
+            performance,
             "max_request_body_bytes",
             "max_request_body_bytes",
             lambda n, v: _strict_int(n, v, minimum=1),
@@ -788,6 +831,11 @@ def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
             None,
         ),
         "DEEPSEEK_BRIDGE_MAX_THREAD_POOL": ("max_thread_pool", 1, None),
+        "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_ATTEMPTS": (
+            "upstream_retry_attempts",
+            0,
+            None,
+        ),
     }
     for env_name, (key, minimum, maximum) in int_vars.items():
         if env_name in environ:
@@ -799,13 +847,28 @@ def settings_from_env(environ: Mapping[str, str] | None) -> dict[str, Any]:
             )
 
     float_vars = {
-        "DEEPSEEK_BRIDGE_REQUEST_TIMEOUT": "request_timeout",
-        "DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT": "stream_read_timeout",
+        "DEEPSEEK_BRIDGE_REQUEST_TIMEOUT": ("request_timeout", 0.001),
+        "DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT": (
+            "stream_read_timeout",
+            0.001,
+        ),
+        "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS": (
+            "upstream_retry_initial_delay_seconds",
+            0.0,
+        ),
+        "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_MAX_DELAY_SECONDS": (
+            "upstream_retry_max_delay_seconds",
+            0.0,
+        ),
+        "DEEPSEEK_BRIDGE_UPSTREAM_RETRY_JITTER_SECONDS": (
+            "upstream_retry_jitter_seconds",
+            0.0,
+        ),
     }
-    for env_name, key in float_vars.items():
+    for env_name, (key, float_minimum) in float_vars.items():
         if env_name in environ:
             settings[key] = _strict_float(
-                env_name, environ[env_name], minimum=0.001
+                env_name, environ[env_name], minimum=float_minimum
             )
 
     bool_vars = {
@@ -1015,6 +1078,14 @@ class ProxyConfig:
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT
     stream_read_timeout: float = DEFAULT_STREAM_READ_TIMEOUT
+    upstream_retry_attempts: int = DEFAULT_UPSTREAM_RETRY_ATTEMPTS
+    upstream_retry_initial_delay_seconds: float = (
+        DEFAULT_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS
+    )
+    upstream_retry_max_delay_seconds: float = (
+        DEFAULT_UPSTREAM_RETRY_MAX_DELAY_SECONDS
+    )
+    upstream_retry_jitter_seconds: float = DEFAULT_UPSTREAM_RETRY_JITTER_SECONDS
     max_request_body_bytes: int = DEFAULT_MAX_REQUEST_BODY_BYTES
     reasoning_content_path: Path | str = field(
         default_factory=default_reasoning_content_path
@@ -1161,6 +1232,22 @@ class ProxyConfig:
             ),
             request_timeout=request_timeout,
             stream_read_timeout=stream_read_timeout,
+            upstream_retry_attempts=as_int(
+                setting_value(settings, "upstream_retry_attempts"),
+                DEFAULT_UPSTREAM_RETRY_ATTEMPTS,
+            ),
+            upstream_retry_initial_delay_seconds=as_float(
+                setting_value(settings, "upstream_retry_initial_delay_seconds"),
+                DEFAULT_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS,
+            ),
+            upstream_retry_max_delay_seconds=as_float(
+                setting_value(settings, "upstream_retry_max_delay_seconds"),
+                DEFAULT_UPSTREAM_RETRY_MAX_DELAY_SECONDS,
+            ),
+            upstream_retry_jitter_seconds=as_float(
+                setting_value(settings, "upstream_retry_jitter_seconds"),
+                DEFAULT_UPSTREAM_RETRY_JITTER_SECONDS,
+            ),
             max_request_body_bytes=as_int(
                 setting_value(settings, "max_request_body_bytes"),
                 DEFAULT_MAX_REQUEST_BODY_BYTES,

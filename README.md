@@ -16,8 +16,7 @@ This is not a chat UI, TUI, or workflow CLI. The `deepseek-bridge` command is
 only the process runner for the HTTP adapter.
 
 ```bash
-pip install deepseek-bridge
-deepseek-bridge --port 9000
+docker run --rm -p 9000:9000 ghcr.io/turboslop/deepseek-bridge:latest
 ```
 
 Point any OpenAI-compatible client at:
@@ -82,12 +81,25 @@ before forwarding them to DeepSeek.
   `response_format`, `logprobs`, and legacy DeepSeek model aliases.
 - Optional visible reasoning mirror for clients that cannot render native
   reasoning UI.
-- Bounded request thread pool, upstream connection pooling, SSE read timeouts,
-  graceful SIGTERM draining, health/readiness endpoints, and Prometheus metrics.
+- ASGI/Uvicorn runtime, async upstream HTTP transport, SSE read timeouts,
+  bounded transport retries, graceful draining, health/readiness endpoints, and
+  Prometheus metrics.
 - Container and Helm deployment support for Kubernetes-native operation.
+
+## Runtime Architecture
+
+DeepSeek Bridge runs as a Starlette ASGI application served by Uvicorn. Upstream
+DeepSeek calls use an async `httpx` client with configured connection limits,
+request/stream timeouts, and bounded retries for connection and transport
+failures before a usable upstream response exists.
 
 ## Trust and Release Posture
 
+- Python 3.14 is the intentionally supported runtime for source, CI, and
+  container builds.
+- GitHub Releases, GHCR container images, and Helm chart assets are the
+  authoritative release channels. PyPI publishing is not part of the current
+  release workflow.
 - Release history and migration notes live in [CHANGELOG.md](CHANGELOG.md).
 - Threat model and production security guidance live in
   [SECURITY.md](SECURITY.md).
@@ -96,11 +108,10 @@ before forwarding them to DeepSeek.
 
 ## Quick Start
 
-Install and run the adapter locally:
+Run the released container locally:
 
 ```bash
-pip install deepseek-bridge
-deepseek-bridge --host 127.0.0.1 --port 9000
+docker run --rm -p 9000:9000 ghcr.io/turboslop/deepseek-bridge:latest
 ```
 
 Check that the HTTP service is alive:
@@ -142,6 +153,8 @@ response = client.chat.completions.create(
 ```
 
 ## Running From Source
+
+Source runs require Python 3.14:
 
 ```bash
 git clone https://github.com/breixopd/deepseek-bridge.git
@@ -320,6 +333,10 @@ ollama:
 performance:
   request_timeout: 300
   stream_read_timeout: 180
+  upstream_retry_attempts: 2
+  upstream_retry_initial_delay_seconds: 1
+  upstream_retry_max_delay_seconds: 4
+  upstream_retry_jitter_seconds: 0.25
   max_request_body_bytes: 20971520
   max_pool_connections: 10
   max_thread_pool: 12
@@ -387,6 +404,10 @@ responses echo the request origin instead of combining credentials with wildcard
 | `DEEPSEEK_BRIDGE_OLLAMA` / `DEEPSEEK_BRIDGE_OLLAMA_ENABLED` | `ollama.enabled` |
 | `DEEPSEEK_BRIDGE_REQUEST_TIMEOUT` | `performance.request_timeout` |
 | `DEEPSEEK_BRIDGE_STREAM_READ_TIMEOUT` | `performance.stream_read_timeout` |
+| `DEEPSEEK_BRIDGE_UPSTREAM_RETRY_ATTEMPTS` | `performance.upstream_retry_attempts` |
+| `DEEPSEEK_BRIDGE_UPSTREAM_RETRY_INITIAL_DELAY_SECONDS` | `performance.upstream_retry_initial_delay_seconds` |
+| `DEEPSEEK_BRIDGE_UPSTREAM_RETRY_MAX_DELAY_SECONDS` | `performance.upstream_retry_max_delay_seconds` |
+| `DEEPSEEK_BRIDGE_UPSTREAM_RETRY_JITTER_SECONDS` | `performance.upstream_retry_jitter_seconds` |
 | `DEEPSEEK_BRIDGE_MAX_REQUEST_BODY_BYTES` | `performance.max_request_body_bytes` |
 | `DEEPSEEK_BRIDGE_MAX_POOL_CONNECTIONS` | `performance.max_pool_connections` |
 | `DEEPSEEK_BRIDGE_MAX_THREAD_POOL` | `performance.max_thread_pool` |
@@ -667,7 +688,11 @@ product surface; clients interact with HTTP endpoints.
 | `--cors-allow-credentials` / `--no-cors-allow-credentials` | Credentialed CORS behavior |
 | `--request-timeout` | Upstream request timeout |
 | `--stream-read-timeout` | SSE read timeout |
-| `--max-thread-pool` | Maximum concurrent request workers |
+| `--upstream-retry-attempts` | Transport retry attempts before returning an upstream error |
+| `--upstream-retry-initial-delay-seconds` | Initial transport retry backoff delay |
+| `--upstream-retry-max-delay-seconds` | Maximum transport retry backoff delay |
+| `--upstream-retry-jitter-seconds` | Random retry jitter budget |
+| `--max-thread-pool` | Legacy compatibility and storage pool sizing |
 | `--max-pool-connections` | Maximum upstream connection pool size |
 | `--max-request-body-bytes` | Maximum accepted request body size |
 | `--ollama` / `--no-ollama` | Enable Ollama-compatible endpoints |
