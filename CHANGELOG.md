@@ -23,6 +23,8 @@ This project follows tag-based releases. Release tags must use
   configuration keys, environment variables, documentation, and tests. Deploy
   DeepSeek Bridge directly on localhost or behind your own reverse proxy,
   Ingress, or service mesh.
+- Removed PyPI publishing from the release workflow. Releases now publish via
+  GitHub Releases, GHCR container images, and Helm chart assets.
 
 ### Security
 
@@ -127,9 +129,8 @@ logging:
    ```
 
 3. The release workflow validates the tag format, runs lint/tests, creates a
-   GitHub Release, publishes the Python package, builds and attests the Docker
-   image, packages and attests the Helm chart, and uploads chart assets to the
-   GitHub Release.
+   GitHub Release, builds and attests the Docker image, packages and attests the
+   Helm chart, and uploads chart assets to the GitHub Release.
 4. GitHub Release notes should call out:
    - breaking config/schema changes;
    - storage backend changes;
